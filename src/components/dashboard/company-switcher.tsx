@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/popover'
 import { Badge } from '@/components/ui/badge'
 import { useTenantContext } from '@/contexts/tenant-context'
-import { useIsSuperAdmin } from '@/hooks/use-permissions'
 
 interface CompanySwitcherProps {
   variant?: 'sidebar' | 'topbar'
@@ -28,8 +27,7 @@ interface CompanySwitcherProps {
 export function CompanySwitcher({ variant = 'sidebar' }: CompanySwitcherProps) {
   const [open, setOpen] = React.useState(false)
   const [switching, setSwitching] = React.useState(false)
-  const { currentTenant, accessibleTenants, loading, switchTenant } = useTenantContext()
-  const isSuperAdmin = useIsSuperAdmin()
+  const { currentTenant, accessibleTenants, loading, switchTenant, canSwitchTenants } = useTenantContext()
 
   const isTopbar = variant === 'topbar'
 
@@ -73,7 +71,7 @@ export function CompanySwitcher({ variant = 'sidebar' }: CompanySwitcherProps) {
   // Se não for superadmin ou tiver apenas uma empresa, mostrar badge fixo (sem seletor)
   const hasMultipleTenants = accessibleTenants.length > 1
 
-  if (!isSuperAdmin || !hasMultipleTenants) {
+  if (!canSwitchTenants || !hasMultipleTenants) {
     return (
       <div className={cn(
         "flex items-center min-w-0",
@@ -89,7 +87,7 @@ export function CompanySwitcher({ variant = 'sidebar' }: CompanySwitcherProps) {
     )
   }
 
-  // Superadmin com múltiplas empresas: mostrar selector
+  // Usuário com múltiplas empresas: mostrar selector
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>

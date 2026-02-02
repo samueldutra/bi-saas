@@ -60,10 +60,14 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
         .select('*')
         .order('created_at', { ascending: false })
 
-      // Admin: apenas usuários do próprio tenant (exclui superadmins)
-      if (currentUserRole === 'admin' && currentUserTenantId) {
+      // Admin: apenas usuários do tenant selecionado (ou tenant atual) e exclui superadmins
+      const adminTenantId = currentUserRole === 'admin'
+        ? (selectedTenantId || currentUserTenantId)
+        : null
+
+      if (currentUserRole === 'admin' && adminTenantId) {
         usersQuery = usersQuery
-          .eq('tenant_id', currentUserTenantId)
+          .eq('tenant_id', adminTenantId)
           .neq('role', 'superadmin')
       }
       
@@ -194,9 +198,13 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
           .select('*')
           .order('created_at', { ascending: false })
 
-        if (currentUserRole === 'admin' && currentUserTenantId) {
+        const adminTenantId = currentUserRole === 'admin'
+          ? (selectedTenantId || currentUserTenantId)
+          : null
+
+        if (currentUserRole === 'admin' && adminTenantId) {
           usersQuery = usersQuery
-            .eq('tenant_id', currentUserTenantId)
+            .eq('tenant_id', adminTenantId)
             .neq('role', 'superadmin')
         }
 

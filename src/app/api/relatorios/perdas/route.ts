@@ -137,7 +137,9 @@ export async function GET(request: Request) {
           return NextResponse.json({ error: 'Erro ao buscar filiais' }, { status: 500 })
         }
 
-        finalFilialIds = (allBranches || []).map((b: { branch_code: number }) => b.branch_code)
+        finalFilialIds = (allBranches || [])
+          .map((b: { branch_code: string }) => parseInt(b.branch_code, 10))
+          .filter((id) => !isNaN(id))
       } else {
         // User has restrictions - use all authorized branches
         finalFilialIds = authorizedBranches.map(id => parseInt(id, 10))

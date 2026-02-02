@@ -44,6 +44,11 @@ export async function PUT(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    const setorId = Number(id)
+    if (!Number.isFinite(setorId)) {
+      return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
+    }
+
     const { data, error } = await supabase
       .schema(schema as 'public')
       .from('setores')
@@ -53,7 +58,7 @@ export async function PUT(
         departamento_ids,
         updated_at: new Date().toISOString()
       })
-      .eq('id', id)
+      .eq('id', setorId)
       .select()
       .single()
 
@@ -103,11 +108,16 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    const setorId = Number(id)
+    if (!Number.isFinite(setorId)) {
+      return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
+    }
+
     const { error } = await supabase
       .schema(schema as 'public')
       .from('setores')
       .delete()
-      .eq('id', id)
+      .eq('id', setorId)
 
     if (error) {
       console.error('[API/SETORES] Error:', error)

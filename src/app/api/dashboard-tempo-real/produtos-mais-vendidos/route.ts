@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import type { UserProfile } from '@/types'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // FORCAR ROTA DINAMICA - NAO CACHEAR
 export const dynamic = 'force-dynamic'
@@ -13,43 +13,6 @@ const querySchema = z.object({
   filiais: z.string().optional(),
   limit: z.string().optional().default('10'),
 })
-
-async function validateSchemaAccess(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  user: { id: string },
-  requestedSchema: string
-): Promise<boolean> {
-  const { data: profile } = (await supabase
-    .from('user_profiles')
-    .select('role, can_switch_tenants, tenant_id')
-    .eq('id', user.id)
-    .single()) as { data: Pick<UserProfile, 'role' | 'can_switch_tenants' | 'tenant_id'> | null }
-
-  if (!profile) return false
-
-  if (profile.role === 'superadmin' && profile.can_switch_tenants) {
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('id')
-      .eq('supabase_schema', requestedSchema)
-      .eq('is_active', true)
-      .single()
-    return !!tenant && !error
-  }
-
-  if (profile.tenant_id) {
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('supabase_schema')
-      .eq('id', profile.tenant_id)
-      .single()
-    if (error || !tenant) return false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (tenant as any).supabase_schema === requestedSchema
-  }
-
-  return false
-}
 
 export async function GET(req: Request) {
   try {

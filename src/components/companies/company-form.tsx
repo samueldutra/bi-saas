@@ -216,7 +216,6 @@ export function CompanyForm({ company, mode }: CompanyFormProps) {
 
         const { error: updateError } = await supabase
           .from('tenants')
-          // @ts-expect-error - Supabase type inference limitation
           .update(updateData)
           .eq('id', company!.id)
 

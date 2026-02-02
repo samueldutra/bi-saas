@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { safeErrorResponse } from '@/lib/api/error-handler'
 import { z } from 'zod'
+import { hasTenantAccess } from '@/lib/security/tenant-access'
 
 const updateEmailSchema = z.object({
   userId: z.string().uuid('ID do usuário deve ser um UUID válido'),
@@ -63,12 +64,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
     }
 
-    // Admin can only update users from their own tenant
-    if (
-      currentProfile.role === 'admin' &&
-      userToUpdate.tenant_id !== currentProfile.tenant_id
-    ) {
-      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    // Admin can only update users from accessible tenants
+    if (currentProfile.role === 'admin') {
+      const canManage = await hasTenantAccess(supabase, user.id, userToUpdate.tenant_id)
+      if (!canManage) {
+        return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+      }
     }
 
     // Check if email already exists

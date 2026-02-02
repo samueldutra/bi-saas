@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { safeErrorResponse } from '@/lib/api/error-handler'
+import { hasTenantAccess } from '@/lib/security/tenant-access'
 
 export async function POST(request: Request) {
   try {
@@ -48,8 +49,9 @@ export async function POST(request: Request) {
       if (role === 'superadmin') {
         return NextResponse.json({ error: 'Admin não pode criar superadmin' }, { status: 403 })
       }
-      if (tenant_id !== currentProfile.tenant_id) {
-        return NextResponse.json({ error: 'Admin só pode criar usuários na própria empresa' }, { status: 403 })
+      const canManage = await hasTenantAccess(supabase, user.id, tenant_id)
+      if (!canManage) {
+        return NextResponse.json({ error: 'Admin só pode criar usuários em tenants acessíveis' }, { status: 403 })
       }
     }
 

@@ -9,15 +9,13 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useTenantContext } from '@/contexts/tenant-context'
-import { useIsSuperAdmin } from '@/hooks/use-permissions'
 import { useSidebar } from '@/components/ui/sidebar'
 
 export function SidebarCompanySwitcher() {
   const [open, setOpen] = React.useState(false)
   const [switching, setSwitching] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
-  const { currentTenant, accessibleTenants, loading, switchTenant } = useTenantContext()
-  const isSuperAdmin = useIsSuperAdmin()
+  const { currentTenant, accessibleTenants, loading, switchTenant, canSwitchTenants } = useTenantContext()
   const { state } = useSidebar()
   const isCollapsed = state === 'collapsed'
 
@@ -33,7 +31,7 @@ export function SidebarCompanySwitcher() {
   if (!currentTenant) return null
 
   const hasMultipleTenants = accessibleTenants.length > 1
-  const canSwitch = isSuperAdmin && hasMultipleTenants
+  const canSwitch = canSwitchTenants && hasMultipleTenants
 
   // Filter tenants based on search query
   const filteredTenants = accessibleTenants.filter(tenant =>

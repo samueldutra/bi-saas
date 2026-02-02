@@ -28,9 +28,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const loadTenants = useCallback(async () => {
     try {
       setLoading(true)
+      console.log('[TenantContext] Iniciando loadTenants')
 
       // Get current user
       const { data: { user } } = await supabase.auth.getUser()
+      console.log('[TenantContext] Usuario atual:', user?.id)
       if (!user) {
         setLoading(false)
         return
@@ -43,6 +45,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         .eq('id', user.id)
         .single() as { data: UserProfile | null; error: Error | null }
 
+      console.log('[TenantContext] Perfil carregado:', profile)
       if (profileError || !profile) {
         // Se o perfil não existe, fazer logout (pode ser email alterado ou RLS bloqueado)
         console.log('Perfil não encontrado ou acesso negado - fazendo logout')
@@ -67,6 +70,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
       // If user is superadmin, get ALL active tenants
       if (profile.role === 'superadmin') {
+        console.log('[TenantContext] Carregando tenants (superadmin)')
 
         const { data: allTenants, error: tenantsError } = await supabase
           .from('tenants')
@@ -91,25 +95,53 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           }
         }
       } else {
-        // Regular user - get their own tenant
+        // Regular user/admin - get accessible tenants (profile + user_tenant_access)
+        console.log('[TenantContext] Carregando acessos multi-tenant (nao-superadmin)')
+        const { data: accessRows, error: accessError } = await supabase
+          .from('user_tenant_access')
+          .select('tenant_id')
+          .eq('user_id', user.id) as { data: { tenant_id: string }[] | null; error: Error | null }
 
-        if (!profile.tenant_id) {
-          console.error('TenantContext: Usuário não-superadmin sem tenant_id')
+        if (accessError) {
+          console.error('TenantContext: Erro ao buscar acessos multi-tenant:', accessError)
+        }
+
+        console.log('[TenantContext] Acessos multi-tenant:', accessRows)
+        const tenantIds = new Set<string>()
+        if (profile.tenant_id) {
+          tenantIds.add(profile.tenant_id)
+        }
+        accessRows?.forEach((row) => tenantIds.add(row.tenant_id))
+        console.log('[TenantContext] tenantIds finais:', Array.from(tenantIds))
+
+        if (tenantIds.size === 0) {
+          console.error('TenantContext: Usuário não-superadmin sem tenants acessíveis')
           setLoading(false)
           return
         }
 
-        const { data: tenant, error: tenantError } = await supabase
+        const { data: tenants, error: tenantsError } = await supabase
           .from('tenants')
           .select('*')
-          .eq('id', profile.tenant_id)
-          .single() as { data: Tenant | null; error: Error | null }
+          .in('id', Array.from(tenantIds))
+          .eq('is_active', true)
+          .order('name') as { data: Tenant[] | null; error: Error | null }
 
-        if (tenantError) {
-          console.error('TenantContext: Erro ao buscar tenant:', tenantError)
-        } else if (tenant) {
-          setCurrentTenant(tenant)
-          setAccessibleTenants([tenant])
+        if (tenantsError) {
+          console.error('TenantContext: Erro ao buscar tenants:', tenantsError)
+        } else if (tenants) {
+          console.log('[TenantContext] Tenants acessiveis:', tenants.map(t => ({ id: t.id, name: t.name })))
+          setAccessibleTenants(tenants)
+
+          const savedTenantId = localStorage.getItem(CURRENT_TENANT_KEY)
+          const savedTenant = tenants.find(t => t.id === savedTenantId)
+
+          if (savedTenant) {
+            setCurrentTenant(savedTenant)
+          } else if (tenants.length > 0) {
+            setCurrentTenant(tenants[0])
+            localStorage.setItem(CURRENT_TENANT_KEY, tenants[0].id)
+          }
         }
       }
 
@@ -189,7 +221,9 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe()
   }, [loadTenants, supabase.auth])
 
-  const canSwitchTenants = userProfile?.role === 'superadmin' && userProfile?.can_switch_tenants === true
+  const canSwitchTenants = userProfile?.role === 'superadmin'
+    ? userProfile?.can_switch_tenants === true
+    : (accessibleTenants.length > 1)
 
   return (
     <TenantContext.Provider

@@ -52,6 +52,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       user_profiles: {
         Row: {
@@ -87,6 +88,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       user_tenant_access: {
         Row: {
@@ -113,6 +115,7 @@ export interface Database {
           granted_by?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       branches: {
         Row: {
@@ -154,8 +157,42 @@ export interface Database {
           estado?: string | null
           updated_at?: string
         }
+        Relationships: []
+      }
+      setores: {
+        Row: {
+          id: number
+          nome: string
+          departamento_nivel: number
+          departamento_ids: number[]
+          ativo: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          nome: string
+          departamento_nivel: number
+          departamento_ids: number[]
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          nome?: string
+          departamento_nivel?: number
+          departamento_ids?: number[]
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
+    Views: Record<string, never>
     Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }

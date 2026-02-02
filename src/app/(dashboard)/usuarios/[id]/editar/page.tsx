@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserForm } from '@/components/users/user-form'
 import type { Database } from '@/types/database.types'
+import { hasTenantAccess } from '@/lib/security/tenant-access'
 
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
 
@@ -43,9 +44,12 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     redirect('/usuarios')
   }
 
-  // Admin can only edit users from their own tenant
-  if (currentProfile.role === 'admin' && userToEdit.tenant_id !== currentProfile.tenant_id) {
-    redirect('/usuarios')
+  // Admin can only edit users from accessible tenants
+  if (currentProfile.role === 'admin') {
+    const canEdit = await hasTenantAccess(supabase, user.id, userToEdit.tenant_id)
+    if (!canEdit) {
+      redirect('/usuarios')
+    }
   }
 
   return (

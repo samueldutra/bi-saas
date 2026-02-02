@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import type { UserProfile } from '@/types'
+import { hasTenantAccess } from '@/lib/security/tenant-access'
 
 /**
  * Basic schema name validation (format only).
@@ -15,7 +16,7 @@ export function isValidSchema(schema: string): boolean {
  * Rules:
  * 1. Schema must be in the whitelist
  * 2. Superadmin with can_switch_tenants=true can access any active tenant
- * 3. Regular users can only access their own tenant's schema
+ * 3. Regular users can access tenants they have access to
  *
  * @param supabase - Supabase client instance
  * @param user - User object with id
@@ -30,46 +31,32 @@ export async function validateSchemaAccess(
   // Fast format validation first
   if (!isValidSchema(requestedSchema)) return false
 
-  // Fetch user profile
+  const { data: tenant, error: tenantError } = await supabase
+    .from('tenants')
+    .select('id')
+    .eq('supabase_schema', requestedSchema)
+    .eq('is_active', true)
+    .single()
+
+  if (tenantError || !tenant) {
+    return false
+  }
+
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role, can_switch_tenants, tenant_id')
+    .select('role, can_switch_tenants')
     .eq('id', user.id)
-    .single() as { data: Pick<UserProfile, 'role' | 'can_switch_tenants' | 'tenant_id'> | null; error: unknown }
+    .single() as { data: Pick<UserProfile, 'role' | 'can_switch_tenants'> | null; error: unknown }
 
   if (!profile) {
     return false
   }
 
-  // Superadmin with switch permission can access any active tenant
   if (profile.role === 'superadmin' && profile.can_switch_tenants === true) {
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('id')
-      .eq('supabase_schema', requestedSchema)
-      .eq('is_active', true)
-      .single()
-    
-    return !!tenant && !error
+    return true
   }
 
-  // Regular user can only access their own tenant
-  if (profile.tenant_id) {
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('supabase_schema')
-      .eq('id', profile.tenant_id)
-      .single()
-
-    if (error || !tenant) {
-      return false
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (tenant as any).supabase_schema === requestedSchema
-  }
-
-  return false
+  return hasTenantAccess(supabase, user.id, tenant.id)
 }
 
 /**

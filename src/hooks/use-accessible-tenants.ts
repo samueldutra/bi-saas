@@ -55,24 +55,43 @@ export function useAccessibleTenants() {
             setTenants(allTenants || [])
           }
         } else {
-          // Se não for superadmin, buscar apenas o tenant do usuário
-          console.log('useAccessibleTenants: Buscando tenant do usuário')
+        // Se não for superadmin, buscar tenants acessíveis (perfil + user_tenant_access)
+        console.log('useAccessibleTenants: Buscando tenants acessíveis do usuário')
 
-          if (profile.tenant_id) {
-            const { data: tenant, error } = await supabase
-              .from('tenants')
-              .select('*')
-              .eq('id', profile.tenant_id)
-              .eq('is_active', true)
-              .single() as { data: Tenant | null; error: Error | null }
+        const { data: accessRows, error: accessError } = await supabase
+          .from('user_tenant_access')
+          .select('tenant_id')
+          .eq('user_id', user.id) as { data: { tenant_id: string }[] | null; error: Error | null }
 
-            if (error) {
-              console.error('useAccessibleTenants: Erro ao buscar tenant:', error)
-            } else if (tenant) {
-              console.log(`✅ useAccessibleTenants: Tenant encontrado: ${tenant.name}`)
-              setTenants([tenant])
-            }
-          }
+        if (accessError) {
+          console.error('useAccessibleTenants: Erro ao buscar acessos multi-tenant:', accessError)
+        }
+
+        const tenantIds = new Set<string>()
+        if (profile.tenant_id) {
+          tenantIds.add(profile.tenant_id)
+        }
+        accessRows?.forEach((row) => tenantIds.add(row.tenant_id))
+
+        if (tenantIds.size === 0) {
+          console.error('useAccessibleTenants: Nenhum tenant acessível para o usuário')
+          setLoading(false)
+          return
+        }
+
+        const { data: tenantsData, error } = await supabase
+          .from('tenants')
+          .select('*')
+          .in('id', Array.from(tenantIds))
+          .eq('is_active', true)
+          .order('name') as { data: Tenant[] | null; error: Error | null }
+
+        if (error) {
+          console.error('useAccessibleTenants: Erro ao buscar tenants:', error)
+        } else {
+          console.log(`✅ useAccessibleTenants: ${tenantsData?.length || 0} tenants encontrados`)
+          setTenants(tenantsData || [])
+        }
         }
 
         setLoading(false)

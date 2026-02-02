@@ -57,7 +57,7 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
           .from('tenants')
           .select('*')
           .eq('is_active', true)
-          .order('name')
+          .order('name') as { data: Tenant[] | null }
 
         if (data) {
           setTenants(data)
@@ -68,7 +68,7 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
           .from('tenants')
           .select('*')
           .eq('id', currentUserTenantId)
-          .single()
+          .single() as { data: Tenant | null }
 
         if (data) {
           setTenants([data])
@@ -294,7 +294,6 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
 
         const { error: updateError } = await supabase
           .from('user_profiles')
-          // @ts-expect-error - Supabase type inference limitation
           .update(updateData)
           .eq('id', user.id)
 
