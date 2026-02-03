@@ -73,6 +73,10 @@ interface RowData {
   percentual_lucro: string | number
   curva_venda: string
   curva_lucro: string
+  qtde_ano_anterior?: string | number
+  valor_vendas_ano_anterior?: string | number
+  valor_lucro_ano_anterior?: string | number
+  percentual_lucro_ano_anterior?: string | number
 }
 
 type PrevYearMap = Map<string, {
@@ -180,6 +184,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Tamanho de página inválido' }, { status: 400 })
     }
 
+    const requestStart = Date.now()
     console.log('[Venda Curva] Calling RPC with params:', {
       p_schema: schema,
       p_mes: mes,
@@ -192,44 +197,155 @@ export async function GET(request: Request) {
       authorizedBranches,
     })
 
+    const now = new Date()
+    const isMesAtual = now.getMonth() + 1 === mes && now.getFullYear() === ano
+    const inlinePrevYearCutoff = compareAnoAnterior && isMesAtual
+      ? now.toISOString().slice(0, 10)
+      : undefined
+
+    const rpcClient = supabase as unknown as {
+      rpc: (fn: string, params: Record<string, unknown>) => Promise<{
+        data: unknown
+        error: { message?: string; details?: string; hint?: string; code?: string } | null
+      }>
+    }
+
+    const fetchReportFast = async (
+      targetAno: number,
+      targetPage: number,
+      targetPageSize: number,
+      dataFimOverride?: string
+    ): Promise<{ rows: RowData[]; supportsInlinePrevYear: boolean } | null> => {
+      try {
+        const rpcParams: Record<string, unknown> = {
+          p_schema: schema,
+          p_mes: mes,
+          p_ano: targetAno,
+          p_filial_ids: finalFilialIds,
+          p_page: targetPage,
+          p_page_size: targetPageSize,
+          p_data_fim_override: dataFimOverride ?? null,
+        }
+        const { data, error } = await rpcClient.rpc('get_venda_curva_report_fast', rpcParams)
+
+        if (error) {
+          throw error
+        }
+
+        return {
+          rows: (data || []) as RowData[],
+          supportsInlinePrevYear: true,
+        }
+      } catch (error: unknown) {
+        const err = error as { message?: string; details?: string; hint?: string; code?: string }
+        console.warn('[Venda Curva] Error fetching report fast, falling back to v3:', {
+          message: err?.message,
+          details: err?.details,
+          hint: err?.hint,
+          code: err?.code,
+        })
+        return null
+      }
+    }
+
     const fetchReport = async (
       targetAno: number,
       targetPage: number,
       targetPageSize: number,
       dataFimOverride?: string
-    ) => {
-      const promises = finalFilialIds.map(async (filialId) => {
+    ): Promise<{ rows: RowData[]; supportsInlinePrevYear: boolean }> => {
+      try {
         const rpcParams: Record<string, unknown> = {
           p_schema: schema,
           p_mes: mes,
           p_ano: targetAno,
-          p_filial_id: filialId,
+          p_filial_ids: finalFilialIds,
           p_page: targetPage,
           p_page_size: targetPageSize,
           p_data_fim_override: dataFimOverride ?? null,
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data, error } = await (supabase as any).rpc('get_venda_curva_report', rpcParams)
+        const { data, error } = await rpcClient.rpc('get_venda_curva_report_v3', rpcParams)
 
         if (error) {
-          console.error('[Venda Curva] Error fetching report for filial', filialId, ':', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
-          })
-          throw new Error(`Erro ao buscar dados da filial ${filialId}: ${error.message}`)
+          throw error
         }
 
-        return (data || []) as RowData[]
-      })
+        return {
+          rows: (data || []) as RowData[],
+          supportsInlinePrevYear: false
+        }
+      } catch (error: unknown) {
+        const err = error as { message?: string; details?: string; hint?: string; code?: string }
+        console.error('[Venda Curva] Error fetching report v3, falling back to v2:', {
+          message: err?.message,
+          details: err?.details,
+          hint: err?.hint,
+          code: err?.code,
+        })
 
-      const results = await Promise.all(promises)
-      return results.flat()
+        const rpcParams: Record<string, unknown> = {
+          p_schema: schema,
+          p_mes: mes,
+          p_ano: targetAno,
+          p_filial_ids: finalFilialIds,
+          p_page: targetPage,
+          p_page_size: targetPageSize,
+          p_data_fim_override: dataFimOverride ?? null,
+        }
+        const { data, error: v2Error } = await rpcClient.rpc('get_venda_curva_report_v2', rpcParams)
+
+        if (!v2Error) {
+          return {
+            rows: (data || []) as RowData[],
+            supportsInlinePrevYear: false
+          }
+        }
+
+        console.error('[Venda Curva] Error fetching report v2, falling back to v1:', {
+          message: v2Error.message,
+          details: v2Error.details,
+          hint: v2Error.hint,
+          code: v2Error.code,
+        })
+
+        const results: RowData[] = []
+        for (const filialId of finalFilialIds) {
+          const rpcParams: Record<string, unknown> = {
+            p_schema: schema,
+            p_mes: mes,
+            p_ano: targetAno,
+            p_filial_id: filialId,
+            p_page: targetPage,
+            p_page_size: targetPageSize,
+            p_data_fim_override: dataFimOverride ?? null,
+          }
+          const { data, error: v1Error } = await rpcClient.rpc('get_venda_curva_report', rpcParams)
+
+          if (v1Error) {
+            console.error('[Venda Curva] Error fetching report v1 for filial', filialId, ':', {
+              message: v1Error.message,
+              details: v1Error.details,
+              hint: v1Error.hint,
+              code: v1Error.code,
+            })
+            throw new Error(`Erro ao buscar dados da filial ${filialId}: ${v1Error.message}`)
+          }
+
+          results.push(...((data || []) as RowData[]))
+        }
+
+        return {
+          rows: results,
+          supportsInlinePrevYear: false
+        }
+      }
     }
 
     // Call RPC function for each filial in parallel (ano atual)
-    const dataArray = await fetchReport(ano, page, pageSize)
+    const rpcStart = Date.now()
+    const fastResult = await fetchReportFast(ano, page, pageSize, inlinePrevYearCutoff)
+    const { rows: dataArray, supportsInlinePrevYear } = fastResult ?? await fetchReport(ano, page, pageSize)
+    const rpcDurationMs = Date.now() - rpcStart
 
     if (dataArray.length === 0) {
       console.log('[Venda Curva] No data received')
@@ -245,21 +361,20 @@ export async function GET(request: Request) {
     console.log('[Venda Curva] Received', dataArray.length, 'rows total from', finalFilialIds.length, 'filiais')
 
     let prevYearMap: PrevYearMap | null = null
-    if (compareAnoAnterior && dataArray.length > 0) {
-      const now = new Date()
-      const currentMes = now.getMonth() + 1
-      const currentAno = now.getFullYear()
-      const isMesAtual = currentMes === mes && currentAno === ano
+    let prevYearDurationMs = 0
+    if (compareAnoAnterior && dataArray.length > 0 && !supportsInlinePrevYear) {
+      const prevYearStart = Date.now()
       let prevYearDataFimOverride: string | undefined
       if (isMesAtual) {
-        const prevYear = currentAno - 1
+        const prevYear = now.getFullYear() - 1
         const cutoffDate = new Date(prevYear, now.getMonth(), now.getDate())
         prevYearDataFimOverride = cutoffDate.toISOString().slice(0, 10)
       }
       const currentKeys = new Set(
         dataArray.map((row) => buildRowKey(row.dept_nivel3, row.dept_nivel2, row.dept_nivel1, row.produto_codigo, row.filial_id))
       )
-      const prevYearData = await fetchReport(ano - 1, 1, 10000, prevYearDataFimOverride)
+      const prevYearDataResult = await fetchReport(ano - 1, 1, 10000, prevYearDataFimOverride)
+      const prevYearData = prevYearDataResult.rows
       prevYearMap = new Map()
       for (const row of prevYearData) {
         const key = buildRowKey(row.dept_nivel3, row.dept_nivel2, row.dept_nivel1, row.produto_codigo, row.filial_id)
@@ -271,10 +386,13 @@ export async function GET(request: Request) {
           percentual_lucro: typeof row.percentual_lucro === 'string' ? parseFloat(row.percentual_lucro || '0') : (row.percentual_lucro || 0),
         })
       }
+      prevYearDurationMs = Date.now() - prevYearStart
     }
 
     // Organize data hierarchically
+    const hierarchyStart = Date.now()
     const hierarquiaObj = organizeHierarchyFlat(dataArray, prevYearMap)
+    const hierarchyDurationMs = Date.now() - hierarchyStart
     
     // Convert hierarchy object to array format expected by frontend
     // Sort nivel3 by total_vendas DESC
@@ -332,11 +450,19 @@ export async function GET(request: Request) {
       }))
       .sort((a, b) => b.total_vendas - a.total_vendas) // Sort nivel3
 
+    const totalDurationMs = Date.now() - requestStart
     console.log('[Venda Curva] Hierarchy array length:', hierarquiaArray.length)
     console.log('[Venda Curva] Sample dept3:', hierarquiaArray[0] ? {
       nome: hierarquiaArray[0].dept_nivel3,
       nivel2_count: hierarquiaArray[0].nivel2?.length
     } : 'N/A')
+    console.log('[Venda Curva] Timings (ms):', {
+      rpc: rpcDurationMs,
+      prev_year: prevYearDurationMs,
+      hierarchy: hierarchyDurationMs,
+      total: totalDurationMs,
+      fast_rpc: supportsInlinePrevYear,
+    })
 
     return NextResponse.json({
       total_records: hierarquiaArray.length,
@@ -421,7 +547,13 @@ function organizeHierarchyFlat(data: RowData[], prevYearMap?: PrevYearMap | null
 
     // Add product
     const rowKey = buildRowKey(dept3, dept2, dept1, row.produto_codigo, row.filial_id)
-    const prev = prevYearMap?.get(rowKey)
+    const prevFromMap = prevYearMap?.get(rowKey)
+    const prev = prevFromMap ?? {
+      qtde: typeof row.qtde_ano_anterior === 'string' ? parseFloat(row.qtde_ano_anterior || '0') : (row.qtde_ano_anterior || 0),
+      valor_vendas: typeof row.valor_vendas_ano_anterior === 'string' ? parseFloat(row.valor_vendas_ano_anterior || '0') : (row.valor_vendas_ano_anterior || 0),
+      valor_lucro: typeof row.valor_lucro_ano_anterior === 'string' ? parseFloat(row.valor_lucro_ano_anterior || '0') : (row.valor_lucro_ano_anterior || 0),
+      percentual_lucro: typeof row.percentual_lucro_ano_anterior === 'string' ? parseFloat(row.percentual_lucro_ano_anterior || '0') : (row.percentual_lucro_ano_anterior || 0),
+    }
     const produto = {
       codigo: row.produto_codigo,
       nome: row.produto_descricao,

@@ -36,8 +36,6 @@ interface MultiSelectProps
   onValueChange: (value: Option[]) => void
   placeholder?: string
   disabled?: boolean
-  showSelectAll?: boolean
-  onSelectAll?: () => void
 }
 
 export const MultiSelect = React.forwardRef<
@@ -52,8 +50,6 @@ export const MultiSelect = React.forwardRef<
     placeholder = 'Selecione...',
     className,
     disabled,
-    showSelectAll = false,
-    onSelectAll,
   },
   ref
 ) => {
@@ -133,40 +129,13 @@ export const MultiSelect = React.forwardRef<
               disabled={disabled}
             />
           </div>
-          {showSelectAll && onSelectAll && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onSelectAll()
-              }}
-              disabled={disabled}
-              className="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap px-2 py-1 rounded hover:bg-accent transition-colors"
-            >
-              Todas
-            </button>
-          )}
         </div>
       </div>
       <div className="relative mt-2">
         {open && !disabled ? (
           <div className="absolute top-0 z-10 w-full rounded-md border bg-popover text-popover-foreground shadow-md outline-none animate-in">
             {/* Cabeçalho com ações em massa */}
-            <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                }}
-                onClick={() => {
-                  onValueChange([...safeOptions])
-                }}
-                className="text-xs text-primary hover:text-primary/80 font-medium hover:underline"
-              >
-                Selecionar Todas
-              </button>
+            <div className="flex items-center justify-end px-3 py-2 border-b bg-muted/30">
               <button
                 type="button"
                 onMouseDown={(e) => {

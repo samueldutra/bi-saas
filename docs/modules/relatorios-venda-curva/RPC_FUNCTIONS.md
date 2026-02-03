@@ -120,3 +120,82 @@ from public.get_venda_curva_report(
 
 - `demo.vendas`: índices em `data_venda`, `filial_id`, `id_produto` com includes.
 - `demo.produtos`: índices em `departamento_id`, `curva_abc`, `(id, filial_id)`.
+
+---
+
+## Função: `get_venda_curva_report_fast`
+
+### Objetivo
+
+Versão otimizada que usa a tabela de agregados mensais (`vendas_mensal_produto`) para reduzir drasticamente custo de CPU e IO. O comparativo do ano anterior é calculado dentro da própria função.
+
+### Tabela de Agregados (base)
+
+```sql
+CREATE TABLE IF NOT EXISTS demo.vendas_mensal_produto (
+  ano smallint not null,
+  mes smallint not null,
+  filial_id bigint not null,
+  id_produto bigint not null,
+  total_qtde numeric(15, 5) not null default 0,
+  total_valor_vendas numeric(15, 5) not null default 0,
+  total_lucro numeric(15, 5) not null default 0,
+  primary key (ano, mes, filial_id, id_produto)
+);
+```
+
+### Assinatura
+
+```sql
+CREATE OR REPLACE FUNCTION public.get_venda_curva_report_fast(
+  p_schema text,
+  p_mes integer,
+  p_ano integer,
+  p_filial_ids bigint[] DEFAULT NULL::bigint[],
+  p_page integer DEFAULT 1,
+  p_page_size integer DEFAULT 50,
+  p_data_fim_override date DEFAULT NULL::date
+)
+RETURNS TABLE(
+  dept_nivel3 text,
+  dept_nivel2 text,
+  dept_nivel1 text,
+  produto_codigo bigint,
+  produto_descricao text,
+  filial_id bigint,
+  qtde numeric,
+  valor_vendas numeric,
+  valor_lucro numeric,
+  percentual_lucro numeric,
+  curva_venda text,
+  curva_lucro text,
+  qtde_ano_anterior numeric,
+  valor_vendas_ano_anterior numeric,
+  valor_lucro_ano_anterior numeric,
+  percentual_lucro_ano_anterior numeric
+)
+LANGUAGE plpgsql
+```
+
+### Observações
+
+- Mantém a mesma paginação por **departamento nível 3**.
+- Evita varrer `vendas` a cada request.
+- O comparativo do ano anterior é retornado na mesma linha, sem RPC adicional.
+- Quando `p_data_fim_override` é informado, o comparativo do ano anterior é cortado até a mesma data (D-1), usando `vendas` apenas para o período necessário.
+
+---
+
+## Função: `get_venda_curva_totais`
+
+### Objetivo
+
+Retorna apenas os totais por departamento (níveis 3/2/1) para viabilizar lazy-load de produtos no frontend.
+
+---
+
+## Função: `get_venda_curva_produtos`
+
+### Objetivo
+
+Retorna produtos de um **subgrupo (nível 1)** com paginação (50 por vez). Suporta filtro de busca via `p_search`.

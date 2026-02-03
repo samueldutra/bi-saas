@@ -4,6 +4,11 @@ Este diretório contém documentação técnica complementar do projeto BI SaaS.
 
 ## Estrutura
 
+- **MULTI_TENANT_ACCESS.md** - Funcionamento do multi-tenant e como conceder/remover acessos
+  - Regras de RLS e funcoes usadas
+  - Fluxos por SQL e API
+  - Exemplo real aplicado
+
 - **N8N_QUERIES.md** - Queries SQL documentadas para integração com N8N e automações
   - Queries prontas para uso em workflows de automação
   - Exemplos de uso e respostas esperadas

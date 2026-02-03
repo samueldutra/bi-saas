@@ -1,7 +1,8 @@
 'use client'
 
 // Relatório de Venda por Curva ABC - MultiSelect de filiais sem opção "Todas"
-import { useState, useEffect, useMemo, memo, useRef } from 'react'
+import { useState, useEffect, useMemo, memo, useRef, useCallback, type UIEvent } from 'react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -280,7 +281,16 @@ export default function VendaCurvaPage() {
   // Estados de expansão
   const [expandedDept1, setExpandedDept1] = useState<Record<string, boolean>>({})
   const [expandedDept2, setExpandedDept2] = useState<Record<string, boolean>>({})
-  const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
+const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
+
+  const produtosPageSize = 50
+  const [produtosState, setProdutosState] = useState<Record<string, {
+    items: Produto[]
+    page: number
+    hasMore: boolean
+    loading: boolean
+    error?: string
+  }>>({})
 
   // Filtro de produto - COM DEBOUNCE REAL
   const [filtroProduto, setFiltroProduto] = useState('') // Valor usado para filtrar (com debounce)
@@ -323,6 +333,7 @@ export default function VendaCurvaPage() {
         return idA - idB
       })
       setFiliaisSelecionadas([sortedFiliais[0]])
+      setIsDirty(true)
       setDefaultFilialSet(true)
     }
   }, [todasAsFiliais, defaultFilialSet])
@@ -339,106 +350,52 @@ export default function VendaCurvaPage() {
     }
   }, [userProfile, currentTenant])
 
-  // Aplicar filtros automaticamente quando mudarem
-  useEffect(() => {
-    if (currentTenant?.supabase_schema && filiaisSelecionadas.length > 0 && mes && ano) {
-      fetchData()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mes, ano, filiaisSelecionadas, compararAnoAnterior])
+  const maxFiliais = 5
+  const [isDirty, setIsDirty] = useState(true)
+  const [activeQueryKey, setActiveQueryKey] = useState<string | null>(null)
 
-  // Carregar dados quando a página mudar
+  const buildQueryKey = () =>
+    `${mes}|${ano}|${filiaisSelecionadas.map(f => f.value).sort().join(',')}|${compararAnoAnterior ? 1 : 0}`
+
+  // Carregar dados quando a página mudar (apenas se filtros já foram aplicados)
   useEffect(() => {
+    if (!activeQueryKey) return
+    if (activeQueryKey !== buildQueryKey()) return
     if (currentTenant?.supabase_schema && filiaisSelecionadas.length > 0 && page > 1) {
       fetchData()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
 
-  // Calcular hierarquia filtrada usando useMemo
   const hierarquiaFiltrada = useMemo(() => {
     if (!data?.hierarquia) return []
-    if (!filtroProduto || filtroProduto.length < 3) return data.hierarquia
+    return data.hierarquia
+  }, [data?.hierarquia])
 
-    // Função auxiliar para verificar correspondência
-    const produtoCorresponde = (produto: Produto, termo: string): boolean => {
-      const termoBusca = termo.toLowerCase()
-      const codigoStr = produto.codigo.toString()
-      const descricao = produto.descricao.toLowerCase()
-      return codigoStr.includes(termoBusca) || descricao.includes(termoBusca)
-    }
-
-    // Filtrar hierarquia mantendo apenas departamentos com produtos correspondentes
-    const resultado: DeptNivel3[] = []
-
-    for (const dept3 of data.hierarquia) {
-      const nivel2Filtrado: DeptNivel2[] = []
-
-      if (dept3.nivel2) {
-        for (const dept2 of dept3.nivel2) {
-          const nivel1Filtrado: DeptNivel1[] = []
-
-          if (dept2.nivel1) {
-            for (const dept1 of dept2.nivel1) {
-              if (dept1.produtos?.some(p => produtoCorresponde(p, filtroProduto))) {
-                nivel1Filtrado.push(dept1)
-              }
-            }
-          }
-
-          if (nivel1Filtrado.length > 0) {
-            nivel2Filtrado.push({
-              ...dept2,
-              nivel1: nivel1Filtrado
-            })
-          }
-        }
-      }
-
-      if (nivel2Filtrado.length > 0) {
-        resultado.push({
-          ...dept3,
-          nivel2: nivel2Filtrado
-        })
-      }
-    }
-
-    return resultado
-  }, [data?.hierarquia, filtroProduto])
-
-  // Expandir automaticamente os collapsibles quando houver filtro ativo
-  useEffect(() => {
-    if (filtroProduto.length >= 3 && hierarquiaFiltrada.length > 0) {
-      // Expandir todos os dept3, dept2 e dept1 que têm produtos correspondentes
-      const newExpandedDept3: Record<string, boolean> = {}
-      const newExpandedDept2: Record<string, boolean> = {}
-      const newExpandedDept1: Record<string, boolean> = {}
-
-      hierarquiaFiltrada.forEach(dept3 => {
-        // Expandir dept3 (Setor)
-        newExpandedDept3[dept3.dept3_id.toString()] = true
-
-        dept3.nivel2?.forEach(dept2 => {
-          // Expandir dept2 (Grupo) - usando apenas o ID do dept2
-          newExpandedDept2[dept2.dept2_id.toString()] = true
-
-          dept2.nivel1?.forEach(dept1 => {
-            // Expandir dept1 (Subgrupo) - usando apenas o ID do dept1
-            newExpandedDept1[dept1.dept1_id.toString()] = true
+  const dept1Lookup = useMemo(() => {
+    const map = new Map<string, { dept3: string; dept2: string; dept1: string }>()
+    if (!data?.hierarquia) return map
+    data.hierarquia.forEach(dept3 => {
+      dept3.nivel2?.forEach(dept2 => {
+        dept2.nivel1?.forEach(dept1 => {
+          map.set(dept1.dept1_id.toString(), {
+            dept3: dept3.dept_nivel3,
+            dept2: dept2.dept_nivel2,
+            dept1: dept1.dept_nivel1,
           })
         })
       })
+    })
+    return map
+  }, [data?.hierarquia])
 
-      setExpandedDept3(newExpandedDept3)
-      setExpandedDept2(newExpandedDept2)
-      setExpandedDept1(newExpandedDept1)
-    } else if (filtroProduto.length < 3) {
-      // Fechar todos quando o filtro for removido
-      setExpandedDept3({})
-      setExpandedDept2({})
-      setExpandedDept1({})
-    }
-  }, [filtroProduto, hierarquiaFiltrada])
+  useEffect(() => {
+    setProdutosState({})
+  }, [mes, ano, filiaisSelecionadas, compararAnoAnterior])
+
+  useEffect(() => {
+    setProdutosState({})
+  }, [filtroProduto])
 
   // Buscar dados
   const fetchData = async () => {
@@ -447,6 +404,10 @@ export default function VendaCurvaPage() {
     // Validar se filial está selecionada
     if (filiaisSelecionadas.length === 0) {
       setError('Por favor, selecione ao menos uma filial')
+      return
+    }
+    if (filiaisSelecionadas.length > maxFiliais) {
+      toast.error(`Selecione no máximo ${maxFiliais} filiais`)
       return
     }
 
@@ -464,7 +425,7 @@ export default function VendaCurvaPage() {
         compare_ano_anterior: compararAnoAnterior ? '1' : '0',
       })
 
-      const response = await fetch(`/api/relatorios/venda-curva?${params}`)
+      const response = await fetch(`/api/relatorios/venda-curva/totais?${params}`)
       const result = await response.json()
 
       if (!response.ok) {
@@ -472,6 +433,7 @@ export default function VendaCurvaPage() {
       }
 
       setData(result)
+      setActiveQueryKey(buildQueryKey())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao buscar dados')
       console.error('Error fetching data:', err)
@@ -479,6 +441,113 @@ export default function VendaCurvaPage() {
       setLoading(false)
     }
   }
+
+  const handleGerar = async () => {
+    setPage(1)
+    setIsDirty(false)
+    const nextKey = buildQueryKey()
+    setActiveQueryKey(nextKey)
+    await fetchData()
+  }
+
+  const fetchProdutos = useCallback(async (args: {
+    dept3: string
+    dept2: string
+    dept1: string
+    deptKey: string
+    page: number
+  }) => {
+    if (!currentTenant?.supabase_schema) return
+    if (filiaisSelecionadas.length === 0) return
+
+    const params = new URLSearchParams({
+      schema: currentTenant.supabase_schema,
+      mes,
+      ano,
+      filial_id: filiaisSelecionadas.map(f => f.value).join(','),
+      page: args.page.toString(),
+      page_size: produtosPageSize.toString(),
+      compare_ano_anterior: compararAnoAnterior ? '1' : '0',
+      dept3: args.dept3,
+      dept2: args.dept2,
+      dept1: args.dept1,
+    })
+
+    if (filtroProduto.length >= 3) {
+      params.set('q', filtroProduto)
+    }
+
+    setProdutosState(prev => ({
+      ...prev,
+      [args.deptKey]: {
+        items: prev[args.deptKey]?.items ?? [],
+        page: prev[args.deptKey]?.page ?? 0,
+        hasMore: prev[args.deptKey]?.hasMore ?? true,
+        loading: true,
+      }
+    }))
+
+    try {
+      const response = await fetch(`/api/relatorios/venda-curva/produtos?${params}`)
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao buscar produtos')
+      }
+
+      setProdutosState(prev => {
+        const current = prev[args.deptKey] ?? { items: [], page: 0, hasMore: true, loading: false }
+        return {
+          ...prev,
+          [args.deptKey]: {
+            items: args.page === 1 ? result.items : [...current.items, ...result.items],
+            page: args.page,
+            hasMore: !!result.has_more,
+            loading: false,
+          }
+        }
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar produtos'
+      setProdutosState(prev => ({
+        ...prev,
+        [args.deptKey]: {
+          items: prev[args.deptKey]?.items ?? [],
+          page: prev[args.deptKey]?.page ?? 0,
+          hasMore: prev[args.deptKey]?.hasMore ?? false,
+          loading: false,
+          error: message
+        }
+      }))
+    }
+  }, [ano, compararAnoAnterior, currentTenant?.supabase_schema, filiaisSelecionadas, filtroProduto, mes, produtosPageSize])
+
+  useEffect(() => {
+    if (filtroProduto.length < 3) return
+    const openDeptIds = Object.entries(expandedDept1)
+      .filter(([, isOpen]) => isOpen)
+      .map(([deptId]) => deptId)
+
+    openDeptIds.forEach((deptId) => {
+      const info = dept1Lookup.get(deptId)
+      if (!info) return
+      fetchProdutos({
+        dept3: info.dept3,
+        dept2: info.dept2,
+        dept1: info.dept1,
+        deptKey: deptId,
+        page: 1,
+      })
+    })
+  }, [filtroProduto, expandedDept1, dept1Lookup, fetchProdutos])
+
+  const handleProdutosScroll = useCallback((deptKey: string, dept3: string, dept2: string, dept1: string, event: UIEvent<HTMLDivElement>) => {
+    const current = produtosState[deptKey]
+    if (!current || current.loading || !current.hasMore) return
+    const target = event.currentTarget
+    if (target.scrollTop + target.clientHeight >= target.scrollHeight - 80) {
+      fetchProdutos({ dept3, dept2, dept1, deptKey, page: current.page + 1 })
+    }
+  }, [fetchProdutos, produtosState])
 
   // Exportar PDF
   const handleExportarPDF = async () => {
@@ -825,10 +894,6 @@ export default function VendaCurvaPage() {
   }
 
   // Funções de toggle
-  const toggleDept1 = (id: string) => {
-    setExpandedDept1(prev => ({ ...prev, [id]: !prev[id] }))
-  }
-
   const toggleDept2 = (id: string) => {
     setExpandedDept2(prev => ({ ...prev, [id]: !prev[id] }))
   }
@@ -924,31 +989,39 @@ export default function VendaCurvaPage() {
           <CardDescription>Selecione o período e filial para análise</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:gap-4">
-            {/* Filiais */}
-            <div className="flex flex-col gap-2 flex-1 min-w-0">
-              <Label>Filiais</Label>
-              <div className="h-10">
-                <MultiSelect
-                  options={todasAsFiliais}
-                  value={filiaisSelecionadas}
-                  onValueChange={(value) => {
-                    setFiliaisSelecionadas(value)
-                    setPage(1)
-                  }}
-                  placeholder={isLoadingBranches ? "Carregando filiais..." : "Selecione..."}
-                  disabled={isLoadingBranches}
-                  className="w-full h-10"
-                />
+          <div className="space-y-4">
+            {/* Linha 1: Filiais (70%), Mês (15%), Ano (15%) */}
+            <div className="grid grid-cols-1 gap-4 items-end md:grid-cols-[7fr_1.5fr_1.5fr]">
+              <div className="space-y-2">
+                <Label>Filiais</Label>
+                <div className="h-10 relative">
+                  <MultiSelect
+                    options={todasAsFiliais}
+                    value={filiaisSelecionadas}
+                    onValueChange={(value) => {
+                    if (value.length > maxFiliais) {
+                      toast.error(`Selecione no máximo ${maxFiliais} filiais`)
+                      return
+                    }
+                      setFiliaisSelecionadas(value)
+                      setPage(1)
+                      setIsDirty(true)
+                      setError('')
+                    }}
+                    placeholder={isLoadingBranches ? "Carregando filiais..." : "Selecione..."}
+                    disabled={isLoadingBranches}
+                    className="w-full h-10"
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                    Máx. {maxFiliais}
+                  </span>
+                </div>
               </div>
-            </div>
 
-            {/* Mês */}
-            <div className="flex flex-col gap-2 w-full sm:w-auto">
-              <Label>Mês</Label>
-              <div className="h-10">
-                <Select value={mes} onValueChange={(value) => { setMes(value); setPage(1) }}>
-                  <SelectTrigger className="w-full sm:w-[160px] h-10">
+              <div className="space-y-2">
+                <Label>Mês</Label>
+                <Select value={mes} onValueChange={(value) => { setMes(value); setPage(1); setIsDirty(true) }}>
+                  <SelectTrigger className="h-10">
                     <SelectValue placeholder="Selecione o mês" />
                   </SelectTrigger>
                   <SelectContent>
@@ -960,14 +1033,11 @@ export default function VendaCurvaPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            {/* Ano */}
-            <div className="flex flex-col gap-2 w-full sm:w-auto">
-              <Label>Ano</Label>
-              <div className="h-10">
-                <Select value={ano} onValueChange={(value) => { setAno(value); setPage(1) }}>
-                  <SelectTrigger className="w-full sm:w-[120px] h-10">
+              <div className="space-y-2">
+                <Label>Ano</Label>
+                <Select value={ano} onValueChange={(value) => { setAno(value); setPage(1); setIsDirty(true) }}>
+                  <SelectTrigger className="h-10">
                     <SelectValue placeholder="Selecione o ano" />
                   </SelectTrigger>
                   <SelectContent>
@@ -981,45 +1051,64 @@ export default function VendaCurvaPage() {
               </div>
             </div>
 
-            {/* Filtro de Produto - COM DEBOUNCE REAL */}
-            <div className="flex flex-col gap-2 flex-1 min-w-0">
-              <Label>Filtrar Produto</Label>
-              <div className="h-10 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Digite código ou nome (mín. 3 caracteres)"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  className="w-full h-10 pl-9"
+            {/* Linha 2: Filtrar Produto (50%), Comparar (30%), Botão (20%) */}
+            <div className="grid grid-cols-1 gap-4 items-end md:grid-cols-[5fr_3fr_2fr]">
+              <div className="space-y-2">
+                <Label>Filtrar Produto</Label>
+                <div className="h-10 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Digite código ou nome (mín. 3 caracteres)"
+                    value={inputValue}
+                    onChange={(e) => {
+                      setInputValue(e.target.value)
+                      setIsDirty(true)
+                    }}
+                    className="w-full h-10 pl-9"
+                  />
+                  {inputValue.length > 0 && inputValue.length < 3 && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      Mín. 3 caracteres
+                    </span>
+                  )}
+                  {inputValue.length >= 3 && filtroProduto !== inputValue && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-500">
+                      Filtrando...
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 h-10">
+                <Checkbox
+                  id="comparar-ano-anterior"
+                  checked={compararAnoAnterior}
+                  onCheckedChange={(value) => {
+                    setCompararAnoAnterior(!!value)
+                    setPage(1)
+                    setIsDirty(true)
+                  }}
                 />
-                {inputValue.length > 0 && inputValue.length < 3 && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                    Mín. 3 caracteres
-                  </span>
-                )}
-                {/* Indicador visual de que está filtrando */}
-                {inputValue.length >= 3 && filtroProduto !== inputValue && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-500">
-                    Filtrando...
+                <Label htmlFor="comparar-ano-anterior" className="text-sm">
+                  Comparar com vendas do ano anterior
+                </Label>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={handleGerar}
+                  disabled={loading || filiaisSelecionadas.length === 0 || filiaisSelecionadas.length > maxFiliais}
+                  className="h-10"
+                >
+                  Gerar
+                </Button>
+                {isDirty && (
+                  <span className="text-[10px] text-muted-foreground">
+                    Filtros alterados, clique em Gerar
                   </span>
                 )}
               </div>
-            </div>
-
-            {/* Comparar Ano Anterior */}
-            <div className="flex items-center gap-2 h-10">
-              <Checkbox
-                id="comparar-ano-anterior"
-                checked={compararAnoAnterior}
-                onCheckedChange={(value) => {
-                  setCompararAnoAnterior(!!value)
-                  setPage(1)
-                }}
-              />
-              <Label htmlFor="comparar-ano-anterior" className="text-sm">
-                Comparar com vendas do ano anterior
-              </Label>
             </div>
           </div>
         </CardContent>
@@ -1208,11 +1297,33 @@ export default function VendaCurvaPage() {
 
                                 <CollapsibleContent>
                                   <div className="border-t p-3 space-y-2">
-                                    {dept2.nivel1?.map((dept1) => (
+                                    {dept2.nivel1?.map((dept1) => {
+                                      const deptKey = dept1.dept1_id.toString()
+                                      const produtosInfo = produtosState[deptKey] ?? {
+                                        items: [],
+                                        page: 0,
+                                        hasMore: true,
+                                        loading: false,
+                                      }
+
+                                      const handleDept1OpenChange = (open: boolean) => {
+                                        setExpandedDept1(prev => ({ ...prev, [deptKey]: open }))
+                                        if (open && produtosInfo.items.length === 0 && !produtosInfo.loading) {
+                                          fetchProdutos({
+                                            dept3: dept3.dept_nivel3,
+                                            dept2: dept2.dept_nivel2,
+                                            dept1: dept1.dept_nivel1,
+                                            deptKey,
+                                            page: 1
+                                          })
+                                        }
+                                      }
+
+                                      return (
                                       <Collapsible
                                         key={dept1.dept1_id}
-                                        open={expandedDept1[dept1.dept1_id.toString()]}
-                                        onOpenChange={() => toggleDept1(dept1.dept1_id.toString())}
+                                        open={expandedDept1[deptKey]}
+                                        onOpenChange={handleDept1OpenChange}
                                       >
                                         <div className="rounded-lg border bg-card/30">
                                           <CollapsibleTrigger className="flex w-full items-center justify-between p-2.5 hover:bg-accent/30">
@@ -1275,19 +1386,50 @@ export default function VendaCurvaPage() {
 
                                         <CollapsibleContent>
                                           <div className="border-t">
-                                            {dept1.produtos && dept1.produtos.length > 0 && (
-                                              <ProdutoTable
-                                                produtos={dept1.produtos}
-                                                filtroProduto={filtroProduto}
-                                                compararAnoAnterior={compararAnoAnterior}
-                                                compareLabel={compareLabel}
-                                              />
-                                            )}
+                                            <div
+                                              className="max-h-[380px] overflow-auto"
+                                              onScroll={(event) => handleProdutosScroll(
+                                                deptKey,
+                                                dept3.dept_nivel3,
+                                                dept2.dept_nivel2,
+                                                dept1.dept_nivel1,
+                                                event
+                                              )}
+                                            >
+                                              {produtosInfo.items.length > 0 && (
+                                                <ProdutoTable
+                                                  produtos={produtosInfo.items}
+                                                  filtroProduto={filtroProduto}
+                                                  compararAnoAnterior={compararAnoAnterior}
+                                                  compareLabel={compareLabel}
+                                                />
+                                              )}
+                                              {produtosInfo.loading && (
+                                                <div className="p-3 text-xs text-muted-foreground">
+                                                  Carregando produtos...
+                                                </div>
+                                              )}
+                                              {!produtosInfo.loading && produtosInfo.items.length === 0 && (
+                                                <div className="p-3 text-xs text-muted-foreground">
+                                                  Nenhum produto encontrado.
+                                                </div>
+                                              )}
+                                              {!produtosInfo.loading && produtosInfo.hasMore && produtosInfo.items.length > 0 && (
+                                                <div className="p-2 text-center text-[10px] text-muted-foreground">
+                                                  Role para carregar mais...
+                                                </div>
+                                              )}
+                                              {produtosInfo.error && (
+                                                <div className="p-3 text-xs text-destructive">
+                                                  {produtosInfo.error}
+                                                </div>
+                                              )}
+                                            </div>
                                           </div>
                                         </CollapsibleContent>
                                         </div>
                                       </Collapsible>
-                                    ))}
+                                    )})}
                                   </div>
                                 </CollapsibleContent>
                               </div>

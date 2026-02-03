@@ -14,7 +14,7 @@ flowchart TD
   B --> C[GET /api/relatorios/venda-curva]
   C --> D[Valida autenticação e schema]
   D --> E[Filtra filiais autorizadas]
-  E --> F[Chama RPC get_venda_curva_report por filial]
+  E --> F[Chama RPC get_venda_curva_report_fast]
   F --> G[Consolida resultados]
   G --> H[Transforma em hierarquia]
   H --> I[Retorna JSON]
@@ -30,11 +30,12 @@ flowchart TD
    - autenticação
    - acesso ao schema (`validateSchemaAccess`)
    - filiais autorizadas (`getUserAuthorizedBranchCodes`)
-4. **RPC** `get_venda_curva_report`:
-   - Filtra período e filial
-   - Agrega vendas por produto e departamento
+4. **RPC** `get_venda_curva_report_fast`:
+   - Consulta agregados mensais (não varre `vendas` todo request)
+   - Filtra período e filiais
+   - Junta com departamentos e curvas
    - Calcula quantidade, valor, lucro e percentual
-   - Quando o filtro é o **mês/ano atual**, o comparativo do ano anterior é limitado ao período **D-1**
+   - Inclui comparativo do ano anterior na própria query
 5. **API** organiza hierarquia:
    - Nível 3 → Nível 2 → Nível 1 → Produtos
    - Soma totais e calcula margem
@@ -71,5 +72,6 @@ flowchart TD
 
 - **Frontend**: `src/app/(dashboard)/relatorios/venda-curva/page.tsx`
 - **API**: `src/app/api/relatorios/venda-curva/route.ts`
-- **RPC**: `public.get_venda_curva_report`
+- **RPC**: `public.get_venda_curva_report_fast`
+- **Tabelas**: `demo.vendas_mensal_produto`
 - **Tabelas**: `demo.vendas`, `demo.produtos`, `demo.departments_level_1/2/3`
