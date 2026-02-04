@@ -66,36 +66,42 @@ interface Produto {
 interface DeptNivel1 {
   dept1_id: number
   dept_nivel1: string
+  total_qtde: number
   total_vendas: number
   total_vendas_ano_anterior?: number
   total_lucro: number
   total_lucro_ano_anterior?: number
   margem: number
   margem_ano_anterior?: number
+  total_qtde_ano_anterior?: number
   produtos: Produto[]
 }
 
 interface DeptNivel2 {
   dept2_id: number
   dept_nivel2: string
+  total_qtde: number
   total_vendas: number
   total_vendas_ano_anterior?: number
   total_lucro: number
   total_lucro_ano_anterior?: number
   margem: number
   margem_ano_anterior?: number
+  total_qtde_ano_anterior?: number
   nivel1: DeptNivel1[]
 }
 
 interface DeptNivel3 {
   dept3_id: number
   dept_nivel3: string
+  total_qtde: number
   total_vendas: number
   total_vendas_ano_anterior?: number
   total_lucro: number
   total_lucro_ano_anterior?: number
   margem: number
   margem_ano_anterior?: number
+  total_qtde_ano_anterior?: number
   nivel2: DeptNivel2[]
 }
 
@@ -670,6 +676,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
         doc.setTextColor(255, 255, 255)
         const textY = currentY + 4.5
         doc.text('Departamento', tableStartX + 2, textY)
+        doc.text('Qtde', getColRightX(2), textY, { align: 'right' })
         doc.text('Vendas', getColRightX(3), textY, { align: 'right' })
         doc.text('Lucro', getColRightX(5), textY, { align: 'right' })
         doc.text('Margem', marginRightX, textY, { align: 'right' })
@@ -679,12 +686,15 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
 
       const drawDeptRow = (options: {
         label: string
+        qtde: number
         vendas: number
         lucro: number
         margem: number
+        qtdeAnterior?: number
         vendasAnterior?: number
         lucroAnterior?: number
         margemAnterior?: number
+        qtdeDelta?: string
         vendasDelta?: string
         lucroDelta?: string
         margemDelta?: string
@@ -702,9 +712,13 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
         const indent = options.indent ? options.indent : 0
         const textY = currentY + options.rowHeight / 2 + 1
         doc.text(options.label, tableStartX + 2 + indent, textY)
+        const qtdeMain = options.qtde.toFixed(2)
         const vendasMain = formatCurrency(options.vendas)
         const lucroMain = formatCurrency(options.lucro)
         const margemMain = `${options.margem.toFixed(2)}%`
+        const qtdeCompare = options.qtdeAnterior !== undefined
+          ? `${compareLabel} ${options.qtdeAnterior.toFixed(2)} ${options.qtdeDelta ? `(${options.qtdeDelta})` : ''}`
+          : null
         const vendasCompare = options.vendasAnterior !== undefined
           ? `${compareLabel} ${formatCurrency(options.vendasAnterior)} ${options.vendasDelta ? `(${options.vendasDelta})` : ''}`
           : null
@@ -715,20 +729,23 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
           ? `${compareLabel} ${options.margemAnterior.toFixed(2)}% ${options.margemDelta ? `(${options.margemDelta})` : ''}`
           : null
 
-        if (vendasCompare || lucroCompare || margemCompare) {
+        if (qtdeCompare || vendasCompare || lucroCompare || margemCompare) {
           const mainY = currentY + options.rowHeight / 2 - 1
           const compareY = currentY + options.rowHeight / 2 + 4
+          doc.text(qtdeMain, getColRightX(2), mainY, { align: 'right' })
           doc.text(vendasMain, getColRightX(3), mainY, { align: 'right' })
           doc.text(lucroMain, getColRightX(5), mainY, { align: 'right' })
           doc.text(margemMain, marginRightX, mainY, { align: 'right' })
           doc.setFontSize(options.fontSize - 1)
           doc.setTextColor(107, 114, 128)
+          if (qtdeCompare) doc.text(qtdeCompare, getColRightX(2), compareY, { align: 'right' })
           if (vendasCompare) doc.text(vendasCompare, getColRightX(3), compareY, { align: 'right' })
           if (lucroCompare) doc.text(lucroCompare, getColRightX(5), compareY, { align: 'right' })
           if (margemCompare) doc.text(margemCompare, marginRightX, compareY, { align: 'right' })
           doc.setFontSize(options.fontSize)
           doc.setTextColor(options.textColor[0], options.textColor[1], options.textColor[2])
         } else {
+          doc.text(qtdeMain, getColRightX(2), textY, { align: 'right' })
           doc.text(vendasMain, getColRightX(3), textY, { align: 'right' })
           doc.text(lucroMain, getColRightX(5), textY, { align: 'right' })
           doc.text(margemMain, marginRightX, textY, { align: 'right' })
@@ -741,12 +758,15 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
       allData.hierarquia?.forEach((dept3: DeptNivel3) => {
         drawDeptRow({
           label: dept3.dept_nivel3,
+          qtde: dept3.total_qtde,
           vendas: dept3.total_vendas,
           lucro: dept3.total_lucro,
           margem: dept3.margem,
+          qtdeAnterior: compararAnoAnterior ? (dept3.total_qtde_ano_anterior || 0) : undefined,
           vendasAnterior: compararAnoAnterior ? (dept3.total_vendas_ano_anterior || 0) : undefined,
           lucroAnterior: compararAnoAnterior ? (dept3.total_lucro_ano_anterior || 0) : undefined,
           margemAnterior: compararAnoAnterior ? (dept3.margem_ano_anterior || 0) : undefined,
+          qtdeDelta: compararAnoAnterior ? formatDeltaPercent(dept3.total_qtde, dept3.total_qtde_ano_anterior || 0) : undefined,
           vendasDelta: compararAnoAnterior ? formatDeltaPercent(dept3.total_vendas, dept3.total_vendas_ano_anterior || 0) : undefined,
           lucroDelta: compararAnoAnterior ? formatDeltaPercent(dept3.total_lucro, dept3.total_lucro_ano_anterior || 0) : undefined,
           margemDelta: compararAnoAnterior ? formatDeltaPercent(dept3.margem, dept3.margem_ano_anterior || 0) : undefined,
@@ -759,12 +779,15 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
         dept3.nivel2?.forEach((dept2: DeptNivel2) => {
           drawDeptRow({
             label: dept2.dept_nivel2,
+            qtde: dept2.total_qtde,
             vendas: dept2.total_vendas,
             lucro: dept2.total_lucro,
             margem: dept2.margem,
+            qtdeAnterior: compararAnoAnterior ? (dept2.total_qtde_ano_anterior || 0) : undefined,
             vendasAnterior: compararAnoAnterior ? (dept2.total_vendas_ano_anterior || 0) : undefined,
             lucroAnterior: compararAnoAnterior ? (dept2.total_lucro_ano_anterior || 0) : undefined,
             margemAnterior: compararAnoAnterior ? (dept2.margem_ano_anterior || 0) : undefined,
+            qtdeDelta: compararAnoAnterior ? formatDeltaPercent(dept2.total_qtde, dept2.total_qtde_ano_anterior || 0) : undefined,
             vendasDelta: compararAnoAnterior ? formatDeltaPercent(dept2.total_vendas, dept2.total_vendas_ano_anterior || 0) : undefined,
             lucroDelta: compararAnoAnterior ? formatDeltaPercent(dept2.total_lucro, dept2.total_lucro_ano_anterior || 0) : undefined,
             margemDelta: compararAnoAnterior ? formatDeltaPercent(dept2.margem, dept2.margem_ano_anterior || 0) : undefined,
@@ -778,12 +801,15 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
           dept2.nivel1?.forEach((dept1: DeptNivel1) => {
             drawDeptRow({
               label: dept1.dept_nivel1,
+              qtde: dept1.total_qtde,
               vendas: dept1.total_vendas,
               lucro: dept1.total_lucro,
               margem: dept1.margem,
+              qtdeAnterior: compararAnoAnterior ? (dept1.total_qtde_ano_anterior || 0) : undefined,
               vendasAnterior: compararAnoAnterior ? (dept1.total_vendas_ano_anterior || 0) : undefined,
               lucroAnterior: compararAnoAnterior ? (dept1.total_lucro_ano_anterior || 0) : undefined,
               margemAnterior: compararAnoAnterior ? (dept1.margem_ano_anterior || 0) : undefined,
+              qtdeDelta: compararAnoAnterior ? formatDeltaPercent(dept1.total_qtde, dept1.total_qtde_ano_anterior || 0) : undefined,
               vendasDelta: compararAnoAnterior ? formatDeltaPercent(dept1.total_vendas, dept1.total_vendas_ano_anterior || 0) : undefined,
               lucroDelta: compararAnoAnterior ? formatDeltaPercent(dept1.total_lucro, dept1.total_lucro_ano_anterior || 0) : undefined,
               margemDelta: compararAnoAnterior ? formatDeltaPercent(dept1.margem, dept1.margem_ano_anterior || 0) : undefined,
@@ -912,6 +938,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
   }
 
   const formatPercent = (value: number) => `${value.toFixed(2)}%`
+  const formatQuantity = (value: number) => value.toFixed(2)
 
   const formatDeltaPercent = (current: number, previous: number) => {
     if (previous === 0) {
@@ -1337,7 +1364,22 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                                 {dept1.dept_nivel1}
                                               </span>
                                             </div>
-                                            <div className="flex items-center gap-6">
+                                        <div className="flex items-center gap-6">
+                                            <div className="text-right">
+                                              <div className="text-[10px] text-muted-foreground">Qtde</div>
+                                              <div className="font-medium text-xs">
+                                                {formatQuantity(dept1.total_qtde || 0)}
+                                              </div>
+                                              {compararAnoAnterior && (
+                                                <div className="text-[10px] text-muted-foreground">
+                                                  {compareLabel} <span className="font-semibold text-black dark:text-white">{formatQuantity(dept1.total_qtde_ano_anterior || 0)}</span> (
+                                                  <span className={getDeltaClass(dept1.total_qtde || 0, dept1.total_qtde_ano_anterior || 0)}>
+                                                    {formatDeltaPercent(dept1.total_qtde || 0, dept1.total_qtde_ano_anterior || 0)}
+                                                  </span>
+                                                  )
+                                                </div>
+                                              )}
+                                            </div>
                                             <div className="text-right">
                                               <div className="text-[10px] text-muted-foreground">Vendas</div>
                                               <div className="font-medium text-xs">
