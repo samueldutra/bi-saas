@@ -1,0 +1,2612 @@
+--
+-- PostgreSQL database dump
+--
+
+\restrict OH2fevLIqZehIzwkiVcGyy6SscLO8GnY7FeatE2RRAke4AkMfWxr82lI4oW2suV
+
+-- Dumped from database version 17.6
+-- Dumped by pg_dump version 18.1
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: solpet; Type: SCHEMA; Schema: -; Owner: -
+--
+
+CREATE SCHEMA solpet;
+
+
+--
+-- Name: merge_departamentos(text); Type: FUNCTION; Schema: solpet; Owner: -
+--
+
+CREATE FUNCTION solpet.merge_departamentos(schema_name text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  EXECUTE format('
+    INSERT INTO %I.departamentos (id, descricao, nivel, parent_id)
+    SELECT 
+      s.id,
+      s.descricao,
+      s.nivel,
+      s.parent_id_original
+    FROM %I.staging_departamentos s
+    ON CONFLICT (id) DO UPDATE SET
+      descricao = EXCLUDED.descricao,
+      nivel = EXCLUDED.nivel,
+      parent_id = EXCLUDED.parent_id,
+      updated_at = NOW();
+  ', schema_name, schema_name);
+END;
+$$;
+
+
+--
+-- Name: merge_produtos(text); Type: FUNCTION; Schema: solpet; Owner: -
+--
+
+CREATE FUNCTION solpet.merge_produtos(schema_name text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  EXECUTE format('
+    INSERT INTO %I.produtos (
+      id, descricao, ativo, unidade_de_medida, curva_abc, balanca, ultimo_fornecedor,
+      preco_de_venda_1, preco_de_venda_2, preco_de_custo, custo_real, custo_fiscal,
+      custo_com_encargos, custo_medio, estoque_atual, qtde_por_embalagem_ultima_entrada,
+      data_cadastro, data_alteracao_preco, data_alteracao_custo, data_alteracao_cadastro,
+      marca_id, classe_id, agrupamento_id, departamento_id
+    )
+    SELECT
+      s.id, s.descricao, s.ativo, s.unidade_de_medida, s.curva_abc, s.balanca, s.ultimo_fornecedor,
+      s.preco_de_venda_1, s.preco_de_venda_2, s.preco_de_custo, s.custo_real, s.custo_fiscal,
+      s.custo_com_encargos, s.custo_medio, s.estoque_atual, s.qtde_por_embalagem_ultima_entrada,
+      s.data_cadastro, s.data_alteracao_preco, s.data_alteracao_custo, s.data_alteracao_cadastro,
+      s.marca_id, s.classe_id, s.agrupamento_id, s.departamento_id
+    FROM %I.staging_produtos s
+    ON CONFLICT (id) DO UPDATE SET
+      descricao = EXCLUDED.descricao,
+      ativo = EXCLUDED.ativo,
+      unidade_de_medida = EXCLUDED.unidade_de_medida,
+      curva_abc = EXCLUDED.curva_abc,
+      balanca = EXCLUDED.balanca,
+      ultimo_fornecedor = EXCLUDED.ultimo_fornecedor,
+      preco_de_venda_1 = EXCLUDED.preco_de_venda_1,
+      preco_de_venda_2 = EXCLUDED.preco_de_venda_2,
+      preco_de_custo = EXCLUDED.preco_de_custo,
+      custo_real = EXCLUDED.custo_real,
+      custo_fiscal = EXCLUDED.custo_fiscal,
+      custo_com_encargos = EXCLUDED.custo_com_encargos,
+      custo_medio = EXCLUDED.custo_medio,
+      estoque_atual = EXCLUDED.estoque_atual,
+      qtde_por_embalagem_ultima_entrada = EXCLUDED.qtde_por_embalagem_ultima_entrada,
+      data_cadastro = EXCLUDED.data_cadastro,
+      data_alteracao_preco = EXCLUDED.data_alteracao_preco,
+      data_alteracao_custo = EXCLUDED.data_alteracao_custo,
+      data_alteracao_cadastro = EXCLUDED.data_alteracao_cadastro,
+      marca_id = EXCLUDED.marca_id,
+      classe_id = EXCLUDED.classe_id,
+      agrupamento_id = EXCLUDED.agrupamento_id,
+      departamento_id = EXCLUDED.departamento_id,
+      updated_at = NOW();
+  ', schema_name, schema_name);
+END;
+$$;
+
+
+--
+-- Name: truncate_table(text, text); Type: FUNCTION; Schema: solpet; Owner: -
+--
+
+CREATE FUNCTION solpet.truncate_table(schema_name text, table_name text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+  EXECUTE format('TRUNCATE TABLE %I.%I RESTART IDENTITY;', schema_name, table_name);
+END;
+$$;
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: departamentos_nivel1; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departamentos_nivel1 (
+    id integer NOT NULL,
+    descricao text NOT NULL,
+    updated_at timestamp without time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE departamentos_nivel1; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.departamentos_nivel1 IS 'Dimensão de Departamentos Nível 1';
+
+
+--
+-- Name: departments; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departments (
+    id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    departamento_id bigint NOT NULL,
+    descricao text,
+    nivel integer,
+    departamento_pai bigint,
+    departamentalizacaonivel2 bigint
+);
+
+
+--
+-- Name: departments_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.departments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: departments_level_1; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departments_level_1 (
+    id bigint NOT NULL,
+    departamento_id bigint NOT NULL,
+    descricao text,
+    pai_level_2_id bigint,
+    pai_level_3_id bigint,
+    pai_level_4_id bigint,
+    pai_level_5_id bigint,
+    pai_level_6_id bigint,
+    created_at timestamp with time zone DEFAULT now()
+)
+WITH (autovacuum_vacuum_scale_factor='0.2', autovacuum_analyze_scale_factor='0.1');
+
+
+--
+-- Name: departments_level_1_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_1 ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.departments_level_1_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: departments_level_2; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departments_level_2 (
+    id bigint NOT NULL,
+    departamento_id bigint NOT NULL,
+    descricao text,
+    pai_level_3_id bigint,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: departments_level_2_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_2 ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.departments_level_2_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: departments_level_3; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departments_level_3 (
+    id bigint NOT NULL,
+    departamento_id bigint NOT NULL,
+    descricao text,
+    pai_level_4_id bigint,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: departments_level_3_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_3 ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.departments_level_3_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: departments_level_4; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departments_level_4 (
+    id bigint NOT NULL,
+    departamento_id bigint NOT NULL,
+    descricao text,
+    pai_level_5_id bigint,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: departments_level_4_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_4 ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.departments_level_4_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: departments_level_5; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departments_level_5 (
+    id bigint NOT NULL,
+    departamento_id bigint NOT NULL,
+    descricao text,
+    pai_level_6_id bigint,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: departments_level_5_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_5 ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.departments_level_5_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: departments_level_6; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.departments_level_6 (
+    id bigint NOT NULL,
+    departamento_id bigint NOT NULL,
+    descricao text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: departments_level_6_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_6 ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.departments_level_6_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: descontos_venda; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.descontos_venda (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    filial_id integer NOT NULL,
+    data_desconto date NOT NULL,
+    valor_desconto numeric(10,2) NOT NULL,
+    observacao text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by uuid,
+    desconto_custo numeric(15,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT descontos_venda_valor_desconto_check CHECK ((valor_desconto >= (0)::numeric))
+);
+
+
+--
+-- Name: COLUMN descontos_venda.desconto_custo; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.descontos_venda.desconto_custo IS 'Desconto aplicado ao custo (reduz custo total no cálculo de lucro bruto)';
+
+
+--
+-- Name: despesas; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.despesas (
+    id bigint NOT NULL,
+    filial_id integer NOT NULL,
+    data_despesa date NOT NULL,
+    id_tipo_despesa integer NOT NULL,
+    sequencia integer NOT NULL,
+    descricao_despesa text,
+    id_fornecedor integer,
+    numero_nota bigint,
+    serie_nota character varying(20),
+    data_emissao date,
+    valor numeric(15,2) NOT NULL,
+    observacao text,
+    usuario character varying(100),
+    classificacao character varying(100),
+    fechamento_caixa boolean,
+    data_processamento date,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: despesas_diarias_por_filial; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.despesas_diarias_por_filial (
+    filial_id integer NOT NULL,
+    data_referencia date NOT NULL,
+    total_valor numeric(15,2),
+    quantidade_lancamentos integer,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: despesas_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.despesas ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME solpet.despesas_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: entradas; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.entradas (
+    id bigint NOT NULL,
+    filial_id integer NOT NULL,
+    numero integer,
+    data_emissao date,
+    data_entrada date NOT NULL,
+    valor_total numeric(15,2) DEFAULT 0,
+    transacao character varying(1),
+    data_extracao date DEFAULT CURRENT_DATE,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE entradas; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.entradas IS 'Notas de entrada de mercadorias do ERP SG Sistemas';
+
+
+--
+-- Name: COLUMN entradas.id; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.id IS 'ID único da entrada no ERP';
+
+
+--
+-- Name: COLUMN entradas.filial_id; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.filial_id IS 'ID da filial';
+
+
+--
+-- Name: COLUMN entradas.numero; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.numero IS 'Número da nota fiscal';
+
+
+--
+-- Name: COLUMN entradas.data_emissao; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.data_emissao IS 'Data de emissão da nota';
+
+
+--
+-- Name: COLUMN entradas.data_entrada; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.data_entrada IS 'Data de entrada da mercadoria';
+
+
+--
+-- Name: COLUMN entradas.valor_total; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.valor_total IS 'Valor total da nota';
+
+
+--
+-- Name: COLUMN entradas.transacao; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.transacao IS 'Tipo: P=Prazo, V=Vista, T=Transferência, D=Devolução, B=Bonificação';
+
+
+--
+-- Name: COLUMN entradas.data_extracao; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas.data_extracao IS 'Data em que o ETL extraiu este registro';
+
+
+--
+-- Name: entradas_produtos; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.entradas_produtos (
+    entrada_id bigint NOT NULL,
+    produto_id bigint NOT NULL,
+    ordem integer DEFAULT 1 NOT NULL,
+    quantidade numeric(15,3) DEFAULT 0,
+    qtd_por_embalagem numeric(15,3) DEFAULT 0,
+    custo_unitario numeric(15,5) DEFAULT 0,
+    data_extracao date DEFAULT CURRENT_DATE,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE entradas_produtos; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.entradas_produtos IS 'Produtos das notas de entrada do ERP SG Sistemas';
+
+
+--
+-- Name: COLUMN entradas_produtos.entrada_id; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas_produtos.entrada_id IS 'ID da entrada (FK)';
+
+
+--
+-- Name: COLUMN entradas_produtos.produto_id; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas_produtos.produto_id IS 'ID do produto no ERP';
+
+
+--
+-- Name: COLUMN entradas_produtos.ordem; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas_produtos.ordem IS 'Ordem do item na nota';
+
+
+--
+-- Name: COLUMN entradas_produtos.quantidade; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas_produtos.quantidade IS 'Quantidade do produto';
+
+
+--
+-- Name: COLUMN entradas_produtos.qtd_por_embalagem; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas_produtos.qtd_por_embalagem IS 'Quantidade por embalagem';
+
+
+--
+-- Name: COLUMN entradas_produtos.custo_unitario; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.entradas_produtos.custo_unitario IS 'Custo unitário do produto';
+
+
+--
+-- Name: etl_controle; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.etl_controle (
+    filial_id bigint NOT NULL,
+    data_execucao date NOT NULL,
+    processo_nome text NOT NULL,
+    status text NOT NULL,
+    executado_em timestamp with time zone DEFAULT now() NOT NULL,
+    total_departamentos integer DEFAULT 0,
+    total_produtos integer DEFAULT 0,
+    total_vendas integer DEFAULT 0
+);
+
+
+--
+-- Name: faturamento; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.faturamento (
+    id_saida bigint NOT NULL,
+    id_produto bigint NOT NULL,
+    ordem integer NOT NULL,
+    filial_id integer NOT NULL,
+    id_entidade bigint,
+    tipo_entidade character varying(1),
+    serie_nfc character varying(10),
+    numero_nota integer,
+    data_emissao date,
+    data_saida date,
+    valor_contabil numeric(15,2),
+    valor_desconto numeric(15,2),
+    valor_frete numeric(15,2),
+    situacao character varying(1),
+    transacao character varying(1),
+    id_vendedor integer,
+    especie character varying(10),
+    modelo_nota character varying(5),
+    consumidor_final character varying(1),
+    quantidade numeric(15,3),
+    qtd_embalagens numeric(15,2),
+    qtd_por_embalagem numeric(15,3),
+    preco_cadastrado numeric(15,5),
+    preco_digitado numeric(15,6),
+    preco_final numeric(15,7),
+    custo_unitario numeric(15,5),
+    custo_sem_icms numeric(15,3),
+    custo_medio numeric(15,3),
+    custo_fiscal_medio numeric(15,3),
+    custo_com_encargos numeric(15,3),
+    aliq_icms numeric(5,2),
+    valor_ipi numeric(15,4),
+    unidade_medida character varying(5),
+    valor_desconto_item numeric(15,5),
+    valor_acrescimo numeric(15,5),
+    valor_st numeric(15,4),
+    tipo_tributacao character varying(2),
+    valor_icms numeric(15,2),
+    base_calculo_icms numeric(15,7),
+    cancelado character varying(1),
+    valor_frete_item numeric(15,2),
+    data_extracao date NOT NULL
+);
+
+
+--
+-- Name: TABLE faturamento; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.faturamento IS 'Dados de faturamento do ERP SG Sistemas - Notas de saída com produtos denormalizados';
+
+
+--
+-- Name: COLUMN faturamento.id_saida; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.id_saida IS 'ID único da nota de saída no ERP';
+
+
+--
+-- Name: COLUMN faturamento.id_produto; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.id_produto IS 'ID do produto no ERP';
+
+
+--
+-- Name: COLUMN faturamento.ordem; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.ordem IS 'Ordem do item na nota';
+
+
+--
+-- Name: COLUMN faturamento.filial_id; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.filial_id IS 'ID da filial';
+
+
+--
+-- Name: COLUMN faturamento.tipo_entidade; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.tipo_entidade IS 'C=Cliente, F=Fornecedor';
+
+
+--
+-- Name: COLUMN faturamento.transacao; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.transacao IS 'P=Prazo, V=Vista';
+
+
+--
+-- Name: COLUMN faturamento.preco_final; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.preco_final IS 'Preço unitário final praticado na venda';
+
+
+--
+-- Name: COLUMN faturamento.custo_medio; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.custo_medio IS 'Custo médio do produto no momento da venda';
+
+
+--
+-- Name: COLUMN faturamento.data_extracao; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.faturamento.data_extracao IS 'Data em que o ETL extraiu este registro';
+
+
+--
+-- Name: metas_mensais; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.metas_mensais (
+    id bigint NOT NULL,
+    filial_id bigint NOT NULL,
+    data date NOT NULL,
+    dia_semana text NOT NULL,
+    meta_percentual numeric(5,2) DEFAULT 0 NOT NULL,
+    data_referencia date NOT NULL,
+    valor_referencia numeric(15,2) DEFAULT 0,
+    valor_meta numeric(15,2) DEFAULT 0,
+    valor_realizado numeric(15,2) DEFAULT 0,
+    diferenca numeric(15,2) DEFAULT 0,
+    diferenca_percentual numeric(5,2) DEFAULT 0,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    custo_realizado numeric(15,2) DEFAULT 0,
+    lucro_realizado numeric(15,2) DEFAULT 0
+);
+
+
+--
+-- Name: COLUMN metas_mensais.custo_realizado; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.metas_mensais.custo_realizado IS 'Custo total realizado no dia (SUM quantidade * custo_compra)';
+
+
+--
+-- Name: COLUMN metas_mensais.lucro_realizado; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.metas_mensais.lucro_realizado IS 'Lucro bruto realizado no dia (valor_realizado - custo_realizado)';
+
+
+--
+-- Name: metas_mensais_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+CREATE SEQUENCE solpet.metas_mensais_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: metas_mensais_id_seq; Type: SEQUENCE OWNED BY; Schema: solpet; Owner: -
+--
+
+ALTER SEQUENCE solpet.metas_mensais_id_seq OWNED BY solpet.metas_mensais.id;
+
+
+--
+-- Name: metas_setor; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.metas_setor (
+    id bigint NOT NULL,
+    setor_id bigint NOT NULL,
+    filial_id bigint NOT NULL,
+    data date NOT NULL,
+    dia_semana text NOT NULL,
+    meta_percentual numeric(10,2) NOT NULL,
+    data_referencia date NOT NULL,
+    valor_referencia numeric(15,2),
+    valor_meta numeric(15,2),
+    valor_realizado numeric(15,2),
+    diferenca numeric(15,2),
+    diferenca_percentual numeric(10,2),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    dia_semana_ref text,
+    custo_realizado numeric(15,2) DEFAULT 0,
+    lucro_realizado numeric(15,2) DEFAULT 0
+);
+
+
+--
+-- Name: COLUMN metas_setor.custo_realizado; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.metas_setor.custo_realizado IS 'Custo total realizado no dia (SUM quantidade * custo_compra)';
+
+
+--
+-- Name: COLUMN metas_setor.lucro_realizado; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.metas_setor.lucro_realizado IS 'Lucro bruto realizado no dia (valor_realizado - custo_realizado)';
+
+
+--
+-- Name: metas_setores_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+CREATE SEQUENCE solpet.metas_setores_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: metas_setores_id_seq; Type: SEQUENCE OWNED BY; Schema: solpet; Owner: -
+--
+
+ALTER SEQUENCE solpet.metas_setores_id_seq OWNED BY solpet.metas_setor.id;
+
+
+--
+-- Name: motivos_perda; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.motivos_perda (
+    id integer NOT NULL,
+    descricao character varying(255) NOT NULL,
+    ativo boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT now(),
+    updated_at timestamp without time zone DEFAULT now()
+);
+
+
+--
+-- Name: vendas; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.vendas (
+    id_produto bigint NOT NULL,
+    filial_id bigint NOT NULL,
+    data_venda date NOT NULL,
+    id_oferta text NOT NULL,
+    quantidade numeric(15,5),
+    preco_medio numeric(15,5),
+    valor_vendas numeric(15,5),
+    aliquota_icms numeric(10,4),
+    custo_com_encargos numeric(15,5),
+    custo_sem_icms numeric(15,5),
+    custo_compra numeric(15,5),
+    custo_medio numeric(15,5),
+    custo_fiscal_medio numeric(15,5),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    id bigint NOT NULL
+);
+
+
+--
+-- Name: mv_dias_com_venda; Type: MATERIALIZED VIEW; Schema: solpet; Owner: -
+--
+
+CREATE MATERIALIZED VIEW solpet.mv_dias_com_venda AS
+ SELECT filial_id,
+    id_produto,
+    count(DISTINCT
+        CASE
+            WHEN ((data_venda >= (CURRENT_DATE - '60 days'::interval)) AND (data_venda < CURRENT_DATE)) THEN data_venda
+            ELSE NULL::date
+        END) AS dias_vendas_60d,
+    count(DISTINCT
+        CASE
+            WHEN ((data_venda >= (CURRENT_DATE - '30 days'::interval)) AND (data_venda < CURRENT_DATE)) THEN data_venda
+            ELSE NULL::date
+        END) AS dias_vendas_30d,
+    count(DISTINCT
+        CASE
+            WHEN ((data_venda >= (CURRENT_DATE - '3 days'::interval)) AND (data_venda < CURRENT_DATE)) THEN data_venda
+            ELSE NULL::date
+        END) AS dias_vendas_3d
+   FROM solpet.vendas v
+  WHERE ((data_venda >= (CURRENT_DATE - '60 days'::interval)) AND (data_venda < CURRENT_DATE))
+  GROUP BY filial_id, id_produto
+  WITH NO DATA;
+
+
+--
+-- Name: perdas; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.perdas (
+    id bigint NOT NULL,
+    filial_id integer NOT NULL,
+    produto_id integer NOT NULL,
+    motivo_perda_id integer NOT NULL,
+    data_perda date NOT NULL,
+    quantidade numeric(12,3) NOT NULL,
+    valor_perda numeric(12,2) NOT NULL,
+    data_extracao date NOT NULL,
+    created_at timestamp without time zone DEFAULT now()
+);
+
+
+--
+-- Name: perdas_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+CREATE SEQUENCE solpet.perdas_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: perdas_id_seq; Type: SEQUENCE OWNED BY; Schema: solpet; Owner: -
+--
+
+ALTER SEQUENCE solpet.perdas_id_seq OWNED BY solpet.perdas.id;
+
+
+--
+-- Name: produtos; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.produtos (
+    id bigint NOT NULL,
+    filial_id bigint NOT NULL,
+    descricao text NOT NULL,
+    ativo boolean DEFAULT true,
+    departamento_id bigint,
+    departamento_nivel smallint DEFAULT 1 NOT NULL,
+    unidade_de_medida character varying(10),
+    curva_abc text,
+    balanca boolean,
+    ultimo_fornecedor text,
+    preco_de_venda_1 numeric(15,5),
+    preco_de_venda_2 numeric(15,5),
+    preco_de_custo numeric(15,5),
+    custo_real numeric(15,5),
+    custo_fiscal numeric(15,5),
+    custo_com_encargos numeric(15,5),
+    custo_medio numeric(15,5),
+    estoque_atual numeric(18,6),
+    qtde_por_embalagem_ultima_entrada numeric(18,6),
+    data_cadastro date,
+    data_alteracao_preco date,
+    data_alteracao_custo date,
+    data_alteracao_cadastro date,
+    marca_id bigint,
+    classe_id bigint,
+    agrupamento_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    venda_media_diaria_60d numeric(15,5) DEFAULT 0,
+    dias_de_estoque numeric(10,2),
+    dias_com_venda_60d integer DEFAULT 0,
+    curva_abcd text,
+    curva_lucro character varying(2),
+    dias_com_venda_ultimos_3d integer DEFAULT 0,
+    dias_com_venda_30d integer
+);
+
+
+--
+-- Name: resumo_vendas_caixa; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.resumo_vendas_caixa (
+    id integer NOT NULL,
+    filial_id integer NOT NULL,
+    caixa integer NOT NULL,
+    data date NOT NULL,
+    qtde_cupons integer DEFAULT 0,
+    qtde_produtos integer DEFAULT 0,
+    valor_total_vendas numeric(15,2) DEFAULT 0,
+    valor_total_vendas_canceladas numeric(15,2) DEFAULT 0,
+    valor_total_produtos_cancelados numeric(15,2) DEFAULT 0,
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE resumo_vendas_caixa; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.resumo_vendas_caixa IS 'Resumo diário de vendas por caixa';
+
+
+--
+-- Name: COLUMN resumo_vendas_caixa.caixa; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.resumo_vendas_caixa.caixa IS 'Número do caixa';
+
+
+--
+-- Name: COLUMN resumo_vendas_caixa.data; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.resumo_vendas_caixa.data IS 'Data do resumo';
+
+
+--
+-- Name: COLUMN resumo_vendas_caixa.qtde_cupons; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.resumo_vendas_caixa.qtde_cupons IS 'Quantidade de cupons emitidos';
+
+
+--
+-- Name: COLUMN resumo_vendas_caixa.qtde_produtos; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.resumo_vendas_caixa.qtde_produtos IS 'Quantidade total de produtos vendidos';
+
+
+--
+-- Name: COLUMN resumo_vendas_caixa.valor_total_vendas; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.resumo_vendas_caixa.valor_total_vendas IS 'Valor total de vendas válidas';
+
+
+--
+-- Name: COLUMN resumo_vendas_caixa.valor_total_vendas_canceladas; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.resumo_vendas_caixa.valor_total_vendas_canceladas IS 'Valor total de vendas canceladas';
+
+
+--
+-- Name: COLUMN resumo_vendas_caixa.valor_total_produtos_cancelados; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.resumo_vendas_caixa.valor_total_produtos_cancelados IS 'Valor total de produtos cancelados';
+
+
+--
+-- Name: resumo_vendas_caixa_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+CREATE SEQUENCE solpet.resumo_vendas_caixa_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: resumo_vendas_caixa_id_seq; Type: SEQUENCE OWNED BY; Schema: solpet; Owner: -
+--
+
+ALTER SEQUENCE solpet.resumo_vendas_caixa_id_seq OWNED BY solpet.resumo_vendas_caixa.id;
+
+
+--
+-- Name: setores; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.setores (
+    id bigint NOT NULL,
+    nome text NOT NULL,
+    departamento_nivel smallint NOT NULL,
+    departamento_ids bigint[] NOT NULL,
+    ativo boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT setores_departamento_nivel_check CHECK (((departamento_nivel >= 1) AND (departamento_nivel <= 6)))
+);
+
+
+--
+-- Name: setores_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+CREATE SEQUENCE solpet.setores_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: setores_id_seq; Type: SEQUENCE OWNED BY; Schema: solpet; Owner: -
+--
+
+ALTER SEQUENCE solpet.setores_id_seq OWNED BY solpet.setores.id;
+
+
+--
+-- Name: staging_departamentos; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.staging_departamentos (
+    id bigint NOT NULL,
+    descricao text NOT NULL,
+    nivel smallint NOT NULL,
+    parent_id_original bigint,
+    parent_id bigint
+);
+
+
+--
+-- Name: staging_produtos; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.staging_produtos (
+    id bigint NOT NULL,
+    filial_id bigint NOT NULL,
+    descricao text,
+    ativo boolean,
+    departamento_id bigint,
+    unidade_de_medida character varying(10),
+    curva_abc character(1),
+    balanca character(1),
+    ultimo_fornecedor text,
+    preco_de_venda_1 numeric(15,5),
+    preco_de_venda_2 numeric(15,5),
+    preco_de_custo numeric(15,5),
+    custo_real numeric(15,5),
+    custo_fiscal numeric(15,5),
+    custo_com_encargos numeric(15,5),
+    custo_medio numeric(15,5),
+    estoque_atual numeric(18,6),
+    qtde_por_embalagem_ultima_entrada numeric(18,6),
+    data_cadastro date,
+    data_alteracao_preco date,
+    data_alteracao_custo date,
+    data_alteracao_cadastro date,
+    marca_id bigint,
+    classe_id bigint,
+    agrupamento_id bigint,
+    dep_nivel_1_id bigint,
+    dep_nivel_2_id bigint,
+    dep_nivel_3_id bigint,
+    dep_nivel_4_id bigint,
+    dep_nivel_5_id bigint,
+    dep_nivel_6_id bigint
+);
+
+
+--
+-- Name: tipos_despesa; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.tipos_despesa (
+    id integer NOT NULL,
+    descricao text,
+    classificacao text,
+    vencimento_dia_nao_util text,
+    origem text,
+    obrigatoria_mes boolean,
+    departamentalizacao_nivel1 integer,
+    tipo_custo text,
+    tipo_requisicao text,
+    dia_mes integer,
+    considera_despesa_real boolean,
+    considera_despesa_df boolean,
+    considera_despesa_custo_mensal boolean,
+    updated_at timestamp without time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE tipos_despesa; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.tipos_despesa IS 'Dimensão de Tipos de Despesa do ERP';
+
+
+--
+-- Name: vendas_agregadas_30d; Type: MATERIALIZED VIEW; Schema: solpet; Owner: -
+--
+
+CREATE MATERIALIZED VIEW solpet.vendas_agregadas_30d AS
+ SELECT p.id AS id_produto,
+    p.filial_id,
+    p.departamento_id,
+    sum(v.valor_vendas) AS total_valor_produto
+   FROM (solpet.vendas v
+     JOIN solpet.produtos p ON (((v.id_produto = p.id) AND (v.filial_id = p.filial_id))))
+  WHERE ((v.data_venda >= (CURRENT_DATE - '30 days'::interval)) AND (v.data_venda < CURRENT_DATE) AND (v.valor_vendas > (0)::numeric))
+  GROUP BY p.id, p.filial_id, p.departamento_id
+  WITH NO DATA;
+
+
+--
+-- Name: vendas_agregadas_60d; Type: MATERIALIZED VIEW; Schema: solpet; Owner: -
+--
+
+CREATE MATERIALIZED VIEW solpet.vendas_agregadas_60d AS
+ SELECT p.id AS id_produto,
+    p.filial_id,
+    p.departamento_id,
+    sum(v.valor_vendas) AS total_valor_produto,
+    sum(COALESCE(v.quantidade, (0)::numeric)) AS total_quantidade_produto
+   FROM (solpet.vendas v
+     JOIN solpet.produtos p ON (((v.id_produto = p.id) AND (v.filial_id = p.filial_id))))
+  WHERE ((v.data_venda >= ((date_trunc('month'::text, (CURRENT_DATE)::timestamp with time zone) - '2 mons'::interval))::date) AND (v.data_venda < (date_trunc('month'::text, (CURRENT_DATE)::timestamp with time zone))::date) AND (v.valor_vendas > (0)::numeric))
+  GROUP BY p.id, p.filial_id, p.departamento_id
+  WITH NO DATA;
+
+
+--
+-- Name: vendas_diarias_por_filial; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.vendas_diarias_por_filial (
+    filial_id bigint NOT NULL,
+    data_venda date NOT NULL,
+    valor_total numeric,
+    quantidade_total numeric,
+    total_transacoes bigint,
+    custo_total numeric(15,2) DEFAULT 0,
+    total_lucro numeric(15,2) DEFAULT 0
+);
+
+
+--
+-- Name: vendas_hoje; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.vendas_hoje (
+    filial_id integer NOT NULL,
+    cupom integer NOT NULL,
+    caixa integer,
+    horario time without time zone,
+    cancelada boolean DEFAULT false,
+    valor_total numeric(15,2) DEFAULT 0,
+    data_extracao date DEFAULT CURRENT_DATE,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE vendas_hoje; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.vendas_hoje IS 'Cupons de venda do dia atual do ERP SG Sistemas';
+
+
+--
+-- Name: COLUMN vendas_hoje.filial_id; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje.filial_id IS 'ID da filial';
+
+
+--
+-- Name: COLUMN vendas_hoje.cupom; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje.cupom IS 'Número do cupom fiscal';
+
+
+--
+-- Name: COLUMN vendas_hoje.caixa; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje.caixa IS 'Número do caixa';
+
+
+--
+-- Name: COLUMN vendas_hoje.horario; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje.horario IS 'Horário da venda';
+
+
+--
+-- Name: COLUMN vendas_hoje.cancelada; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje.cancelada IS 'Se a venda foi cancelada';
+
+
+--
+-- Name: COLUMN vendas_hoje.valor_total; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje.valor_total IS 'Valor total da venda';
+
+
+--
+-- Name: COLUMN vendas_hoje.data_extracao; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje.data_extracao IS 'Data em que o ETL extraiu este registro';
+
+
+--
+-- Name: vendas_hoje_itens; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.vendas_hoje_itens (
+    filial_id integer NOT NULL,
+    cupom integer NOT NULL,
+    produto_id bigint NOT NULL,
+    ordem integer NOT NULL,
+    quantidade_vendida numeric(15,3) DEFAULT 0,
+    preco_venda numeric(15,2) DEFAULT 0,
+    valor_desconto numeric(15,2) DEFAULT 0,
+    valor_acrescimo numeric(15,2) DEFAULT 0,
+    cancelado boolean DEFAULT false,
+    data_extracao date DEFAULT CURRENT_DATE,
+    created_at timestamp with time zone DEFAULT now(),
+    oferta_id text
+);
+
+
+--
+-- Name: TABLE vendas_hoje_itens; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON TABLE solpet.vendas_hoje_itens IS 'Itens dos cupons de venda do dia atual';
+
+
+--
+-- Name: COLUMN vendas_hoje_itens.produto_id; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje_itens.produto_id IS 'ID do produto no ERP';
+
+
+--
+-- Name: COLUMN vendas_hoje_itens.ordem; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje_itens.ordem IS 'Ordem do item no cupom';
+
+
+--
+-- Name: COLUMN vendas_hoje_itens.quantidade_vendida; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje_itens.quantidade_vendida IS 'Quantidade vendida';
+
+
+--
+-- Name: COLUMN vendas_hoje_itens.preco_venda; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje_itens.preco_venda IS 'Preço de venda unitário';
+
+
+--
+-- Name: COLUMN vendas_hoje_itens.valor_desconto; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje_itens.valor_desconto IS 'Valor do desconto aplicado';
+
+
+--
+-- Name: COLUMN vendas_hoje_itens.valor_acrescimo; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje_itens.valor_acrescimo IS 'Valor do acréscimo aplicado';
+
+
+--
+-- Name: COLUMN vendas_hoje_itens.cancelado; Type: COMMENT; Schema: solpet; Owner: -
+--
+
+COMMENT ON COLUMN solpet.vendas_hoje_itens.cancelado IS 'Se o item foi cancelado';
+
+
+--
+-- Name: vendas_id_seq; Type: SEQUENCE; Schema: solpet; Owner: -
+--
+
+CREATE SEQUENCE solpet.vendas_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendas_id_seq; Type: SEQUENCE OWNED BY; Schema: solpet; Owner: -
+--
+
+ALTER SEQUENCE solpet.vendas_id_seq OWNED BY solpet.vendas.id;
+
+
+--
+-- Name: vendas_mensal_produto; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.vendas_mensal_produto (
+    ano smallint NOT NULL,
+    mes smallint NOT NULL,
+    filial_id bigint NOT NULL,
+    id_produto bigint NOT NULL,
+    total_qtde numeric(15,5) DEFAULT 0 NOT NULL,
+    total_valor_vendas numeric(15,5) DEFAULT 0 NOT NULL,
+    total_lucro numeric(15,5) DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: vendas_por_departamento; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.vendas_por_departamento (
+    data date NOT NULL,
+    filial_id bigint NOT NULL,
+    departamento_nivel smallint NOT NULL,
+    departamento_id bigint NOT NULL,
+    valor_total numeric(15,2) DEFAULT 0 NOT NULL,
+    quantidade_vendas integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: vendas_produto_mes; Type: TABLE; Schema: solpet; Owner: -
+--
+
+CREATE TABLE solpet.vendas_produto_mes (
+    mes_referencia date NOT NULL,
+    filial_id bigint NOT NULL,
+    id_produto bigint NOT NULL,
+    quantidade_total numeric,
+    valor_total numeric,
+    ticket_medio numeric,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    custo_total numeric(15,2) DEFAULT 0,
+    lucro_total numeric(15,2) DEFAULT 0
+);
+
+
+--
+-- Name: vw_report_curva_abcd; Type: MATERIALIZED VIEW; Schema: solpet; Owner: -
+--
+
+CREATE MATERIALIZED VIEW solpet.vw_report_curva_abcd AS
+ SELECT v.mes_referencia,
+    v.filial_id,
+    p.id AS codigo_produto,
+    p.descricao AS nome_produto,
+    p.curva_abc AS curva_erp,
+    p.curva_abcd AS curva_calculada,
+    p.curva_lucro,
+    v.quantidade_total AS quantidade_vendida,
+    v.valor_total AS valor_vendido,
+    v.lucro_total,
+    d1.descricao AS segmento_nivel_1,
+    d2.descricao AS segmento_nivel_2,
+    d3.descricao AS segmento_nivel_3,
+    d4.descricao AS segmento_nivel_4,
+    d5.descricao AS segmento_nivel_5,
+    d6.descricao AS segmento_nivel_6
+   FROM (((((((solpet.vendas_produto_mes v
+     JOIN solpet.produtos p ON (((v.id_produto = p.id) AND (v.filial_id = p.filial_id))))
+     LEFT JOIN solpet.departments_level_1 d1 ON ((p.departamento_id = d1.departamento_id)))
+     LEFT JOIN solpet.departments_level_2 d2 ON ((d1.pai_level_2_id = d2.departamento_id)))
+     LEFT JOIN solpet.departments_level_3 d3 ON ((d1.pai_level_3_id = d3.departamento_id)))
+     LEFT JOIN solpet.departments_level_4 d4 ON ((d1.pai_level_4_id = d4.departamento_id)))
+     LEFT JOIN solpet.departments_level_5 d5 ON ((d1.pai_level_5_id = d5.departamento_id)))
+     LEFT JOIN solpet.departments_level_6 d6 ON ((d1.pai_level_6_id = d6.departamento_id)))
+  WITH NO DATA;
+
+
+--
+-- Name: metas_mensais id; Type: DEFAULT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.metas_mensais ALTER COLUMN id SET DEFAULT nextval('solpet.metas_mensais_id_seq'::regclass);
+
+
+--
+-- Name: metas_setor id; Type: DEFAULT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.metas_setor ALTER COLUMN id SET DEFAULT nextval('solpet.metas_setores_id_seq'::regclass);
+
+
+--
+-- Name: perdas id; Type: DEFAULT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.perdas ALTER COLUMN id SET DEFAULT nextval('solpet.perdas_id_seq'::regclass);
+
+
+--
+-- Name: resumo_vendas_caixa id; Type: DEFAULT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.resumo_vendas_caixa ALTER COLUMN id SET DEFAULT nextval('solpet.resumo_vendas_caixa_id_seq'::regclass);
+
+
+--
+-- Name: setores id; Type: DEFAULT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.setores ALTER COLUMN id SET DEFAULT nextval('solpet.setores_id_seq'::regclass);
+
+
+--
+-- Name: vendas id; Type: DEFAULT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas ALTER COLUMN id SET DEFAULT nextval('solpet.vendas_id_seq'::regclass);
+
+
+--
+-- Name: departamentos_nivel1 departamentos_nivel1_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departamentos_nivel1
+    ADD CONSTRAINT departamentos_nivel1_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: departments departments_departamento_id_nivel_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments
+    ADD CONSTRAINT departments_departamento_id_nivel_key UNIQUE (departamento_id, nivel);
+
+
+--
+-- Name: departments_level_1 departments_level_1_departamento_id_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_1
+    ADD CONSTRAINT departments_level_1_departamento_id_key UNIQUE (departamento_id);
+
+
+--
+-- Name: departments_level_1 departments_level_1_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_1
+    ADD CONSTRAINT departments_level_1_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: departments_level_2 departments_level_2_departamento_id_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_2
+    ADD CONSTRAINT departments_level_2_departamento_id_key UNIQUE (departamento_id);
+
+
+--
+-- Name: departments_level_2 departments_level_2_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_2
+    ADD CONSTRAINT departments_level_2_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: departments_level_3 departments_level_3_departamento_id_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_3
+    ADD CONSTRAINT departments_level_3_departamento_id_key UNIQUE (departamento_id);
+
+
+--
+-- Name: departments_level_3 departments_level_3_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_3
+    ADD CONSTRAINT departments_level_3_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: departments_level_4 departments_level_4_departamento_id_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_4
+    ADD CONSTRAINT departments_level_4_departamento_id_key UNIQUE (departamento_id);
+
+
+--
+-- Name: departments_level_4 departments_level_4_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_4
+    ADD CONSTRAINT departments_level_4_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: departments_level_5 departments_level_5_departamento_id_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_5
+    ADD CONSTRAINT departments_level_5_departamento_id_key UNIQUE (departamento_id);
+
+
+--
+-- Name: departments_level_5 departments_level_5_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_5
+    ADD CONSTRAINT departments_level_5_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: departments_level_6 departments_level_6_departamento_id_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_6
+    ADD CONSTRAINT departments_level_6_departamento_id_key UNIQUE (departamento_id);
+
+
+--
+-- Name: departments_level_6 departments_level_6_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments_level_6
+    ADD CONSTRAINT departments_level_6_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: departments departments_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.departments
+    ADD CONSTRAINT departments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: descontos_venda descontos_venda_filial_id_data_desconto_key; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.descontos_venda
+    ADD CONSTRAINT descontos_venda_filial_id_data_desconto_key UNIQUE (filial_id, data_desconto);
+
+
+--
+-- Name: descontos_venda descontos_venda_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.descontos_venda
+    ADD CONSTRAINT descontos_venda_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: despesas_diarias_por_filial despesas_diarias_por_filial_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.despesas_diarias_por_filial
+    ADD CONSTRAINT despesas_diarias_por_filial_pkey PRIMARY KEY (filial_id, data_referencia);
+
+
+--
+-- Name: despesas despesas_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.despesas
+    ADD CONSTRAINT despesas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: despesas despesas_unique_idx; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.despesas
+    ADD CONSTRAINT despesas_unique_idx UNIQUE (filial_id, data_despesa, id_tipo_despesa, sequencia);
+
+
+--
+-- Name: entradas entradas_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.entradas
+    ADD CONSTRAINT entradas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: entradas_produtos entradas_produtos_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.entradas_produtos
+    ADD CONSTRAINT entradas_produtos_pkey PRIMARY KEY (entrada_id, produto_id, ordem);
+
+
+--
+-- Name: etl_controle etl_controle_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.etl_controle
+    ADD CONSTRAINT etl_controle_pkey PRIMARY KEY (filial_id, data_execucao, processo_nome);
+
+
+--
+-- Name: faturamento faturamento_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.faturamento
+    ADD CONSTRAINT faturamento_pkey PRIMARY KEY (id_saida, id_produto, ordem);
+
+
+--
+-- Name: metas_mensais metas_mensais_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.metas_mensais
+    ADD CONSTRAINT metas_mensais_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: metas_mensais metas_mensais_unique_filial_data; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.metas_mensais
+    ADD CONSTRAINT metas_mensais_unique_filial_data UNIQUE (filial_id, data);
+
+
+--
+-- Name: metas_setor metas_setor_unique; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.metas_setor
+    ADD CONSTRAINT metas_setor_unique UNIQUE (setor_id, filial_id, data);
+
+
+--
+-- Name: metas_setor metas_setores_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.metas_setor
+    ADD CONSTRAINT metas_setores_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: motivos_perda motivos_perda_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.motivos_perda
+    ADD CONSTRAINT motivos_perda_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: perdas perdas_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.perdas
+    ADD CONSTRAINT perdas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: produtos produtos_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.produtos
+    ADD CONSTRAINT produtos_pkey PRIMARY KEY (id, filial_id);
+
+
+--
+-- Name: resumo_vendas_caixa resumo_vendas_caixa_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.resumo_vendas_caixa
+    ADD CONSTRAINT resumo_vendas_caixa_pkey PRIMARY KEY (filial_id, caixa, data);
+
+
+--
+-- Name: setores setores_nome_unique; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.setores
+    ADD CONSTRAINT setores_nome_unique UNIQUE (nome);
+
+
+--
+-- Name: setores setores_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.setores
+    ADD CONSTRAINT setores_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: staging_departamentos staging_departamentos_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.staging_departamentos
+    ADD CONSTRAINT staging_departamentos_pkey PRIMARY KEY (id, nivel);
+
+
+--
+-- Name: staging_produtos staging_produtos_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.staging_produtos
+    ADD CONSTRAINT staging_produtos_pkey PRIMARY KEY (id, filial_id);
+
+
+--
+-- Name: tipos_despesa tipos_despesa_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.tipos_despesa
+    ADD CONSTRAINT tipos_despesa_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: perdas uk_perdas_filial_produto_data_motivo; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.perdas
+    ADD CONSTRAINT uk_perdas_filial_produto_data_motivo UNIQUE (filial_id, produto_id, data_perda, motivo_perda_id);
+
+
+--
+-- Name: vendas_diarias_por_filial vendas_diarias_por_filial_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas_diarias_por_filial
+    ADD CONSTRAINT vendas_diarias_por_filial_pkey PRIMARY KEY (filial_id, data_venda);
+
+
+--
+-- Name: vendas_hoje_itens vendas_hoje_itens_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas_hoje_itens
+    ADD CONSTRAINT vendas_hoje_itens_pkey PRIMARY KEY (filial_id, cupom, produto_id, ordem);
+
+
+--
+-- Name: vendas_hoje vendas_hoje_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas_hoje
+    ADD CONSTRAINT vendas_hoje_pkey PRIMARY KEY (filial_id, cupom);
+
+
+--
+-- Name: vendas_mensal_produto vendas_mensal_produto_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas_mensal_produto
+    ADD CONSTRAINT vendas_mensal_produto_pkey PRIMARY KEY (ano, mes, filial_id, id_produto);
+
+
+--
+-- Name: vendas vendas_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas
+    ADD CONSTRAINT vendas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: vendas_por_departamento vendas_por_departamento_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas_por_departamento
+    ADD CONSTRAINT vendas_por_departamento_pkey PRIMARY KEY (data, filial_id, departamento_nivel, departamento_id);
+
+
+--
+-- Name: vendas_produto_mes vendas_produto_mes_pkey; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas_produto_mes
+    ADD CONSTRAINT vendas_produto_mes_pkey PRIMARY KEY (mes_referencia, filial_id, id_produto);
+
+
+--
+-- Name: vendas vendas_unicas_idx; Type: CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas
+    ADD CONSTRAINT vendas_unicas_idx UNIQUE (id_produto, filial_id, data_venda, id_oferta);
+
+
+--
+-- Name: idx_solpet_produtos_curva; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_solpet_produtos_curva ON solpet.produtos USING btree (curva_abcd, filial_id) WHERE (ativo = true);
+
+
+--
+-- Name: idx_solpet_produtos_ruptura_abcd; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_solpet_produtos_ruptura_abcd ON solpet.produtos USING btree (filial_id, curva_abcd, estoque_atual, ativo, departamento_id, descricao) WHERE ((curva_abcd = 'A'::text) AND (estoque_atual <= (0)::numeric) AND (ativo = true));
+
+
+--
+-- Name: idx_solpet_produtos_sem_vendas; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_solpet_produtos_sem_vendas ON solpet.produtos USING btree (filial_id, ativo, estoque_atual) WHERE ((ativo = true) AND (estoque_atual > (0)::numeric));
+
+
+--
+-- Name: idx_solpet_vendas_agregadas_30d_produto_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_solpet_vendas_agregadas_30d_produto_filial ON solpet.vendas_agregadas_30d USING btree (id_produto, filial_id);
+
+
+--
+-- Name: idx_solpet_vendas_agregadas_60d_produto_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_solpet_vendas_agregadas_60d_produto_filial ON solpet.vendas_agregadas_60d USING btree (id_produto, filial_id);
+
+
+--
+-- Name: idx_solpet_vendas_hoje_ultima; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_solpet_vendas_hoje_ultima ON solpet.vendas_hoje_itens USING btree (produto_id, filial_id, data_extracao DESC) WHERE (cancelado = false);
+
+
+--
+-- Name: idx_solpet_vendas_ultima; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_solpet_vendas_ultima ON solpet.vendas USING btree (id_produto, filial_id, data_venda DESC);
+
+
+--
+-- Name: idx_controle_data_execucao; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_controle_data_execucao ON solpet.etl_controle USING btree (data_execucao);
+
+
+--
+-- Name: idx_departments_level_1_pai_level_2; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_departments_level_1_pai_level_2 ON solpet.departments_level_1 USING btree (pai_level_2_id) WHERE (pai_level_2_id IS NOT NULL);
+
+
+--
+-- Name: idx_departments_level_1_pai_level_5; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_departments_level_1_pai_level_5 ON solpet.departments_level_1 USING btree (pai_level_5_id) WHERE (pai_level_5_id IS NOT NULL);
+
+
+--
+-- Name: idx_departments_nivel2_link; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_departments_nivel2_link ON solpet.departments USING btree (departamentalizacaonivel2);
+
+
+--
+-- Name: idx_dept1_pais; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept1_pais ON solpet.departments_level_1 USING btree (pai_level_2_id, pai_level_3_id);
+
+
+--
+-- Name: idx_dept2_departamento; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept2_departamento ON solpet.departments_level_2 USING btree (departamento_id);
+
+
+--
+-- Name: idx_dept3_departamento; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept3_departamento ON solpet.departments_level_3 USING btree (departamento_id);
+
+
+--
+-- Name: idx_dept_pai_level_2; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept_pai_level_2 ON solpet.departments_level_1 USING btree (pai_level_2_id) INCLUDE (departamento_id) WHERE (pai_level_2_id IS NOT NULL);
+
+
+--
+-- Name: idx_dept_pai_level_3; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept_pai_level_3 ON solpet.departments_level_1 USING btree (pai_level_3_id) INCLUDE (departamento_id) WHERE (pai_level_3_id IS NOT NULL);
+
+
+--
+-- Name: idx_dept_pai_level_4; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept_pai_level_4 ON solpet.departments_level_1 USING btree (pai_level_4_id) INCLUDE (departamento_id) WHERE (pai_level_4_id IS NOT NULL);
+
+
+--
+-- Name: idx_dept_pai_level_5; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept_pai_level_5 ON solpet.departments_level_1 USING btree (pai_level_5_id) INCLUDE (departamento_id) WHERE (pai_level_5_id IS NOT NULL);
+
+
+--
+-- Name: idx_dept_pai_level_6; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_dept_pai_level_6 ON solpet.departments_level_1 USING btree (pai_level_6_id) INCLUDE (departamento_id) WHERE (pai_level_6_id IS NOT NULL);
+
+
+--
+-- Name: idx_descontos_data_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_descontos_data_filial ON solpet.descontos_venda USING btree (data_desconto, filial_id) INCLUDE (valor_desconto) WHERE (valor_desconto IS NOT NULL);
+
+
+--
+-- Name: idx_descontos_venda_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_descontos_venda_data ON solpet.descontos_venda USING btree (data_desconto);
+
+
+--
+-- Name: idx_descontos_venda_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_descontos_venda_filial ON solpet.descontos_venda USING btree (filial_id);
+
+
+--
+-- Name: idx_descontos_venda_filial_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_descontos_venda_filial_data ON solpet.descontos_venda USING btree (filial_id, data_desconto);
+
+
+--
+-- Name: idx_entradas_data_entrada; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_entradas_data_entrada ON solpet.entradas USING btree (data_entrada);
+
+
+--
+-- Name: idx_entradas_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_entradas_filial ON solpet.entradas USING btree (filial_id, data_entrada);
+
+
+--
+-- Name: idx_entradas_produtos_entrada; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_entradas_produtos_entrada ON solpet.entradas_produtos USING btree (entrada_id);
+
+
+--
+-- Name: idx_entradas_produtos_produto; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_entradas_produtos_produto ON solpet.entradas_produtos USING btree (produto_id);
+
+
+--
+-- Name: idx_entradas_transacao; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_entradas_transacao ON solpet.entradas USING btree (transacao);
+
+
+--
+-- Name: idx_faturamento_data_saida; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_faturamento_data_saida ON solpet.faturamento USING btree (data_saida);
+
+
+--
+-- Name: idx_faturamento_entidade; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_faturamento_entidade ON solpet.faturamento USING btree (id_entidade);
+
+
+--
+-- Name: idx_faturamento_filial_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_faturamento_filial_data ON solpet.faturamento USING btree (filial_id, data_saida);
+
+
+--
+-- Name: idx_faturamento_produto; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_faturamento_produto ON solpet.faturamento USING btree (id_produto);
+
+
+--
+-- Name: idx_faturamento_transacao; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_faturamento_transacao ON solpet.faturamento USING btree (transacao, data_saida);
+
+
+--
+-- Name: idx_faturamento_vendedor; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_faturamento_vendedor ON solpet.faturamento USING btree (id_vendedor) WHERE (id_vendedor > 0);
+
+
+--
+-- Name: idx_metas_mensais_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_metas_mensais_data ON solpet.metas_mensais USING btree (data);
+
+
+--
+-- Name: idx_metas_mensais_filial_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_metas_mensais_filial_data ON solpet.metas_mensais USING btree (filial_id, data);
+
+
+--
+-- Name: idx_metas_setor_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_metas_setor_data ON solpet.metas_setor USING btree (data, filial_id);
+
+
+--
+-- Name: idx_metas_setor_report_query; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_metas_setor_report_query ON solpet.metas_setor USING btree (setor_id, data, filial_id) WHERE (setor_id IS NOT NULL);
+
+
+--
+-- Name: idx_perdas_data_perda; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_perdas_data_perda ON solpet.perdas USING btree (data_perda);
+
+
+--
+-- Name: idx_perdas_filial_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_perdas_filial_data ON solpet.perdas USING btree (filial_id, data_perda);
+
+
+--
+-- Name: idx_perdas_produto; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_perdas_produto ON solpet.perdas USING btree (produto_id);
+
+
+--
+-- Name: idx_produtos_ativo_dept; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_ativo_dept ON solpet.produtos USING btree (departamento_id, ativo, curva_abcd) WHERE (ativo = true);
+
+
+--
+-- Name: idx_produtos_ativos_venda; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_ativos_venda ON solpet.produtos USING btree (id, filial_id, venda_media_diaria_60d) WHERE (venda_media_diaria_60d > (0)::numeric);
+
+
+--
+-- Name: idx_produtos_curva_abc; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_curva_abc ON solpet.produtos USING btree (curva_abc);
+
+
+--
+-- Name: idx_produtos_curva_abc_estoque; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_curva_abc_estoque ON solpet.produtos USING btree (curva_abc, estoque_atual, filial_id);
+
+
+--
+-- Name: idx_produtos_departamento; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_departamento ON solpet.produtos USING btree (departamento_id);
+
+
+--
+-- Name: idx_produtos_departamento_id; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_departamento_id ON solpet.produtos USING btree (departamento_id);
+
+
+--
+-- Name: idx_produtos_dept_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_dept_filial ON solpet.produtos USING btree (departamento_id, filial_id) INCLUDE (id);
+
+
+--
+-- Name: idx_produtos_filial_departamento; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_filial_departamento ON solpet.produtos USING btree (filial_id, departamento_id);
+
+
+--
+-- Name: idx_produtos_id_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_produtos_id_filial ON solpet.produtos USING btree (id, filial_id);
+
+ALTER TABLE solpet.produtos CLUSTER ON idx_produtos_id_filial;
+
+
+--
+-- Name: idx_produtos_id_filial_unique; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_produtos_id_filial_unique ON solpet.produtos USING btree (id, filial_id);
+
+
+--
+-- Name: idx_resumo_vendas_caixa_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_resumo_vendas_caixa_data ON solpet.resumo_vendas_caixa USING btree (data);
+
+
+--
+-- Name: idx_resumo_vendas_caixa_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_resumo_vendas_caixa_filial ON solpet.resumo_vendas_caixa USING btree (filial_id);
+
+
+--
+-- Name: idx_setores_ativo; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_setores_ativo ON solpet.setores USING btree (ativo) WHERE (ativo = true);
+
+
+--
+-- Name: idx_unique_vw_report_curva_abcd; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_unique_vw_report_curva_abcd ON solpet.vw_report_curva_abcd USING btree (mes_referencia, filial_id, codigo_produto);
+
+
+--
+-- Name: idx_vendas_agregacao_mensal; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_agregacao_mensal ON solpet.vendas USING btree (data_venda, filial_id, id_produto) INCLUDE (quantidade, valor_vendas, custo_compra);
+
+
+--
+-- Name: idx_vendas_cobertura_mv; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_cobertura_mv ON solpet.vendas USING btree (data_venda) INCLUDE (id_produto, filial_id, valor_vendas);
+
+
+--
+-- Name: idx_vendas_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_data ON solpet.vendas USING btree (data_venda);
+
+
+--
+-- Name: idx_vendas_data_covering; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_data_covering ON solpet.vendas USING btree (data_venda, filial_id, id_produto) INCLUDE (valor_vendas) WHERE (data_venda >= '2024-01-01'::date);
+
+
+--
+-- Name: idx_vendas_data_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_data_filial ON solpet.vendas USING btree (data_venda, filial_id);
+
+
+--
+-- Name: idx_vendas_data_filial_produto; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_data_filial_produto ON solpet.vendas USING btree (data_venda, filial_id, id_produto);
+
+
+--
+-- Name: idx_vendas_data_filial_valor; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_data_filial_valor ON solpet.vendas USING btree (data_venda, filial_id) WHERE (valor_vendas > (0)::numeric);
+
+
+--
+-- Name: idx_vendas_dept_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_dept_data ON solpet.vendas_por_departamento USING btree (data DESC);
+
+
+--
+-- Name: idx_vendas_dept_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_dept_filial ON solpet.vendas_por_departamento USING btree (filial_id, data);
+
+
+--
+-- Name: idx_vendas_dept_nivel_id; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_dept_nivel_id ON solpet.vendas_por_departamento USING btree (departamento_nivel, departamento_id, data);
+
+
+--
+-- Name: idx_vendas_filial_e_data; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_filial_e_data ON solpet.vendas USING btree (filial_id, data_venda DESC);
+
+
+--
+-- Name: idx_vendas_hoje_caixa; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_hoje_caixa ON solpet.vendas_hoje USING btree (caixa);
+
+
+--
+-- Name: idx_vendas_hoje_cancelada; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_hoje_cancelada ON solpet.vendas_hoje USING btree (cancelada);
+
+
+--
+-- Name: idx_vendas_hoje_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_hoje_filial ON solpet.vendas_hoje USING btree (filial_id);
+
+
+--
+-- Name: idx_vendas_hoje_itens_cancelado; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_hoje_itens_cancelado ON solpet.vendas_hoje_itens USING btree (cancelado);
+
+
+--
+-- Name: idx_vendas_hoje_itens_produto; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_hoje_itens_produto ON solpet.vendas_hoje_itens USING btree (produto_id);
+
+
+--
+-- Name: idx_vendas_id_produto; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_id_produto ON solpet.vendas USING btree (id_produto);
+
+
+--
+-- Name: idx_vendas_month_year_covering; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_month_year_covering ON solpet.vendas USING btree (EXTRACT(month FROM data_venda), EXTRACT(year FROM data_venda), filial_id, id_produto) INCLUDE (valor_vendas) WHERE (data_venda >= '2024-01-01'::date);
+
+
+--
+-- Name: idx_vendas_produto_filial; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_produto_filial ON solpet.vendas USING btree (id_produto, filial_id);
+
+
+--
+-- Name: idx_vendas_produto_filial_data_optimized; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX idx_vendas_produto_filial_data_optimized ON solpet.vendas USING btree (id_produto, filial_id, data_venda);
+
+
+--
+-- Name: mv_dias_com_venda_uidx; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE UNIQUE INDEX mv_dias_com_venda_uidx ON solpet.mv_dias_com_venda USING btree (filial_id, id_produto);
+
+
+--
+-- Name: produtos_filial_id_id_idx; Type: INDEX; Schema: solpet; Owner: -
+--
+
+CREATE INDEX produtos_filial_id_id_idx ON solpet.produtos USING btree (filial_id, id);
+
+
+--
+-- Name: descontos_venda on_descontos_venda_update; Type: TRIGGER; Schema: solpet; Owner: -
+--
+
+CREATE TRIGGER on_descontos_venda_update BEFORE UPDATE ON solpet.descontos_venda FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+
+--
+-- Name: metas_mensais on_metas_mensais_update; Type: TRIGGER; Schema: solpet; Owner: -
+--
+
+CREATE TRIGGER on_metas_mensais_update BEFORE UPDATE ON solpet.metas_mensais FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+
+--
+-- Name: metas_setor on_metas_setor_update; Type: TRIGGER; Schema: solpet; Owner: -
+--
+
+CREATE TRIGGER on_metas_setor_update BEFORE UPDATE ON solpet.metas_setor FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+
+--
+-- Name: produtos on_produtos_update; Type: TRIGGER; Schema: solpet; Owner: -
+--
+
+CREATE TRIGGER on_produtos_update BEFORE UPDATE ON solpet.produtos FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+
+--
+-- Name: setores on_setores_update; Type: TRIGGER; Schema: solpet; Owner: -
+--
+
+CREATE TRIGGER on_setores_update BEFORE UPDATE ON solpet.setores FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+
+--
+-- Name: vendas on_vendas_update; Type: TRIGGER; Schema: solpet; Owner: -
+--
+
+CREATE TRIGGER on_vendas_update BEFORE UPDATE ON solpet.vendas FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+
+--
+-- Name: entradas_produtos entradas_produtos_entrada_id_fkey; Type: FK CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.entradas_produtos
+    ADD CONSTRAINT entradas_produtos_entrada_id_fkey FOREIGN KEY (entrada_id) REFERENCES solpet.entradas(id) ON DELETE CASCADE;
+
+
+--
+-- Name: perdas fk_motivo_perda; Type: FK CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.perdas
+    ADD CONSTRAINT fk_motivo_perda FOREIGN KEY (motivo_perda_id) REFERENCES solpet.motivos_perda(id);
+
+
+--
+-- Name: metas_setor metas_setores_setor_id_fkey; Type: FK CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.metas_setor
+    ADD CONSTRAINT metas_setores_setor_id_fkey FOREIGN KEY (setor_id) REFERENCES solpet.setores(id) ON DELETE CASCADE;
+
+
+--
+-- Name: vendas_hoje_itens vendas_hoje_itens_filial_id_cupom_fkey; Type: FK CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas_hoje_itens
+    ADD CONSTRAINT vendas_hoje_itens_filial_id_cupom_fkey FOREIGN KEY (filial_id, cupom) REFERENCES solpet.vendas_hoje(filial_id, cupom) ON DELETE CASCADE;
+
+
+--
+-- Name: vendas vendas_id_produto_filial_id_fkey; Type: FK CONSTRAINT; Schema: solpet; Owner: -
+--
+
+ALTER TABLE ONLY solpet.vendas
+    ADD CONSTRAINT vendas_id_produto_filial_id_fkey FOREIGN KEY (id_produto, filial_id) REFERENCES solpet.produtos(id, filial_id) ON DELETE CASCADE;
+
+
+--
+-- Name: vendas Public Read Access on Vendas; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY "Public Read Access on Vendas" ON solpet.vendas FOR SELECT USING (true);
+
+
+--
+-- Name: departments_level_1; Type: ROW SECURITY; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_1 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: departments_level_1 departments_level_1_all_policy; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY departments_level_1_all_policy ON solpet.departments_level_1 TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: departments_level_2; Type: ROW SECURITY; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_2 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: departments_level_2 departments_level_2_all_policy; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY departments_level_2_all_policy ON solpet.departments_level_2 TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: departments_level_3; Type: ROW SECURITY; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_3 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: departments_level_3 departments_level_3_all_policy; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY departments_level_3_all_policy ON solpet.departments_level_3 TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: departments_level_4; Type: ROW SECURITY; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_4 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: departments_level_4 departments_level_4_all_policy; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY departments_level_4_all_policy ON solpet.departments_level_4 TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: departments_level_5; Type: ROW SECURITY; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_5 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: departments_level_5 departments_level_5_all_policy; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY departments_level_5_all_policy ON solpet.departments_level_5 TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: departments_level_6; Type: ROW SECURITY; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.departments_level_6 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: departments_level_6 departments_level_6_all_policy; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY departments_level_6_all_policy ON solpet.departments_level_6 TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: despesas_diarias_por_filial n8n; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY n8n ON solpet.despesas_diarias_por_filial TO anon, authenticated, authenticator, dashboard_user, metabase, pgbouncer, service_role, supabase_admin, supabase_auth_admin, supabase_read_only_user, supabase_realtime_admin, supabase_storage_admin, postgres, supabase_replication_admin, supabase_etl_admin USING (true);
+
+
+--
+-- Name: despesas n8n despesas; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY "n8n despesas" ON solpet.despesas USING (true);
+
+
+--
+-- Name: setores; Type: ROW SECURITY; Schema: solpet; Owner: -
+--
+
+ALTER TABLE solpet.setores ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: setores setores_all_policy; Type: POLICY; Schema: solpet; Owner: -
+--
+
+CREATE POLICY setores_all_policy ON solpet.setores TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict OH2fevLIqZehIzwkiVcGyy6SscLO8GnY7FeatE2RRAke4AkMfWxr82lI4oW2suV
+

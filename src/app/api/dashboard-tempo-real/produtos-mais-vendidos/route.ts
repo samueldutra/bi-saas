@@ -90,12 +90,13 @@ export async function GET(req: Request) {
       )
     }
 
-    // Aggregate by produto_id
-    const productMap = new Map<number, { quantidade: number; receita: number; filial_id: number; is_oferta: boolean }>()
+    // Aggregate by produto_id (normalizado como string para evitar mismatch number vs string)
+    const productMap = new Map<string, { quantidade: number; receita: number; is_oferta: boolean }>()
 
     if (itensData) {
       itensData.forEach((item) => {
-        const produtoId = item.produto_id
+        const produtoId = String(item.produto_id ?? '').trim()
+        if (!produtoId) return
         const quantidade = parseFloat(item.quantidade_vendida) || 0
         const preco = parseFloat(item.preco_venda) || 0
         const desconto = parseFloat(item.valor_desconto) || 0
@@ -115,7 +116,6 @@ export async function GET(req: Request) {
           productMap.set(produtoId, {
             quantidade,
             receita,
-            filial_id: item.filial_id,
             is_oferta: isOferta,
           })
         }
@@ -130,27 +130,72 @@ export async function GET(req: Request) {
     // Get product descriptions
     const produtoIds = sortedProducts.map(([id]) => id)
 
-    const productDescMap = new Map<number, string>()
+    const productDescMap = new Map<string, string>()
     if (produtoIds.length > 0) {
-      // Get product descriptions from produtos table
-      const { data: produtosData } = await directSupabase
-        .schema(requestedSchema as 'public')
-        .from('produtos')
-        .select('id, descricao')
-        .in('id', produtoIds)
+      const numericProdutoIds = produtoIds
+        .map((id) => Number(id))
+        .filter((n) => Number.isFinite(n))
 
-      if (produtosData) {
-        produtosData.forEach((p) => {
-          if (!productDescMap.has(p.id)) {
-            productDescMap.set(p.id, p.descricao || `Produto ${p.id}`)
+      const idCandidates = ['id', 'codigo', 'cod_produto', 'produto_codigo', 'sku']
+
+      for (const candidateColumn of idCandidates) {
+        if (productDescMap.size >= produtoIds.length) break
+
+        const filterValues = numericProdutoIds.length > 0 ? numericProdutoIds : produtoIds
+
+        type ProdutoLookupRow = Record<string, unknown> & { descricao: string | null }
+        type ProdutoLookupResult = {
+          data: ProdutoLookupRow[] | null
+          error: { message: string } | null
+        }
+
+        // Evita explosão de inferência de tipos com coluna dinâmica (candidateColumn)
+        const query = (
+          directSupabase
+            .schema(requestedSchema as 'public')
+            .from('produtos') as unknown as {
+            select: (columns: string) => {
+              in: (column: string, values: Array<string | number>) => Promise<ProdutoLookupResult>
+            }
           }
+        )
+
+        const { data: produtosData, error: produtosError } = await query
+          .select(`${candidateColumn}, descricao`)
+          .in(candidateColumn, filterValues)
+
+        if (produtosError) {
+          const isMissingColumn = produtosError.message.includes('does not exist')
+          if (!isMissingColumn) {
+            console.warn(`[API/DASHBOARD-TEMPO-REAL/PRODUTOS] Produtos Query by ${candidateColumn} Error:`, produtosError.message)
+          }
+          continue
+        }
+
+        if (produtosData) {
+          produtosData.forEach((p) => {
+            const productId = String((p as Record<string, unknown>)[candidateColumn] ?? '').trim()
+            if (productId && !productDescMap.has(productId)) {
+              productDescMap.set(productId, p.descricao || `Produto ${productId}`)
+            }
+          })
+        }
+      }
+
+      if (productDescMap.size < produtoIds.length) {
+        const missingIds = produtoIds.filter((id) => !productDescMap.has(id)).slice(0, 20)
+        console.warn('[API/DASHBOARD-TEMPO-REAL/PRODUTOS] IDs sem descrição encontrados:', {
+          schema: requestedSchema,
+          totalIds: produtoIds.length,
+          totalDescricoes: productDescMap.size,
+          missingSample: missingIds,
         })
       }
     }
 
     // Build result
     const produtos = sortedProducts.map(([produtoId, data]) => ({
-      produto_id: produtoId,
+      produto_id: parseInt(produtoId, 10),
       descricao: productDescMap.get(produtoId) || `Produto ${produtoId}`,
       quantidade_vendida: data.quantidade,
       receita: data.receita,

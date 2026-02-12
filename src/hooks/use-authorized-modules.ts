@@ -118,6 +118,7 @@ export function useAuthorizedModules(userId?: string): AuthorizedModulesState {
     // Mapeamento de rotas para módulos
     const routeModuleMap: Record<string, SystemModule> = {
       '/dashboard': 'dashboard',
+      '/dashboard-tempo-real': 'dashboard_tempo_real',
       '/dre-gerencial': 'dre_gerencial',
       '/metas/mensal': 'metas_mensal',
       '/metas/setor': 'metas_setor',
