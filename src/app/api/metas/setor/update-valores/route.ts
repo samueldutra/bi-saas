@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { safeErrorResponse } from '@/lib/api/error-handler'
+import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,15 +17,31 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = await createClient()
+    const useFaturamentoMetas = await isFaturamentoMetasEnabled(schema)
+    const rpcName = useFaturamentoMetas
+      ? 'atualizar_valores_realizados_todos_setores_com_faturamento'
+      : 'atualizar_valores_realizados_todos_setores'
 
     // Chamar função RPC para atualizar valores realizados de TODOS os setores
     // A função processa todos os setores ativos do schema
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase.rpc as any)('atualizar_valores_realizados_todos_setores', {
+    let { data, error } = await (supabase.rpc as any)(rpcName, {
       p_schema: schema,
       p_mes: mes,
       p_ano: ano
     })
+
+    if (error && useFaturamentoMetas) {
+      console.warn('[API/METAS/SETOR/UPDATE] RPC com faturamento falhou, fallback legado:', error)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fallback = await (supabase.rpc as any)('atualizar_valores_realizados_todos_setores', {
+        p_schema: schema,
+        p_mes: mes,
+        p_ano: ano
+      })
+      data = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       console.error('[API/METAS/SETOR/UPDATE] RPC Error:', error)

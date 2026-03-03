@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -80,10 +81,15 @@ export async function POST(request: NextRequest) {
       meta_percentual,
     })
 
+    const useFaturamentoMetas = await isFaturamentoMetasEnabled(schema)
+    const rpcName = useFaturamentoMetas
+      ? 'generate_metas_setor_com_faturamento'
+      : 'generate_metas_setor'
+
     // Usar a função COMPLETA que tem os parâmetros de meta_percentual e data_referencia
     // Assinatura: p_schema, p_setor_id, p_filial_id, p_mes, p_ano, p_meta_percentual, p_data_referencia_inicial
     // @ts-expect-error RPC function type not generated yet
-    const { data, error }: { data: unknown; error: unknown } = await supabase.rpc('generate_metas_setor', {
+    let { data, error }: { data: unknown; error: unknown } = await supabase.rpc(rpcName, {
       p_schema: schema,
       p_setor_id: parseInt(setor_id),
       p_filial_id: finalFilialId,  // bigint singular (não array!)
@@ -92,6 +98,22 @@ export async function POST(request: NextRequest) {
       p_meta_percentual: parseFloat(meta_percentual),
       p_data_referencia_inicial: data_referencia,
     })
+
+    if (error && useFaturamentoMetas) {
+      console.warn('[API/METAS/SETOR/GENERATE] RPC com faturamento falhou, fallback legado:', error)
+      // @ts-expect-error RPC function type not generated yet
+      const fallback = await supabase.rpc('generate_metas_setor', {
+        p_schema: schema,
+        p_setor_id: parseInt(setor_id),
+        p_filial_id: finalFilialId,
+        p_mes: parseInt(mes),
+        p_ano: parseInt(ano),
+        p_meta_percentual: parseFloat(meta_percentual),
+        p_data_referencia_inicial: data_referencia,
+      })
+      data = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       console.error('[API/METAS/SETOR/GENERATE] Error:', error)

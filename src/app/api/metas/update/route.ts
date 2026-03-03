@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { safeErrorResponse } from '@/lib/api/error-handler'
 import { isValidSchema } from '@/lib/security/validate-schema'
+import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 import { z } from 'zod'
 
 const updateMetaIndividualSchema = z.object({
@@ -131,6 +132,11 @@ export async function POST(request: NextRequest) {
 
     const { schema, mes, ano, filial_id } = validation.data
 
+    const useFaturamentoMetas = await isFaturamentoMetasEnabled(schema)
+    const rpcName = useFaturamentoMetas
+      ? 'atualizar_valores_realizados_metas_com_faturamento'
+      : 'atualizar_valores_realizados_metas'
+
     const params: Record<string, number | string> = {
       p_schema: schema,
       p_mes: mes,
@@ -144,7 +150,15 @@ export async function POST(request: NextRequest) {
     console.log('[API/METAS/UPDATE] Calling RPC with params:', params)
 
     // @ts-expect-error - Function will exist after migration is applied
-    const { data, error } = await supabase.rpc('atualizar_valores_realizados_metas', params)
+    let { data, error } = await supabase.rpc(rpcName, params)
+
+    if (error && useFaturamentoMetas) {
+      console.warn('[API/METAS/UPDATE] RPC com faturamento falhou, fallback legado:', error)
+      // @ts-expect-error - Function exists in legacy
+      const fallback = await supabase.rpc('atualizar_valores_realizados_metas', params)
+      data = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       console.error('[API/METAS/UPDATE] Error:', error)

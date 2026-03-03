@@ -13,6 +13,7 @@ interface TenantParameter {
 export function useTenantParameters(tenantId: string | undefined) {
   const [parameters, setParameters] = useState<Record<string, boolean>>({
     enable_descontos_venda: false,
+    enable_faturamento_metas: false,
   })
   const [loading, setLoading] = useState(true)
 
@@ -20,6 +21,7 @@ export function useTenantParameters(tenantId: string | undefined) {
     // Reset parameters to default when tenant changes
     setParameters({
       enable_descontos_venda: false,
+      enable_faturamento_metas: false,
     })
     setLoading(true)
 
@@ -39,13 +41,17 @@ export function useTenantParameters(tenantId: string | undefined) {
 
         if (error) {
           console.error('Error loading tenant parameters:', error)
-          setParameters({ enable_descontos_venda: false })
+          setParameters({
+            enable_descontos_venda: false,
+            enable_faturamento_metas: false,
+          })
           return
         }
 
         // Start with default values
         const params: Record<string, boolean> = {
           enable_descontos_venda: false,
+          enable_faturamento_metas: false,
         }
 
         // Override with actual values from database
@@ -58,7 +64,10 @@ export function useTenantParameters(tenantId: string | undefined) {
         setParameters(params)
       } catch (error) {
         console.error('Error in useTenantParameters:', error)
-        setParameters({ enable_descontos_venda: false })
+        setParameters({
+          enable_descontos_venda: false,
+          enable_faturamento_metas: false,
+        })
       } finally {
         setLoading(false)
       }

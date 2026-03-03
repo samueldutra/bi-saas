@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { isValidSchema } from '@/lib/security/validate-schema'
+import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 import { z } from 'zod'
 
 // FORÇAR ROTA DINÂMICA - NÃO CACHEAR
@@ -110,12 +111,17 @@ export async function POST(request: NextRequest) {
       dataReferenciaInicial
     })
 
+    const useFaturamentoMetas = await isFaturamentoMetasEnabled(schema)
+    const rpcName = useFaturamentoMetas
+      ? 'generate_metas_mensais_com_faturamento'
+      : 'generate_metas_mensais'
+
     // TEMPORÁRIO: Usar client direto sem cache (igual ao dashboard)
     const { createDirectClient } = await import('@/lib/supabase/admin')
     const directSupabase = createDirectClient()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (directSupabase as any).rpc('generate_metas_mensais', {
+    let { data, error } = await (directSupabase as any).rpc(rpcName, {
       p_schema: schema,
       p_filial_id: finalFilialId,
       p_mes: mes,
@@ -123,6 +129,21 @@ export async function POST(request: NextRequest) {
       p_meta_percentual: metaPercentual,
       p_data_referencia_inicial: dataReferenciaInicial
     })
+
+    if (error && useFaturamentoMetas) {
+      console.warn('[API/METAS/GENERATE] RPC com faturamento falhou, fallback legado:', error)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fallback = await (directSupabase as any).rpc('generate_metas_mensais', {
+        p_schema: schema,
+        p_filial_id: finalFilialId,
+        p_mes: mes,
+        p_ano: ano,
+        p_meta_percentual: metaPercentual,
+        p_data_referencia_inicial: dataReferenciaInicial
+      })
+      data = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       console.error('[API/METAS/GENERATE] Error:', error)
