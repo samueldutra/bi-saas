@@ -113,6 +113,13 @@ interface ReportData {
   hierarquia: DeptNivel3[]
 }
 
+interface AppliedFilters {
+  mes: string
+  ano: string
+  filiais: string[]
+  compararAnoAnterior: boolean
+}
+
 // Componente memoizado para renderização de produtos
 const ProdutoTable = memo(function ProdutoTable({
   produtos,
@@ -359,19 +366,28 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
   const maxFiliais = 5
   const [isDirty, setIsDirty] = useState(true)
   const [activeQueryKey, setActiveQueryKey] = useState<string | null>(null)
+  const [appliedFilters, setAppliedFilters] = useState<AppliedFilters | null>(null)
 
-  const buildQueryKey = () =>
-    `${mes}|${ano}|${filiaisSelecionadas.map(f => f.value).sort().join(',')}|${compararAnoAnterior ? 1 : 0}`
+  const buildQueryKey = (filters: AppliedFilters) =>
+    `${filters.mes}|${filters.ano}|${filters.filiais.slice().sort().join(',')}|${filters.compararAnoAnterior ? 1 : 0}`
+
+  const buildCurrentFilters = (): AppliedFilters => ({
+    mes,
+    ano,
+    filiais: filiaisSelecionadas.map(f => f.value),
+    compararAnoAnterior,
+  })
 
   // Carregar dados quando a página mudar (apenas se filtros já foram aplicados)
   useEffect(() => {
     if (!activeQueryKey) return
-    if (activeQueryKey !== buildQueryKey()) return
-    if (currentTenant?.supabase_schema && filiaisSelecionadas.length > 0 && page > 1) {
-      fetchData()
+    if (!appliedFilters) return
+    if (activeQueryKey !== buildQueryKey(appliedFilters)) return
+    if (currentTenant?.supabase_schema && appliedFilters.filiais.length > 0 && page > 1) {
+      fetchData({ filters: appliedFilters, targetPage: page })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
+  }, [page, activeQueryKey, appliedFilters, currentTenant?.supabase_schema])
 
   const hierarquiaFiltrada = useMemo(() => {
     if (!data?.hierarquia) return []
@@ -404,15 +420,22 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
   }, [filtroProduto])
 
   // Buscar dados
-  const fetchData = async () => {
+  const fetchData = async ({
+    filters = appliedFilters,
+    targetPage = page,
+  }: {
+    filters?: AppliedFilters | null
+    targetPage?: number
+  } = {}) => {
     if (!currentTenant?.supabase_schema) return
+    if (!filters) return
 
     // Validar se filial está selecionada
-    if (filiaisSelecionadas.length === 0) {
+    if (filters.filiais.length === 0) {
       setError('Por favor, selecione ao menos uma filial')
       return
     }
-    if (filiaisSelecionadas.length > maxFiliais) {
+    if (filters.filiais.length > maxFiliais) {
       toast.error(`Selecione no máximo ${maxFiliais} filiais`)
       return
     }
@@ -423,12 +446,12 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
     try {
       const params = new URLSearchParams({
         schema: currentTenant.supabase_schema,
-        mes,
-        ano,
-        filial_id: filiaisSelecionadas.map(f => f.value).join(','),
-        page: page.toString(),
+        mes: filters.mes,
+        ano: filters.ano,
+        filial_id: filters.filiais.join(','),
+        page: targetPage.toString(),
         page_size: pageSize.toString(),
-        compare_ano_anterior: compararAnoAnterior ? '1' : '0',
+        compare_ano_anterior: filters.compararAnoAnterior ? '1' : '0',
       })
 
       const response = await fetch(`/api/relatorios/venda-curva/totais?${params}`)
@@ -439,7 +462,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
       }
 
       setData(result)
-      setActiveQueryKey(buildQueryKey())
+      setActiveQueryKey(buildQueryKey(filters))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao buscar dados')
       console.error('Error fetching data:', err)
@@ -449,11 +472,13 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
   }
 
   const handleGerar = async () => {
+    const nextFilters = buildCurrentFilters()
     setPage(1)
     setIsDirty(false)
-    const nextKey = buildQueryKey()
+    setAppliedFilters(nextFilters)
+    const nextKey = buildQueryKey(nextFilters)
     setActiveQueryKey(nextKey)
-    await fetchData()
+    await fetchData({ filters: nextFilters, targetPage: 1 })
   }
 
   const fetchProdutos = useCallback(async (args: {
@@ -464,16 +489,16 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
     page: number
   }) => {
     if (!currentTenant?.supabase_schema) return
-    if (filiaisSelecionadas.length === 0) return
+    if (!appliedFilters || appliedFilters.filiais.length === 0) return
 
     const params = new URLSearchParams({
       schema: currentTenant.supabase_schema,
-      mes,
-      ano,
-      filial_id: filiaisSelecionadas.map(f => f.value).join(','),
+      mes: appliedFilters.mes,
+      ano: appliedFilters.ano,
+      filial_id: appliedFilters.filiais.join(','),
       page: args.page.toString(),
       page_size: produtosPageSize.toString(),
-      compare_ano_anterior: compararAnoAnterior ? '1' : '0',
+      compare_ano_anterior: appliedFilters.compararAnoAnterior ? '1' : '0',
       dept3: args.dept3,
       dept2: args.dept2,
       dept1: args.dept1,
@@ -525,7 +550,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
         }
       }))
     }
-  }, [ano, compararAnoAnterior, currentTenant?.supabase_schema, filiaisSelecionadas, filtroProduto, mes, produtosPageSize])
+  }, [appliedFilters, currentTenant?.supabase_schema, filtroProduto, produtosPageSize])
 
   useEffect(() => {
     if (filtroProduto.length < 3) return
@@ -557,7 +582,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
 
   // Exportar PDF
   const handleExportarPDF = async () => {
-    if (!currentTenant?.supabase_schema || filiaisSelecionadas.length === 0) return
+    if (!currentTenant?.supabase_schema || !appliedFilters || appliedFilters.filiais.length === 0) return
 
     try {
       setLoading(true)
@@ -569,12 +594,12 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
       // Buscar TODOS os dados sem paginação
       const params = new URLSearchParams({
         schema: currentTenant.supabase_schema,
-        mes,
-        ano,
-        filial_id: filiaisSelecionadas.map(f => f.value).join(','),
+        mes: appliedFilters.mes,
+        ano: appliedFilters.ano,
+        filial_id: appliedFilters.filiais.join(','),
         page: '1',
         page_size: '10000',
-        compare_ano_anterior: compararAnoAnterior ? '1' : '0',
+        compare_ano_anterior: appliedFilters.compararAnoAnterior ? '1' : '0',
       })
 
       const response = await fetch(`/api/relatorios/venda-curva?${params}`)
@@ -597,17 +622,17 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
       doc.setFont('helvetica')
 
       // Cabeçalho
-      const filialNome = filiaisSelecionadas.length === 1
-        ? (todasAsFiliais.find(f => f.value === filiaisSelecionadas[0].value)?.label || filiaisSelecionadas[0].label)
-        : `${filiaisSelecionadas.length} filiais selecionadas`
-      const mesNome = meses.find(m => m.value === mes)?.label || mes
+      const filialNome = appliedFilters.filiais.length === 1
+        ? (todasAsFiliais.find(f => f.value === appliedFilters.filiais[0])?.label || appliedFilters.filiais[0])
+        : `${appliedFilters.filiais.length} filiais selecionadas`
+      const mesNome = meses.find(m => m.value === appliedFilters.mes)?.label || appliedFilters.mes
       
       doc.setFontSize(16)
       doc.text('Relatório de Venda por Curva ABC', doc.internal.pageSize.width / 2, 15, { align: 'center' })
       
       doc.setFontSize(10)
       doc.text(`Filial: ${filialNome}`, 14, 25)
-      doc.text(`Período: ${mesNome}/${ano}`, 14, 30)
+      doc.text(`Período: ${mesNome}/${appliedFilters.ano}`, 14, 30)
       doc.text(`Total de departamentos: ${allData.hierarquia?.length || 0}`, 14, 35)
       doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 14, 40)
 
@@ -762,18 +787,18 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
           vendas: dept3.total_vendas,
           lucro: dept3.total_lucro,
           margem: dept3.margem,
-          qtdeAnterior: compararAnoAnterior ? (dept3.total_qtde_ano_anterior || 0) : undefined,
-          vendasAnterior: compararAnoAnterior ? (dept3.total_vendas_ano_anterior || 0) : undefined,
-          lucroAnterior: compararAnoAnterior ? (dept3.total_lucro_ano_anterior || 0) : undefined,
-          margemAnterior: compararAnoAnterior ? (dept3.margem_ano_anterior || 0) : undefined,
-          qtdeDelta: compararAnoAnterior ? formatDeltaPercent(dept3.total_qtde, dept3.total_qtde_ano_anterior || 0) : undefined,
-          vendasDelta: compararAnoAnterior ? formatDeltaPercent(dept3.total_vendas, dept3.total_vendas_ano_anterior || 0) : undefined,
-          lucroDelta: compararAnoAnterior ? formatDeltaPercent(dept3.total_lucro, dept3.total_lucro_ano_anterior || 0) : undefined,
-          margemDelta: compararAnoAnterior ? formatDeltaPercent(dept3.margem, dept3.margem_ano_anterior || 0) : undefined,
+          qtdeAnterior: appliedFilters.compararAnoAnterior ? (dept3.total_qtde_ano_anterior || 0) : undefined,
+          vendasAnterior: appliedFilters.compararAnoAnterior ? (dept3.total_vendas_ano_anterior || 0) : undefined,
+          lucroAnterior: appliedFilters.compararAnoAnterior ? (dept3.total_lucro_ano_anterior || 0) : undefined,
+          margemAnterior: appliedFilters.compararAnoAnterior ? (dept3.margem_ano_anterior || 0) : undefined,
+          qtdeDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept3.total_qtde, dept3.total_qtde_ano_anterior || 0) : undefined,
+          vendasDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept3.total_vendas, dept3.total_vendas_ano_anterior || 0) : undefined,
+          lucroDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept3.total_lucro, dept3.total_lucro_ano_anterior || 0) : undefined,
+          margemDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept3.margem, dept3.margem_ano_anterior || 0) : undefined,
           fillColor: [214, 214, 214],
           textColor: [30, 41, 59],
           fontSize: 9,
-          rowHeight: compararAnoAnterior ? 14 : 11
+          rowHeight: appliedFilters.compararAnoAnterior ? 14 : 11
         })
 
         dept3.nivel2?.forEach((dept2: DeptNivel2) => {
@@ -783,19 +808,19 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
             vendas: dept2.total_vendas,
             lucro: dept2.total_lucro,
             margem: dept2.margem,
-            qtdeAnterior: compararAnoAnterior ? (dept2.total_qtde_ano_anterior || 0) : undefined,
-            vendasAnterior: compararAnoAnterior ? (dept2.total_vendas_ano_anterior || 0) : undefined,
-            lucroAnterior: compararAnoAnterior ? (dept2.total_lucro_ano_anterior || 0) : undefined,
-            margemAnterior: compararAnoAnterior ? (dept2.margem_ano_anterior || 0) : undefined,
-            qtdeDelta: compararAnoAnterior ? formatDeltaPercent(dept2.total_qtde, dept2.total_qtde_ano_anterior || 0) : undefined,
-            vendasDelta: compararAnoAnterior ? formatDeltaPercent(dept2.total_vendas, dept2.total_vendas_ano_anterior || 0) : undefined,
-            lucroDelta: compararAnoAnterior ? formatDeltaPercent(dept2.total_lucro, dept2.total_lucro_ano_anterior || 0) : undefined,
-            margemDelta: compararAnoAnterior ? formatDeltaPercent(dept2.margem, dept2.margem_ano_anterior || 0) : undefined,
+            qtdeAnterior: appliedFilters.compararAnoAnterior ? (dept2.total_qtde_ano_anterior || 0) : undefined,
+            vendasAnterior: appliedFilters.compararAnoAnterior ? (dept2.total_vendas_ano_anterior || 0) : undefined,
+            lucroAnterior: appliedFilters.compararAnoAnterior ? (dept2.total_lucro_ano_anterior || 0) : undefined,
+            margemAnterior: appliedFilters.compararAnoAnterior ? (dept2.margem_ano_anterior || 0) : undefined,
+            qtdeDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept2.total_qtde, dept2.total_qtde_ano_anterior || 0) : undefined,
+            vendasDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept2.total_vendas, dept2.total_vendas_ano_anterior || 0) : undefined,
+            lucroDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept2.total_lucro, dept2.total_lucro_ano_anterior || 0) : undefined,
+            margemDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept2.margem, dept2.margem_ano_anterior || 0) : undefined,
             fillColor: [228, 228, 228],
             textColor: [30, 41, 59],
             fontSize: 9,
             indent: 6,
-            rowHeight: compararAnoAnterior ? 14 : 11
+            rowHeight: appliedFilters.compararAnoAnterior ? 14 : 11
           })
 
           dept2.nivel1?.forEach((dept1: DeptNivel1) => {
@@ -805,19 +830,19 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
               vendas: dept1.total_vendas,
               lucro: dept1.total_lucro,
               margem: dept1.margem,
-              qtdeAnterior: compararAnoAnterior ? (dept1.total_qtde_ano_anterior || 0) : undefined,
-              vendasAnterior: compararAnoAnterior ? (dept1.total_vendas_ano_anterior || 0) : undefined,
-              lucroAnterior: compararAnoAnterior ? (dept1.total_lucro_ano_anterior || 0) : undefined,
-              margemAnterior: compararAnoAnterior ? (dept1.margem_ano_anterior || 0) : undefined,
-              qtdeDelta: compararAnoAnterior ? formatDeltaPercent(dept1.total_qtde, dept1.total_qtde_ano_anterior || 0) : undefined,
-              vendasDelta: compararAnoAnterior ? formatDeltaPercent(dept1.total_vendas, dept1.total_vendas_ano_anterior || 0) : undefined,
-              lucroDelta: compararAnoAnterior ? formatDeltaPercent(dept1.total_lucro, dept1.total_lucro_ano_anterior || 0) : undefined,
-              margemDelta: compararAnoAnterior ? formatDeltaPercent(dept1.margem, dept1.margem_ano_anterior || 0) : undefined,
+              qtdeAnterior: appliedFilters.compararAnoAnterior ? (dept1.total_qtde_ano_anterior || 0) : undefined,
+              vendasAnterior: appliedFilters.compararAnoAnterior ? (dept1.total_vendas_ano_anterior || 0) : undefined,
+              lucroAnterior: appliedFilters.compararAnoAnterior ? (dept1.total_lucro_ano_anterior || 0) : undefined,
+              margemAnterior: appliedFilters.compararAnoAnterior ? (dept1.margem_ano_anterior || 0) : undefined,
+              qtdeDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept1.total_qtde, dept1.total_qtde_ano_anterior || 0) : undefined,
+              vendasDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept1.total_vendas, dept1.total_vendas_ano_anterior || 0) : undefined,
+              lucroDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept1.total_lucro, dept1.total_lucro_ano_anterior || 0) : undefined,
+              margemDelta: appliedFilters.compararAnoAnterior ? formatDeltaPercent(dept1.margem, dept1.margem_ano_anterior || 0) : undefined,
               fillColor: [241, 241, 241],
               textColor: [30, 41, 59],
               fontSize: 9,
               indent: 12,
-              rowHeight: compararAnoAnterior ? 14 : 11
+              rowHeight: appliedFilters.compararAnoAnterior ? 14 : 11
             })
 
             const tableRows: (string | number | { content: string; styles: { textColor?: number[]; fillColor?: number[]; fontSize?: number } })[][] = []
@@ -834,7 +859,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                 produto.filial_id.toString()
               ])
 
-              if (compararAnoAnterior) {
+              if (appliedFilters.compararAnoAnterior) {
                 const qtdeDelta = formatDeltaPercent(produto.qtde, produto.qtde_ano_anterior || 0)
                 const vendasDelta = formatDeltaPercent(produto.valor_vendas, produto.valor_vendas_ano_anterior || 0)
                 const lucroDelta = formatDeltaPercent(produto.valor_lucro, produto.valor_lucro_ano_anterior || 0)
@@ -907,7 +932,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
       })
 
       // Salvar PDF
-      const fileName = `venda-curva-${filialNome.replace(/\s+/g, '-')}-${mesNome}-${ano}-${new Date().toISOString().split('T')[0]}.pdf`
+      const fileName = `venda-curva-${filialNome.replace(/\s+/g, '-')}-${mesNome}-${appliedFilters.ano}-${new Date().toISOString().split('T')[0]}.pdf`
       doc.save(fileName)
 
     } catch (err) {
@@ -993,7 +1018,10 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
     return { value: year.toString(), label: year.toString() }
   })
 
-  const compareLabel = `${mesesCurto[mes] || mes}/${String(Number(ano) - 1).slice(-2)}`
+  const compareMes = appliedFilters?.mes ?? mes
+  const compareAno = appliedFilters?.ano ?? ano
+  const compareAnoAnteriorAplicado = appliedFilters?.compararAnoAnterior ?? compararAnoAnterior
+  const compareLabel = `${mesesCurto[compareMes] || compareMes}/${String(Number(compareAno) - 1).slice(-2)}`
 
   // Continua na próxima parte...
   return (
@@ -1214,7 +1242,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                               <div className="font-semibold text-sm">
                                 {formatCurrency(dept3.total_vendas)}
                               </div>
-                              {compararAnoAnterior && (
+                              {compareAnoAnteriorAplicado && (
                                 <div className="text-[10px] text-muted-foreground">
                                   {compareLabel} <span className="font-semibold text-black dark:text-white">{formatCurrency(dept3.total_vendas_ano_anterior || 0)}</span> (
                                   <span className={getDeltaClass(dept3.total_vendas, dept3.total_vendas_ano_anterior || 0)}>
@@ -1229,7 +1257,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                               <div className="font-semibold text-sm">
                                 {formatCurrency(dept3.total_lucro)}
                               </div>
-                              {compararAnoAnterior && (
+                              {compareAnoAnteriorAplicado && (
                                 <div className="text-[10px] text-muted-foreground">
                                   {compareLabel} <span className="font-semibold text-black dark:text-white">{formatCurrency(dept3.total_lucro_ano_anterior || 0)}</span> (
                                   <span className={getDeltaClass(dept3.total_lucro, dept3.total_lucro_ano_anterior || 0)}>
@@ -1242,7 +1270,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                             <div className="text-right">
                               <div className="text-xs text-muted-foreground">Margem</div>
                               <div className="font-semibold text-sm">{formatPercent(dept3.margem)}</div>
-                              {compararAnoAnterior && (
+                              {compareAnoAnteriorAplicado && (
                                 <div className="text-[10px] text-muted-foreground">
                                   {compareLabel} <span className="font-semibold text-black dark:text-white">{formatPercent(dept3.margem_ano_anterior || 0)}</span> (
                                   <span className={getDeltaClass(dept3.margem, dept3.margem_ano_anterior || 0)}>
@@ -1281,7 +1309,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                       <div className="font-medium text-xs">
                                         {formatCurrency(dept2.total_vendas)}
                                       </div>
-                                      {compararAnoAnterior && (
+                                      {compareAnoAnteriorAplicado && (
                                         <div className="text-[10px] text-muted-foreground">
                                           {compareLabel} <span className="font-semibold text-black dark:text-white">{formatCurrency(dept2.total_vendas_ano_anterior || 0)}</span> (
                                           <span className={getDeltaClass(dept2.total_vendas, dept2.total_vendas_ano_anterior || 0)}>
@@ -1296,7 +1324,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                       <div className="font-medium text-xs">
                                         {formatCurrency(dept2.total_lucro)}
                                       </div>
-                                      {compararAnoAnterior && (
+                                      {compareAnoAnteriorAplicado && (
                                         <div className="text-[10px] text-muted-foreground">
                                           {compareLabel} <span className="font-semibold text-black dark:text-white">{formatCurrency(dept2.total_lucro_ano_anterior || 0)}</span> (
                                           <span className={getDeltaClass(dept2.total_lucro, dept2.total_lucro_ano_anterior || 0)}>
@@ -1309,7 +1337,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                     <div className="text-right">
                                       <div className="text-xs text-muted-foreground">Margem</div>
                                       <div className="font-medium text-xs">{formatPercent(dept2.margem)}</div>
-                                      {compararAnoAnterior && (
+                                      {compareAnoAnteriorAplicado && (
                                         <div className="text-[10px] text-muted-foreground">
                                           {compareLabel} <span className="font-semibold text-black dark:text-white">{formatPercent(dept2.margem_ano_anterior || 0)}</span> (
                                           <span className={getDeltaClass(dept2.margem, dept2.margem_ano_anterior || 0)}>
@@ -1370,7 +1398,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                               <div className="font-medium text-xs">
                                                 {formatQuantity(dept1.total_qtde || 0)}
                                               </div>
-                                              {compararAnoAnterior && (
+                                              {compareAnoAnteriorAplicado && (
                                                 <div className="text-[10px] text-muted-foreground">
                                                   {compareLabel} <span className="font-semibold text-black dark:text-white">{formatQuantity(dept1.total_qtde_ano_anterior || 0)}</span> (
                                                   <span className={getDeltaClass(dept1.total_qtde || 0, dept1.total_qtde_ano_anterior || 0)}>
@@ -1385,7 +1413,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                               <div className="font-medium text-xs">
                                                 {formatCurrency(dept1.total_vendas)}
                                               </div>
-                                              {compararAnoAnterior && (
+                                              {compareAnoAnteriorAplicado && (
                                                 <div className="text-[10px] text-muted-foreground">
                                                   {compareLabel} <span className="font-semibold text-black dark:text-white">{formatCurrency(dept1.total_vendas_ano_anterior || 0)}</span> (
                                                   <span className={getDeltaClass(dept1.total_vendas, dept1.total_vendas_ano_anterior || 0)}>
@@ -1400,7 +1428,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                               <div className="font-medium text-xs">
                                                 {formatCurrency(dept1.total_lucro)}
                                               </div>
-                                              {compararAnoAnterior && (
+                                              {compareAnoAnteriorAplicado && (
                                                 <div className="text-[10px] text-muted-foreground">
                                                   {compareLabel} <span className="font-semibold text-black dark:text-white">{formatCurrency(dept1.total_lucro_ano_anterior || 0)}</span> (
                                                   <span className={getDeltaClass(dept1.total_lucro, dept1.total_lucro_ano_anterior || 0)}>
@@ -1413,7 +1441,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                             <div className="text-right">
                                               <div className="text-[10px] text-muted-foreground">Margem</div>
                                               <div className="font-medium text-xs">{formatPercent(dept1.margem)}</div>
-                                              {compararAnoAnterior && (
+                                              {compareAnoAnteriorAplicado && (
                                                 <div className="text-[10px] text-muted-foreground">
                                                   {compareLabel} <span className="font-semibold text-black dark:text-white">{formatPercent(dept1.margem_ano_anterior || 0)}</span> (
                                                   <span className={getDeltaClass(dept1.margem, dept1.margem_ano_anterior || 0)}>
@@ -1442,7 +1470,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                                 <ProdutoTable
                                                   produtos={produtosInfo.items}
                                                   filtroProduto={filtroProduto}
-                                                  compararAnoAnterior={compararAnoAnterior}
+                                                  compararAnoAnterior={compareAnoAnteriorAplicado}
                                                   compareLabel={compareLabel}
                                                 />
                                               )}
