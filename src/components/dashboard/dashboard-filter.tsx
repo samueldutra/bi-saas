@@ -63,12 +63,32 @@ export function DashboardFilter({ onPeriodChange }: DashboardFilterProps) {
   const [startMonth, setStartMonth] = useState<Date | undefined>(undefined)
   const [endMonth, setEndMonth] = useState<Date | undefined>(undefined)
 
+  const getMonthPeriod = (monthIndex: number, yearValue: number) => {
+    const firstDay = startOfMonth(new Date(yearValue, monthIndex))
+    const isCurrentMonth = monthIndex === currentMonth && yearValue === currentYear
+
+    if (isCurrentMonth) {
+      const yesterday = new Date()
+      yesterday.setHours(0, 0, 0, 0)
+      yesterday.setDate(yesterday.getDate() - 1)
+
+      return {
+        firstDay,
+        lastDay: yesterday < firstDay ? firstDay : yesterday,
+      }
+    }
+
+    return {
+      firstDay,
+      lastDay: endOfMonth(new Date(yearValue, monthIndex)),
+    }
+  }
+
   // Inicialização - aplica filtro do mês atual
   useEffect(() => {
     const monthIndex = parseInt(selectedMonth)
     const yearValue = parseInt(selectedYear)
-    const firstDay = startOfMonth(new Date(yearValue, monthIndex))
-    const lastDay = endOfMonth(new Date(yearValue, monthIndex))
+    const { firstDay, lastDay } = getMonthPeriod(monthIndex, yearValue)
 
     onPeriodChange(firstDay, lastDay, 'month')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -79,8 +99,7 @@ export function DashboardFilter({ onPeriodChange }: DashboardFilterProps) {
     if (filterType === 'month') {
       const monthIndex = parseInt(selectedMonth)
       const yearValue = parseInt(selectedYear)
-      const firstDay = startOfMonth(new Date(yearValue, monthIndex))
-      const lastDay = endOfMonth(new Date(yearValue, monthIndex))
+      const { firstDay, lastDay } = getMonthPeriod(monthIndex, yearValue)
 
       onPeriodChange(firstDay, lastDay, 'month')
     }
@@ -118,11 +137,9 @@ export function DashboardFilter({ onPeriodChange }: DashboardFilterProps) {
     if (value === 'month') {
       // Sempre usa o ano atual no filtro por mês
       setSelectedYear(currentYear.toString())
+      setSelectedMonth(currentMonth.toString())
       // Volta para o mês atual quando muda para filtro por mês
-      const monthIndex = parseInt(selectedMonth)
-      const yearValue = currentYear
-      const firstDay = startOfMonth(new Date(yearValue, monthIndex))
-      const lastDay = endOfMonth(new Date(yearValue, monthIndex))
+      const { firstDay, lastDay } = getMonthPeriod(currentMonth, currentYear)
 
       onPeriodChange(firstDay, lastDay, 'month')
     } else if (value === 'year') {

@@ -20,6 +20,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DashboardFilter, type FilterType } from '@/components/dashboard/dashboard-filter'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // Tipo de venda para o filtro
 type SalesType = 'complete' | 'pdv' | 'faturamento'
@@ -158,12 +159,22 @@ type SortDirection = 'asc' | 'desc'
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
+const getDefaultCurrentMonthEndDate = (): Date => {
+  const today = new Date()
+  const monthStart = startOfMonth(today)
+  const yesterday = new Date(today)
+  yesterday.setHours(0, 0, 0, 0)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  return yesterday < monthStart ? monthStart : yesterday
+}
+
 export default function DashboardPage() {
   const { currentTenant, userProfile } = useTenantContext()
 
   // Estados para os filtros
   const [dataInicio, setDataInicio] = useState<Date>(startOfMonth(new Date()))
-  const [dataFim, setDataFim] = useState<Date>(new Date())
+  const [dataFim, setDataFim] = useState<Date>(getDefaultCurrentMonthEndDate())
   const [filiaisSelecionadas, setFiliaisSelecionadas] = useState<{ value: string; label: string }[]>([])
   const [filterType, setFilterType] = useState<FilterType>('month')
   const [salesType, setSalesType] = useState<SalesType>('complete')
@@ -179,7 +190,7 @@ export default function DashboardPage() {
   const [apiParams, setApiParams] = useState({
     schema: currentTenant?.supabase_schema,
     data_inicio: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
-    data_fim: format(new Date(), 'yyyy-MM-dd'),
+    data_fim: format(getDefaultCurrentMonthEndDate(), 'yyyy-MM-dd'),
     filiais: 'all',
     filter_type: 'month' as FilterType,
   })
@@ -592,6 +603,47 @@ export default function DashboardPage() {
     : null
   const { data: faturamentoPaData } = useSWR<FaturamentoData>(faturamentoPaUrl, fetcher, { refreshInterval: 0 });
 
+  // Datas de comparação usadas na tabela de Vendas por Filial (mesma lógica da RPC get_vendas_por_filial)
+  const vendasPorFilialComparisonDates = useMemo(() => {
+    if (!apiParams.data_inicio || !apiParams.data_fim) return null
+
+    const dataInicio = new Date(apiParams.data_inicio + 'T00:00:00')
+    const dataFim = new Date(apiParams.data_fim + 'T00:00:00')
+
+    let comparisonStart: Date
+    let comparisonEnd: Date
+
+    if (apiParams.filter_type === 'custom') {
+      const diffMs = dataFim.getTime() - dataInicio.getTime()
+      const rangeDays = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1
+      comparisonStart = new Date(dataInicio)
+      comparisonStart.setDate(comparisonStart.getDate() - rangeDays)
+      comparisonEnd = new Date(dataInicio)
+      comparisonEnd.setDate(comparisonEnd.getDate() - 1)
+    } else {
+      comparisonStart = new Date(dataInicio)
+      comparisonStart.setFullYear(comparisonStart.getFullYear() - 1)
+      comparisonEnd = new Date(dataFim)
+      comparisonEnd.setFullYear(comparisonEnd.getFullYear() - 1)
+    }
+
+    return {
+      data_inicio: format(comparisonStart, 'yyyy-MM-dd'),
+      data_fim: format(comparisonEnd, 'yyyy-MM-dd')
+    }
+  }, [apiParams.data_inicio, apiParams.data_fim, apiParams.filter_type])
+
+  // Faturamento comparativo para alinhar valores da tabela com o card (mesmo período comparativo)
+  const faturamentoComparativoUrl = apiParams.schema && vendasPorFilialComparisonDates
+    ? `/api/faturamento?schema=${apiParams.schema}&data_inicio=${vendasPorFilialComparisonDates.data_inicio}&data_fim=${vendasPorFilialComparisonDates.data_fim}&filiais=${apiParams.filiais}`
+    : null
+  const { data: faturamentoComparativoData } = useSWR<FaturamentoData>(faturamentoComparativoUrl, fetcher, { refreshInterval: 0 });
+
+  const faturamentoPorFilialComparativoUrl = apiParams.schema && vendasPorFilialComparisonDates
+    ? `/api/faturamento?schema=${apiParams.schema}&data_inicio=${vendasPorFilialComparisonDates.data_inicio}&data_fim=${vendasPorFilialComparisonDates.data_fim}&filiais=${apiParams.filiais}&por_filial=true`
+    : null
+  const { data: faturamentoPorFilialComparativoData } = useSWR<FaturamentoPorFilial[]>(faturamentoPorFilialComparativoUrl, fetcher, { refreshInterval: 0 });
+
   // Calcular datas MTD para mês anterior (ex: OUT/2025 quando atual é NOV/2025)
   // Quando filtro é mês passado completo, busca mês anterior completo
   const mtdPreviousMonthDates = useMemo(() => {
@@ -693,6 +745,24 @@ export default function DashboardPage() {
     }
     return map
   }, [faturamentoPorFilialData])
+
+  const faturamentoPorFilialComparativoMap = useMemo(() => {
+    const map = new Map<number, FaturamentoPorFilial>()
+    if (Array.isArray(faturamentoPorFilialComparativoData)) {
+      faturamentoPorFilialComparativoData.forEach(f => map.set(f.filial_id, f))
+    }
+    return map
+  }, [faturamentoPorFilialComparativoData])
+
+  const comparisonPeriodLabel = useMemo(() => {
+    if (!vendasPorFilialComparisonDates) return 'PA'
+
+    const monthNames = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
+    const start = new Date(vendasPorFilialComparisonDates.data_inicio + 'T00:00:00')
+    const yearShort = String(start.getFullYear()).slice(-2)
+
+    return `${monthNames[start.getMonth()]}/${yearShort}`
+  }, [vendasPorFilialComparisonDates])
 
   // Calcular totais consolidados baseado no tipo de venda selecionado
   const consolidatedTotals = useMemo(() => {
@@ -875,6 +945,9 @@ export default function DashboardPage() {
       // Cabeçalho do PDF
       const tenantName = currentTenant?.name || 'Empresa'
       const periodoLabel = `${format(dataInicio, 'dd/MM/yyyy')} a ${format(dataFim, 'dd/MM/yyyy')}`
+      const comparisonLabel = vendasPorFilialComparisonDates
+        ? `${format(new Date(vendasPorFilialComparisonDates.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(vendasPorFilialComparisonDates.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}`
+        : '-'
 
       doc.setFontSize(16)
       doc.setFont('helvetica', 'bold')
@@ -884,7 +957,8 @@ export default function DashboardPage() {
       doc.setFont('helvetica', 'normal')
       doc.text(`Empresa: ${tenantName}`, 14, 22)
       doc.text(`Período: ${periodoLabel}`, 14, 27)
-      doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 32)
+      doc.text(`Comparação de crescimento: ${comparisonLabel}`, 14, 32)
+      doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 37)
 
       // Preparar dados da tabela
       const tableHead = [
@@ -957,8 +1031,8 @@ export default function DashboardPage() {
       const total_sku = totalSkuDistinct
       const pa_total_sku = paTotalSkuDistinct
 
-      const ticket_medio_total = totais.total_transacoes > 0 ? totais.valor_total / totais.total_transacoes : 0
-      const pa_ticket_medio_total = totais.pa_total_transacoes > 0 ? totais.pa_valor_total / totais.pa_total_transacoes : 0
+      const ticket_medio_total = totais.total_cupons > 0 ? totais.valor_total / totais.total_cupons : 0
+      const pa_ticket_medio_total = totais.pa_total_cupons > 0 ? totais.pa_valor_total / totais.pa_total_cupons : 0
       const delta_ticket_total = pa_ticket_medio_total > 0 ? ((ticket_medio_total - pa_ticket_medio_total) / pa_ticket_medio_total) * 100 : 0
       const margem_total = totais.valor_total > 0 ? (totais.total_lucro / totais.valor_total) * 100 : 0
       const pa_margem_total = totais.pa_valor_total > 0 ? (totais.pa_total_lucro / totais.pa_valor_total) * 100 : 0
@@ -1059,7 +1133,7 @@ export default function DashboardPage() {
       autoTable(doc, {
         head: tableHead,
         body: tableBody,
-        startY: 38,
+        startY: 43,
         margin: { left: 6, right: 6 },
         theme: 'grid',
         styles: {
@@ -1629,7 +1703,14 @@ export default function DashboardPage() {
                         className="h-8 px-2 hover:bg-accent ml-auto"
                         onClick={() => handleSort('ticket_medio')}
                       >
-                        Ticket Médio
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-help">Ticket Médio</span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Vendas PDV / Cupons PDV
+                          </TooltipContent>
+                        </Tooltip>
                         <SortIcon column="ticket_medio" />
                       </Button>
                     </TableHead>
@@ -1713,44 +1794,61 @@ export default function DashboardPage() {
                     const lucroFaturamento = fatFilial?.lucro_bruto_faturamento || 0
                     const cmvFaturamento = fatFilial?.cmv_faturamento || 0
 
+                    const fatFilialComparativo = faturamentoPorFilialComparativoMap.get(venda.filial_id)
+                    const paReceitaFaturamento = fatFilialComparativo?.receita_faturamento || 0
+                    const paLucroFaturamento = fatFilialComparativo?.lucro_bruto_faturamento || 0
+                    const paCmvFaturamento = fatFilialComparativo?.cmv_faturamento || 0
+
                     // Calcular receita baseada no tipo de venda selecionado
                     let receitaFilial: number
                     let lucroFilial: number
                     let custoFilial: number
+                    let paReceitaFilial: number
+                    let paLucroFilial: number
+                    let paCustoFilial: number
 
                     switch (salesType) {
                       case 'pdv':
                         receitaFilial = venda.valor_total
                         lucroFilial = venda.total_lucro
                         custoFilial = venda.custo_total
+                        paReceitaFilial = venda.pa_valor_total
+                        paLucroFilial = venda.pa_total_lucro
+                        paCustoFilial = venda.pa_custo_total
                         break
                       case 'faturamento':
                         receitaFilial = receitaFaturamento
                         lucroFilial = lucroFaturamento
                         custoFilial = cmvFaturamento
+                        paReceitaFilial = paReceitaFaturamento
+                        paLucroFilial = paLucroFaturamento
+                        paCustoFilial = paCmvFaturamento
                         break
                       case 'complete':
                       default:
                         receitaFilial = venda.valor_total + receitaFaturamento
                         lucroFilial = venda.total_lucro + lucroFaturamento
                         custoFilial = venda.custo_total + cmvFaturamento
+                        paReceitaFilial = venda.pa_valor_total + paReceitaFaturamento
+                        paLucroFilial = venda.pa_total_lucro + paLucroFaturamento
+                        paCustoFilial = venda.pa_custo_total + paCmvFaturamento
                         break
                     }
 
                     // Margem baseada nos valores filtrados
                     const margemFilial = receitaFilial > 0 ? (lucroFilial / receitaFilial) * 100 : 0
+                    const paMargemFilial = paReceitaFilial > 0 ? (paLucroFilial / paReceitaFilial) * 100 : 0
 
-                    // Variação baseada no PA do PDV (faturamento PA não disponível por filial)
-                    const deltaReceitaFilial = venda.pa_valor_total > 0
-                      ? ((receitaFilial - venda.pa_valor_total) / venda.pa_valor_total) * 100
+                    const deltaReceitaFilial = paReceitaFilial > 0
+                      ? ((receitaFilial - paReceitaFilial) / paReceitaFilial) * 100
                       : 0
-                    const deltaLucroFilial = venda.pa_total_lucro > 0
-                      ? ((lucroFilial - venda.pa_total_lucro) / venda.pa_total_lucro) * 100
+                    const deltaLucroFilial = paLucroFilial > 0
+                      ? ((lucroFilial - paLucroFilial) / paLucroFilial) * 100
                       : 0
-                    const deltaCustoFilial = venda.pa_custo_total > 0
-                      ? ((custoFilial - venda.pa_custo_total) / venda.pa_custo_total) * 100
+                    const deltaCustoFilial = paCustoFilial > 0
+                      ? ((custoFilial - paCustoFilial) / paCustoFilial) * 100
                       : 0
-                    const deltaMargemFilial = margemFilial - venda.pa_margem_lucro
+                    const deltaMargemFilial = margemFilial - paMargemFilial
 
                     return (
                       <TableRow key={venda.filial_id}>
@@ -1772,7 +1870,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(venda.pa_valor_total)}
+                            {comparisonPeriodLabel}: {formatCurrency(paReceitaFilial)}
                           </div>
                         </TableCell>
                         
@@ -1792,7 +1890,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(venda.pa_ticket_medio)}
+                            {comparisonPeriodLabel}: {formatCurrency(venda.pa_ticket_medio)}
                           </div>
                         </TableCell>
 
@@ -1812,7 +1910,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(venda.pa_custo_total)}
+                            {comparisonPeriodLabel}: {formatCurrency(paCustoFilial)}
                           </div>
                         </TableCell>
 
@@ -1832,7 +1930,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(venda.pa_total_lucro)}
+                            {comparisonPeriodLabel}: {formatCurrency(paLucroFilial)}
                           </div>
                         </TableCell>
 
@@ -1852,7 +1950,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {venda.pa_margem_lucro.toFixed(2)}%
+                            {comparisonPeriodLabel}: {paMargemFilial.toFixed(2)}%
                           </div>
                         </TableCell>
 
@@ -1872,7 +1970,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(venda.pa_total_entradas || 0)}
+                            {comparisonPeriodLabel}: {formatCurrency(venda.pa_total_entradas || 0)}
                           </div>
                         </TableCell>
 
@@ -1892,7 +1990,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {(venda.pa_total_cupons || 0).toLocaleString('pt-BR')}
+                            {comparisonPeriodLabel}: {(venda.pa_total_cupons || 0).toLocaleString('pt-BR')}
                           </div>
                         </TableCell>
 
@@ -1912,7 +2010,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {(venda.pa_total_sku || 0).toLocaleString('pt-BR')}
+                            {comparisonPeriodLabel}: {(venda.pa_total_sku || 0).toLocaleString('pt-BR')}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1958,42 +2056,56 @@ export default function DashboardPage() {
                     const totalFaturamentoReceita = faturamentoData?.receita_faturamento || 0
                     const totalFaturamentoLucro = faturamentoData?.lucro_bruto_faturamento || 0
                     const totalFaturamentoCmv = faturamentoData?.cmv_faturamento || 0
+                    const totalFaturamentoPaReceita = faturamentoComparativoData?.receita_faturamento || 0
+                    const totalFaturamentoPaLucro = faturamentoComparativoData?.lucro_bruto_faturamento || 0
+                    const totalFaturamentoPaCmv = faturamentoComparativoData?.cmv_faturamento || 0
 
                     // Calcular totais baseados no tipo de venda selecionado
                     let receitaTotal: number
                     let lucroTotal: number
                     let custoTotal: number
+                    let paReceitaTotal: number
+                    let paLucroTotal: number
+                    let paCustoTotal: number
 
                     switch (salesType) {
                       case 'pdv':
                         receitaTotal = totaisPdv.valor_total
                         lucroTotal = totaisPdv.total_lucro
                         custoTotal = totaisPdv.custo_total
+                        paReceitaTotal = totaisPdv.pa_valor_total
+                        paLucroTotal = totaisPdv.pa_total_lucro
+                        paCustoTotal = totaisPdv.pa_custo_total
                         break
                       case 'faturamento':
                         receitaTotal = totalFaturamentoReceita
                         lucroTotal = totalFaturamentoLucro
                         custoTotal = totalFaturamentoCmv
+                        paReceitaTotal = totalFaturamentoPaReceita
+                        paLucroTotal = totalFaturamentoPaLucro
+                        paCustoTotal = totalFaturamentoPaCmv
                         break
                       case 'complete':
                       default:
                         receitaTotal = totaisPdv.valor_total + totalFaturamentoReceita
                         lucroTotal = totaisPdv.total_lucro + totalFaturamentoLucro
                         custoTotal = totaisPdv.custo_total + totalFaturamentoCmv
+                        paReceitaTotal = totaisPdv.pa_valor_total + totalFaturamentoPaReceita
+                        paLucroTotal = totaisPdv.pa_total_lucro + totalFaturamentoPaLucro
+                        paCustoTotal = totaisPdv.pa_custo_total + totalFaturamentoPaCmv
                         break
                     }
 
-                    const ticket_medio = totaisPdv.total_transacoes > 0 ? totaisPdv.valor_total / totaisPdv.total_transacoes : 0
-                    const pa_ticket_medio = totaisPdv.pa_total_transacoes > 0 ? totaisPdv.pa_valor_total / totaisPdv.pa_total_transacoes : 0
+                    const ticket_medio = totaisPdv.total_cupons > 0 ? totaisPdv.valor_total / totaisPdv.total_cupons : 0
+                    const pa_ticket_medio = totaisPdv.pa_total_cupons > 0 ? paReceitaTotal / totaisPdv.pa_total_cupons : 0
                     const delta_ticket_percent = pa_ticket_medio > 0 ? ((ticket_medio - pa_ticket_medio) / pa_ticket_medio) * 100 : 0
 
                     const margem_lucro = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0
-                    const pa_margem_lucro = totaisPdv.pa_valor_total > 0 ? (totaisPdv.pa_total_lucro / totaisPdv.pa_valor_total) * 100 : 0
+                    const pa_margem_lucro = paReceitaTotal > 0 ? (paLucroTotal / paReceitaTotal) * 100 : 0
 
-                    // Variações baseadas no PA do PDV
-                    const delta_receita_percent = totaisPdv.pa_valor_total > 0 ? ((receitaTotal - totaisPdv.pa_valor_total) / totaisPdv.pa_valor_total) * 100 : 0
-                    const delta_custo_percent = totaisPdv.pa_custo_total > 0 ? ((custoTotal - totaisPdv.pa_custo_total) / totaisPdv.pa_custo_total) * 100 : 0
-                    const delta_lucro_percent = totaisPdv.pa_total_lucro > 0 ? ((lucroTotal - totaisPdv.pa_total_lucro) / totaisPdv.pa_total_lucro) * 100 : 0
+                    const delta_receita_percent = paReceitaTotal > 0 ? ((receitaTotal - paReceitaTotal) / paReceitaTotal) * 100 : 0
+                    const delta_custo_percent = paCustoTotal > 0 ? ((custoTotal - paCustoTotal) / paCustoTotal) * 100 : 0
+                    const delta_lucro_percent = paLucroTotal > 0 ? ((lucroTotal - paLucroTotal) / paLucroTotal) * 100 : 0
                     const delta_margem = margem_lucro - pa_margem_lucro
 
                     return (
@@ -2016,7 +2128,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(totaisPdv.pa_valor_total)}
+                            {comparisonPeriodLabel}: {formatCurrency(paReceitaTotal)}
                           </div>
                         </TableCell>
 
@@ -2036,7 +2148,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(pa_ticket_medio)}
+                            {comparisonPeriodLabel}: {formatCurrency(pa_ticket_medio)}
                           </div>
                         </TableCell>
 
@@ -2056,7 +2168,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(totaisPdv.pa_custo_total)}
+                            {comparisonPeriodLabel}: {formatCurrency(paCustoTotal)}
                           </div>
                         </TableCell>
 
@@ -2076,7 +2188,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(totaisPdv.pa_total_lucro)}
+                            {comparisonPeriodLabel}: {formatCurrency(paLucroTotal)}
                           </div>
                         </TableCell>
 
@@ -2096,7 +2208,7 @@ export default function DashboardPage() {
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {pa_margem_lucro.toFixed(2)}%
+                            {comparisonPeriodLabel}: {pa_margem_lucro.toFixed(2)}%
                           </div>
                         </TableCell>
 
@@ -2121,7 +2233,7 @@ export default function DashboardPage() {
                                 </span>
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {formatCurrency(totaisPdv.pa_total_entradas)}
+                                {comparisonPeriodLabel}: {formatCurrency(totaisPdv.pa_total_entradas)}
                               </div>
                             </TableCell>
                           )
@@ -2148,7 +2260,7 @@ export default function DashboardPage() {
                                 </span>
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {totaisPdv.pa_total_cupons.toLocaleString('pt-BR')}
+                                {comparisonPeriodLabel}: {totaisPdv.pa_total_cupons.toLocaleString('pt-BR')}
                               </div>
                             </TableCell>
                           )
@@ -2175,7 +2287,7 @@ export default function DashboardPage() {
                                 </span>
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {pa_total_sku_table.toLocaleString('pt-BR')}
+                                {comparisonPeriodLabel}: {pa_total_sku_table.toLocaleString('pt-BR')}
                               </div>
                             </TableCell>
                           )
