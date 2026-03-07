@@ -1259,11 +1259,6 @@ export default function VendaCurvaPage() {
                 >
                   Gerar
                 </Button>
-                {isDirty && (
-                  <span className="text-[10px] text-muted-foreground">
-                    Filtros alterados, clique em Gerar
-                  </span>
-                )}
               </div>
             </div>
           </div>
