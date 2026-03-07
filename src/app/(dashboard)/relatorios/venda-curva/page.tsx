@@ -1,7 +1,7 @@
 'use client'
 
 // Relatório de Venda por Curva ABC - MultiSelect de filiais sem opção "Todas"
-import { useState, useEffect, useMemo, memo, useRef, useCallback, type UIEvent } from 'react'
+import { useState, useEffect, useMemo, memo, useCallback, type UIEvent } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,7 @@ import {
 import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
 import { ChevronDown, ChevronRight, ShoppingCart, TrendingUp, DollarSign, FileDown, Search } from 'lucide-react'
+import { DepartmentFilterPopover, SectorFilterPopover } from '@/components/filters'
 import { MultiSelect } from '@/components/ui/multi-select'
 import {
   Collapsible,
@@ -118,6 +119,25 @@ interface AppliedFilters {
   ano: string
   filiais: string[]
   compararAnoAnterior: boolean
+  tipoBusca: 'departamento' | 'setor' | 'produto'
+  busca: string
+  departamentoIds: number[]
+  setorIds: number[]
+}
+
+interface DepartamentoFiltro {
+  id: number
+  departamento_id: number
+  descricao: string
+}
+
+interface SetorFiltro {
+  id: number
+  nome: string
+  departamento_nivel: number
+  departamento_ids: number[]
+  departamento_ids_nivel_1: number[]
+  ativo: boolean
 }
 
 // Componente memoizado para renderização de produtos
@@ -290,11 +310,19 @@ export default function VendaCurvaPage() {
   const pageSize = 50
   const [defaultFilialSet, setDefaultFilialSet] = useState(false)
   const [compararAnoAnterior, setCompararAnoAnterior] = useState(false)
+  const [tipoBusca, setTipoBusca] = useState<'departamento' | 'setor' | 'produto'>('departamento')
+  const [busca, setBusca] = useState('')
+  const [departamentosDisponiveis, setDepartamentosDisponiveis] = useState<DepartamentoFiltro[]>([])
+  const [loadingDepartamentos, setLoadingDepartamentos] = useState(false)
+  const [departamentosSelecionados, setDepartamentosSelecionados] = useState<number[]>([])
+  const [setoresDisponiveis, setSetoresDisponiveis] = useState<SetorFiltro[]>([])
+  const [loadingSetores, setLoadingSetores] = useState(false)
+  const [setoresSelecionados, setSetoresSelecionados] = useState<number[]>([])
 
   // Estados de expansão
   const [expandedDept1, setExpandedDept1] = useState<Record<string, boolean>>({})
   const [expandedDept2, setExpandedDept2] = useState<Record<string, boolean>>({})
-const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
+  const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
 
   const produtosPageSize = 50
   const [produtosState, setProdutosState] = useState<Record<string, {
@@ -304,37 +332,6 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
     loading: boolean
     error?: string
   }>>({})
-
-  // Filtro de produto - COM DEBOUNCE REAL
-  const [filtroProduto, setFiltroProduto] = useState('') // Valor usado para filtrar (com debounce)
-  const [inputValue, setInputValue] = useState('') // Valor visual do input (atualiza instantaneamente)
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Efeito de debounce - atualiza o filtro após 300ms sem digitação
-  useEffect(() => {
-    // Limpa timer anterior se existir
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current)
-    }
-
-    // Se o input tem menos de 3 caracteres, limpa o filtro imediatamente
-    if (inputValue.length < 3) {
-      setFiltroProduto('')
-      return
-    }
-
-    // Cria novo timer para atualizar o filtro após 300ms
-    debounceTimerRef.current = setTimeout(() => {
-      setFiltroProduto(inputValue)
-    }, 300)
-
-    // Cleanup ao desmontar ou quando inputValue mudar
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
-      }
-    }
-  }, [inputValue])
 
   // Definir filial padrão quando opções estiverem disponíveis
   useEffect(() => {
@@ -363,20 +360,114 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
     }
   }, [userProfile, currentTenant])
 
+  useEffect(() => {
+    const loadDepartamentos = async () => {
+      if (!currentTenant?.supabase_schema) return
+
+      setLoadingDepartamentos(true)
+      try {
+        const response = await fetch(
+          `/api/setores/departamentos?schema=${currentTenant.supabase_schema}&nivel=1`
+        )
+        if (!response.ok) {
+          throw new Error('Erro ao carregar departamentos')
+        }
+        const result = await response.json()
+        const sorted = [...result].sort((a: DepartamentoFiltro, b: DepartamentoFiltro) =>
+          a.descricao.localeCompare(b.descricao, 'pt-BR')
+        )
+        setDepartamentosDisponiveis(sorted)
+        setDepartamentosSelecionados(sorted.map((item: DepartamentoFiltro) => item.departamento_id))
+      } catch (err) {
+        console.error('Erro ao carregar departamentos:', err)
+      } finally {
+        setLoadingDepartamentos(false)
+      }
+    }
+
+    loadDepartamentos()
+  }, [currentTenant?.supabase_schema])
+
+  useEffect(() => {
+    const loadSetores = async () => {
+      if (!currentTenant?.supabase_schema) return
+
+      setLoadingSetores(true)
+      try {
+        const response = await fetch(
+          `/api/setores?schema=${currentTenant.supabase_schema}&include_level1=true`
+        )
+        if (!response.ok) {
+          throw new Error('Erro ao carregar setores')
+        }
+        const result = await response.json()
+        const ativos = (result as SetorFiltro[])
+          .filter((setor) => setor.ativo)
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+        setSetoresDisponiveis(ativos)
+        setSetoresSelecionados(ativos.map((setor) => setor.id))
+      } catch (err) {
+        console.error('Erro ao carregar setores:', err)
+      } finally {
+        setLoadingSetores(false)
+      }
+    }
+
+    loadSetores()
+  }, [currentTenant?.supabase_schema])
+
   const maxFiliais = 5
   const [isDirty, setIsDirty] = useState(true)
   const [activeQueryKey, setActiveQueryKey] = useState<string | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<AppliedFilters | null>(null)
 
   const buildQueryKey = (filters: AppliedFilters) =>
-    `${filters.mes}|${filters.ano}|${filters.filiais.slice().sort().join(',')}|${filters.compararAnoAnterior ? 1 : 0}`
+    [
+      filters.mes,
+      filters.ano,
+      filters.filiais.slice().sort().join(','),
+      filters.compararAnoAnterior ? '1' : '0',
+      filters.tipoBusca,
+      filters.busca.trim().toLowerCase(),
+      filters.departamentoIds.slice().sort((a, b) => a - b).join(','),
+      filters.setorIds.slice().sort((a, b) => a - b).join(','),
+    ].join('|')
 
   const buildCurrentFilters = (): AppliedFilters => ({
     mes,
     ano,
     filiais: filiaisSelecionadas.map(f => f.value),
     compararAnoAnterior,
+    tipoBusca,
+    busca: busca.trim(),
+    departamentoIds: departamentosSelecionados,
+    setorIds: setoresSelecionados,
   })
+
+  const appendSearchFilters = useCallback((params: URLSearchParams, filters: AppliedFilters) => {
+    params.set('tipo_busca', filters.tipoBusca)
+
+    if (filters.tipoBusca === 'departamento') {
+      if (
+        filters.departamentoIds.length > 0 &&
+        filters.departamentoIds.length < departamentosDisponiveis.length
+      ) {
+        params.set('departamento_ids', filters.departamentoIds.join(','))
+      }
+      return
+    }
+
+    if (filters.tipoBusca === 'setor') {
+      if (filters.setorIds.length > 0) {
+        params.set('setor_ids', filters.setorIds.join(','))
+      }
+      return
+    }
+
+    if (filters.tipoBusca === 'produto' && filters.busca) {
+      params.set('busca', filters.busca)
+    }
+  }, [departamentosDisponiveis.length])
 
   // Carregar dados quando a página mudar (apenas se filtros já foram aplicados)
   useEffect(() => {
@@ -394,30 +485,15 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
     return data.hierarquia
   }, [data?.hierarquia])
 
-  const dept1Lookup = useMemo(() => {
-    const map = new Map<string, { dept3: string; dept2: string; dept1: string }>()
-    if (!data?.hierarquia) return map
-    data.hierarquia.forEach(dept3 => {
-      dept3.nivel2?.forEach(dept2 => {
-        dept2.nivel1?.forEach(dept1 => {
-          map.set(dept1.dept1_id.toString(), {
-            dept3: dept3.dept_nivel3,
-            dept2: dept2.dept_nivel2,
-            dept1: dept1.dept_nivel1,
-          })
-        })
-      })
-    })
-    return map
-  }, [data?.hierarquia])
-
   useEffect(() => {
     setProdutosState({})
-  }, [mes, ano, filiaisSelecionadas, compararAnoAnterior])
+  }, [appliedFilters])
 
   useEffect(() => {
-    setProdutosState({})
-  }, [filtroProduto])
+    setExpandedDept1({})
+    setExpandedDept2({})
+    setExpandedDept3({})
+  }, [appliedFilters])
 
   // Buscar dados
   const fetchData = async ({
@@ -453,6 +529,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
         page_size: pageSize.toString(),
         compare_ano_anterior: filters.compararAnoAnterior ? '1' : '0',
       })
+      appendSearchFilters(params, filters)
 
       const response = await fetch(`/api/relatorios/venda-curva/totais?${params}`)
       const result = await response.json()
@@ -473,6 +550,10 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
 
   const handleGerar = async () => {
     const nextFilters = buildCurrentFilters()
+    if (nextFilters.tipoBusca === 'produto' && !nextFilters.busca) {
+      setError('Informe um produto para filtrar')
+      return
+    }
     setPage(1)
     setIsDirty(false)
     setAppliedFilters(nextFilters)
@@ -503,10 +584,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
       dept2: args.dept2,
       dept1: args.dept1,
     })
-
-    if (filtroProduto.length >= 3) {
-      params.set('q', filtroProduto)
-    }
+    appendSearchFilters(params, appliedFilters)
 
     setProdutosState(prev => ({
       ...prev,
@@ -550,26 +628,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
         }
       }))
     }
-  }, [appliedFilters, currentTenant?.supabase_schema, filtroProduto, produtosPageSize])
-
-  useEffect(() => {
-    if (filtroProduto.length < 3) return
-    const openDeptIds = Object.entries(expandedDept1)
-      .filter(([, isOpen]) => isOpen)
-      .map(([deptId]) => deptId)
-
-    openDeptIds.forEach((deptId) => {
-      const info = dept1Lookup.get(deptId)
-      if (!info) return
-      fetchProdutos({
-        dept3: info.dept3,
-        dept2: info.dept2,
-        dept1: info.dept1,
-        deptKey: deptId,
-        page: 1,
-      })
-    })
-  }, [filtroProduto, expandedDept1, dept1Lookup, fetchProdutos])
+  }, [appliedFilters, currentTenant?.supabase_schema, produtosPageSize, appendSearchFilters])
 
   const handleProdutosScroll = useCallback((deptKey: string, dept3: string, dept2: string, dept1: string, event: UIEvent<HTMLDivElement>) => {
     const current = produtosState[deptKey]
@@ -601,6 +660,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
         page_size: '10000',
         compare_ano_anterior: appliedFilters.compararAnoAnterior ? '1' : '0',
       })
+      appendSearchFilters(params, appliedFilters)
 
       const response = await fetch(`/api/relatorios/venda-curva?${params}`)
 
@@ -1109,28 +1169,69 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
             {/* Linha 2: Filtrar Produto (50%), Comparar (30%), Botão (20%) */}
             <div className="grid grid-cols-1 gap-4 items-end md:grid-cols-[5fr_3fr_2fr]">
               <div className="space-y-2">
-                <Label>Filtrar Produto</Label>
-                <div className="h-10 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="Digite código ou nome (mín. 3 caracteres)"
-                    value={inputValue}
-                    onChange={(e) => {
-                      setInputValue(e.target.value)
+                <Label>Filtrar por</Label>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                  <Select
+                    value={tipoBusca}
+                    onValueChange={(value: 'departamento' | 'setor' | 'produto') => {
+                      setTipoBusca(value)
+                      setPage(1)
                       setIsDirty(true)
                     }}
-                    className="w-full h-10 pl-9"
-                  />
-                  {inputValue.length > 0 && inputValue.length < 3 && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      Mín. 3 caracteres
-                    </span>
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="departamento">Departamentos</SelectItem>
+                      <SelectItem value="setor">Setores</SelectItem>
+                      <SelectItem value="produto">Produto</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {tipoBusca === 'departamento' && (
+                    <DepartmentFilterPopover
+                      departamentos={departamentosDisponiveis}
+                      selectedIds={departamentosSelecionados}
+                      onChange={(value) => {
+                        setDepartamentosSelecionados(value)
+                        setPage(1)
+                        setIsDirty(true)
+                      }}
+                      disabled={loading}
+                      loading={loadingDepartamentos}
+                    />
                   )}
-                  {inputValue.length >= 3 && filtroProduto !== inputValue && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-500">
-                      Filtrando...
-                    </span>
+
+                  {tipoBusca === 'setor' && (
+                    <SectorFilterPopover
+                      setores={setoresDisponiveis}
+                      selectedIds={setoresSelecionados}
+                      onChange={(value) => {
+                        setSetoresSelecionados(value)
+                        setPage(1)
+                        setIsDirty(true)
+                      }}
+                      disabled={loading}
+                      loading={loadingSetores}
+                    />
+                  )}
+
+                  {tipoBusca === 'produto' && (
+                    <div className="relative h-10">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="Digite código ou nome do produto"
+                        value={busca}
+                        onChange={(e) => {
+                          setBusca(e.target.value)
+                          setPage(1)
+                          setIsDirty(true)
+                        }}
+                        className="w-full h-10 pl-9"
+                      />
+                    </div>
                   )}
                 </div>
               </div>
@@ -1469,7 +1570,7 @@ const [expandedDept3, setExpandedDept3] = useState<Record<string, boolean>>({})
                                               {produtosInfo.items.length > 0 && (
                                                 <ProdutoTable
                                                   produtos={produtosInfo.items}
-                                                  filtroProduto={filtroProduto}
+                                                  filtroProduto={appliedFilters?.tipoBusca === 'produto' ? appliedFilters.busca : ''}
                                                   compararAnoAnterior={compareAnoAnteriorAplicado}
                                                   compareLabel={compareLabel}
                                                 />

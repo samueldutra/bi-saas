@@ -86,6 +86,8 @@ type PrevYearMap = Map<string, {
   percentual_lucro: number
 }>
 
+type TipoBusca = 'departamento' | 'setor' | 'produto'
+
 // Helper para gerar ID único a partir de string
 function hashCode(str: string): number {
   let hash = 0
@@ -130,6 +132,10 @@ export async function GET(request: Request) {
     const page = parseInt(searchParams.get('page') || '1')
     const pageSize = parseInt(searchParams.get('page_size') || '50')
     const compareAnoAnterior = searchParams.get('compare_ano_anterior') === '1'
+    const tipoBusca = (searchParams.get('tipo_busca') as TipoBusca | null) || 'departamento'
+    const departamentoIds = searchParams.get('departamento_ids')
+    const setorIds = searchParams.get('setor_ids')
+    const busca = searchParams.get('busca')
 
     // Validate filial_id is required
     if (!requestedFilialId) {
@@ -184,6 +190,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Tamanho de página inválido' }, { status: 400 })
     }
 
+    const departamentoIdsArray = departamentoIds
+      ? departamentoIds.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id))
+      : null
+    const setorIdsArray = setorIds
+      ? setorIds.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id))
+      : null
+    const buscaText = tipoBusca === 'produto' && busca?.trim() ? `%${busca.trim()}%` : null
+
     const requestStart = Date.now()
     console.log('[Venda Curva] Calling RPC with params:', {
       p_schema: schema,
@@ -193,6 +207,10 @@ export async function GET(request: Request) {
       p_page: page,
       p_page_size: pageSize,
       compareAnoAnterior,
+      tipoBusca,
+      departamentoIdsArray,
+      setorIdsArray,
+      buscaText,
       requestedFilialId,
       authorizedBranches,
     })
@@ -225,6 +243,9 @@ export async function GET(request: Request) {
           p_page: targetPage,
           p_page_size: targetPageSize,
           p_data_fim_override: dataFimOverride ?? null,
+          p_departamento_ids: departamentoIdsArray,
+          p_setor_ids: setorIdsArray,
+          p_busca: buscaText,
         }
         const { data, error } = await rpcClient.rpc('get_venda_curva_report_fast', rpcParams)
 
@@ -263,6 +284,9 @@ export async function GET(request: Request) {
           p_page: targetPage,
           p_page_size: targetPageSize,
           p_data_fim_override: dataFimOverride ?? null,
+          p_departamento_ids: departamentoIdsArray,
+          p_setor_ids: setorIdsArray,
+          p_busca: buscaText,
         }
         const { data, error } = await rpcClient.rpc('get_venda_curva_report_v3', rpcParams)
 
@@ -291,6 +315,9 @@ export async function GET(request: Request) {
           p_page: targetPage,
           p_page_size: targetPageSize,
           p_data_fim_override: dataFimOverride ?? null,
+          p_departamento_ids: departamentoIdsArray,
+          p_setor_ids: setorIdsArray,
+          p_busca: buscaText,
         }
         const { data, error: v2Error } = await rpcClient.rpc('get_venda_curva_report_v2', rpcParams)
 
@@ -318,6 +345,9 @@ export async function GET(request: Request) {
             p_page: targetPage,
             p_page_size: targetPageSize,
             p_data_fim_override: dataFimOverride ?? null,
+            p_departamento_ids: departamentoIdsArray,
+            p_setor_ids: setorIdsArray,
+            p_busca: buscaText,
           }
           const { data, error: v1Error } = await rpcClient.rpc('get_venda_curva_report', rpcParams)
 

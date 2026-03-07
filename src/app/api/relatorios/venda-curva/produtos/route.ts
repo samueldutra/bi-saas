@@ -22,6 +22,8 @@ interface ProdutoRow {
   percentual_lucro_ano_anterior?: string | number
 }
 
+type TipoBusca = 'departamento' | 'setor' | 'produto'
+
 export async function GET(request: Request) {
   try {
     const supabase = await createClient()
@@ -54,7 +56,10 @@ export async function GET(request: Request) {
     const dept3 = searchParams.get('dept3') || ''
     const dept2 = searchParams.get('dept2') || ''
     const dept1 = searchParams.get('dept1') || ''
-    const q = searchParams.get('q')
+    const tipoBusca = (searchParams.get('tipo_busca') as TipoBusca | null) || 'departamento'
+    const departamentoIds = searchParams.get('departamento_ids')
+    const setorIds = searchParams.get('setor_ids')
+    const busca = searchParams.get('busca')
 
     if (!requestedFilialId) {
       return NextResponse.json({ error: 'Filial é obrigatória' }, { status: 400 })
@@ -106,13 +111,20 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Tamanho de página inválido' }, { status: 400 })
     }
 
+    const departamentoIdsArray = departamentoIds
+      ? departamentoIds.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id))
+      : null
+    const setorIdsArray = setorIds
+      ? setorIds.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id))
+      : null
+
     const now = new Date()
     const isMesAtual = now.getMonth() + 1 === mes && now.getFullYear() === ano
     const dataFimOverride = compareAnoAnterior && isMesAtual
       ? now.toISOString().slice(0, 10)
       : null
 
-    const searchValue = q && q.trim().length >= 3 ? `%${q.trim()}%` : null
+    const searchValue = tipoBusca === 'produto' && busca?.trim() ? `%${busca.trim()}%` : null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any).rpc('get_venda_curva_produtos', {
@@ -126,6 +138,8 @@ export async function GET(request: Request) {
       p_page: page,
       p_page_size: pageSize,
       p_data_fim_override: dataFimOverride,
+      p_departamento_ids: departamentoIdsArray,
+      p_setor_ids: setorIdsArray,
       p_search: searchValue,
     })
 

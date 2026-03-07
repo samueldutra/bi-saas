@@ -63,6 +63,8 @@ interface Hierarquia {
   [key: string]: DepartamentoNivel3
 }
 
+type TipoBusca = 'departamento' | 'setor' | 'produto'
+
 function hashCode(str: string): number {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
@@ -211,6 +213,10 @@ export async function GET(request: Request) {
     const page = parseInt(searchParams.get('page') || '1')
     const pageSize = parseInt(searchParams.get('page_size') || '50')
     const compareAnoAnterior = searchParams.get('compare_ano_anterior') === '1'
+    const tipoBusca = (searchParams.get('tipo_busca') as TipoBusca | null) || 'departamento'
+    const departamentoIds = searchParams.get('departamento_ids')
+    const setorIds = searchParams.get('setor_ids')
+    const busca = searchParams.get('busca')
 
     if (!requestedFilialId) {
       return NextResponse.json({ error: 'Filial é obrigatória' }, { status: 400 })
@@ -258,6 +264,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Tamanho de página inválido' }, { status: 400 })
     }
 
+    const departamentoIdsArray = departamentoIds
+      ? departamentoIds.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id))
+      : null
+    const setorIdsArray = setorIds
+      ? setorIds.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id))
+      : null
+    const buscaText = tipoBusca === 'produto' && busca?.trim() ? `%${busca.trim()}%` : null
+
     const now = new Date()
     const isMesAtual = now.getMonth() + 1 === mes && now.getFullYear() === ano
     const dataFimOverride = compareAnoAnterior && isMesAtual
@@ -280,6 +294,9 @@ export async function GET(request: Request) {
         p_page: 1,
         p_page_size: 10000,
         p_data_fim_override: dataFimOverride,
+        p_departamento_ids: departamentoIdsArray,
+        p_setor_ids: setorIdsArray,
+        p_busca: buscaText,
       })
 
       if (error) {
@@ -298,6 +315,9 @@ export async function GET(request: Request) {
         p_page: page,
         p_page_size: pageSize,
         p_data_fim_override: dataFimOverride,
+        p_departamento_ids: departamentoIdsArray,
+        p_setor_ids: setorIdsArray,
+        p_busca: buscaText,
       })
 
       if (error) {
