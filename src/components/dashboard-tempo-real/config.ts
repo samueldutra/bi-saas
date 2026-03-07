@@ -1,0 +1,81 @@
+export const DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL = 5 * 60 * 1000
+
+export const DASHBOARD_TEMPO_REAL_LIMIT_OPTIONS = ['10', '50', '100'] as const
+
+export const DASHBOARD_TEMPO_REAL_SECTION_NAMES = {
+  resumo: 'Resumo',
+  vendasHora: 'Vendas por Hora',
+  vendasPorLoja: 'Vendas por Loja',
+  produtos: 'Produtos',
+  departamentos: 'Departamentos',
+  ranking: 'Ranking',
+} as const
+
+export const DASHBOARD_TEMPO_REAL_TEXT = {
+  header: {
+    title: 'Dashboard Tempo Real',
+    description: 'Monitoramento de vendas do dia com atualização automática',
+    allBranchesPlaceholder: 'Todas as filiais...',
+    refreshButton: 'Atualizar',
+    lastUpdateLabel: 'Última atualização:',
+    missingTenant: 'Selecione uma empresa para visualizar o dashboard',
+  },
+  loading: {
+    title: 'Carregando dados...',
+    sectionSuffix: 'seções',
+    currentLoadingLabel: 'Carregando:',
+    globalErrorPrefix: 'Falha ao atualizar:',
+  },
+  summary: {
+    receita: 'Receita',
+    ticketMedio: 'Ticket Médio',
+    qtdeCupons: 'Qtde Cupons',
+    qtdeSkus: 'Qtde SKUs',
+    cancelamentos: 'Cancelamentos',
+    metaDia: 'Meta dia:',
+    atingidoSuffix: '% atingido',
+    skusCanceladosSuffix: 'SKUs cancelados',
+    receitaSuffix: '% da receita',
+  },
+  charts: {
+    vendasHoraTitle: 'Venda por Hora/Loja',
+    vendasHoraDescription: 'Receita acumulada por hora e filial',
+    vendasPorLojaTitle: 'Venda Acumulada por Loja',
+    vendasPorLojaDescription: 'Ranking de vendas do dia',
+    ofertaLabel: 'Oferta',
+    geralLabel: 'Geral',
+    metaTitle: 'Atingimento de Meta',
+    noSalesData: 'Nenhum dado de vendas disponível',
+    noStoreData: 'Nenhum dado disponível',
+    branchesSuffix: 'filiais',
+    hourLabel: 'Hora:',
+  },
+  tables: {
+    produtosTitle: 'Produtos Mais Vendidos',
+    produtosDescription: 'Top produtos do dia',
+    departamentosTitle: 'Receita por Departamento',
+    departamentosDescription: 'Participação por departamento',
+    produtoColumn: 'Produto',
+    skuColumn: 'SKU',
+    quantidadeColumn: 'Qtd',
+    receitaColumn: 'Receita',
+    departamentoColumn: 'Departamento',
+    percentualColumn: '%',
+    ofertaBadge: 'Oferta',
+    noProducts: 'Nenhum produto vendido hoje',
+    noDepartments: 'Nenhum departamento com vendas hoje',
+  },
+  rankings: {
+    vendaTitle: 'Ranking Operacional - Venda',
+    vendaDescription: 'Desempenho de vendas por filial e caixa',
+    cancelamentoTitle: 'Ranking Operacional - Cancelamentos',
+    cancelamentoDescription: 'Cancelamentos por filial e caixa',
+    filialColumn: 'Filial',
+    caixaColumn: 'Caixa',
+    skusColumn: 'SKUs',
+    valorVendidoColumn: 'Valor Vendido',
+    valorCanceladoColumn: 'Valor Canc.',
+    noSales: 'Nenhum dado de venda disponível',
+    noCancellations: 'Nenhum cancelamento registrado',
+  },
+} as const

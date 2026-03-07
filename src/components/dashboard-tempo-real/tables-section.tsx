@@ -12,6 +12,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
+import {
+  DASHBOARD_TEMPO_REAL_LIMIT_OPTIONS,
+  DASHBOARD_TEMPO_REAL_TEXT,
+} from './config'
 import { formatCurrency, formatNumber } from './formatters'
 import { DashboardTempoRealSectionError } from './section-error'
 import type { DepartamentosResponse, ProdutosResponse } from './types'
@@ -46,17 +50,19 @@ export function DashboardTempoRealTablesSection({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
-            <CardTitle>Produtos Mais Vendidos</CardTitle>
-            <CardDescription>Top produtos do dia</CardDescription>
+            <CardTitle>{DASHBOARD_TEMPO_REAL_TEXT.tables.produtosTitle}</CardTitle>
+            <CardDescription>{DASHBOARD_TEMPO_REAL_TEXT.tables.produtosDescription}</CardDescription>
           </div>
           <Select value={limitProdutos} onValueChange={onLimitProdutosChange}>
             <SelectTrigger className="w-20">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
+              {DASHBOARD_TEMPO_REAL_LIMIT_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </CardHeader>
@@ -84,11 +90,11 @@ export function DashboardTempoRealTablesSection({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Produto</TableHead>
+                    <TableHead>{DASHBOARD_TEMPO_REAL_TEXT.tables.produtoColumn}</TableHead>
                     <TableHead className="w-16 text-center" />
-                    <TableHead className="w-20">SKU</TableHead>
-                    <TableHead className="w-20 text-right">Qtd</TableHead>
-                    <TableHead className="w-28 text-right">Receita</TableHead>
+                    <TableHead className="w-20">{DASHBOARD_TEMPO_REAL_TEXT.tables.skuColumn}</TableHead>
+                    <TableHead className="w-20 text-right">{DASHBOARD_TEMPO_REAL_TEXT.tables.quantidadeColumn}</TableHead>
+                    <TableHead className="w-28 text-right">{DASHBOARD_TEMPO_REAL_TEXT.tables.receitaColumn}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -100,7 +106,7 @@ export function DashboardTempoRealTablesSection({
                       <TableCell className="text-center">
                         {produto.is_oferta && (
                           <Badge className="bg-orange-500 px-1.5 py-0.5 text-[10px] text-white hover:bg-orange-600">
-                            Oferta
+                            {DASHBOARD_TEMPO_REAL_TEXT.tables.ofertaBadge}
                           </Badge>
                         )}
                       </TableCell>
@@ -117,7 +123,7 @@ export function DashboardTempoRealTablesSection({
               </Table>
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">
-                Nenhum produto vendido hoje
+                {DASHBOARD_TEMPO_REAL_TEXT.tables.noProducts}
               </div>
             )}
           </div>
@@ -127,17 +133,19 @@ export function DashboardTempoRealTablesSection({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
-            <CardTitle>Receita por Departamento</CardTitle>
-            <CardDescription>Participação por departamento</CardDescription>
+            <CardTitle>{DASHBOARD_TEMPO_REAL_TEXT.tables.departamentosTitle}</CardTitle>
+            <CardDescription>{DASHBOARD_TEMPO_REAL_TEXT.tables.departamentosDescription}</CardDescription>
           </div>
           <Select value={limitDepartamentos} onValueChange={onLimitDepartamentosChange}>
             <SelectTrigger className="w-20">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
+              {DASHBOARD_TEMPO_REAL_LIMIT_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </CardHeader>
@@ -165,9 +173,9 @@ export function DashboardTempoRealTablesSection({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Departamento</TableHead>
-                    <TableHead className="w-28 text-right">Receita</TableHead>
-                    <TableHead className="w-20 text-right">%</TableHead>
+                    <TableHead>{DASHBOARD_TEMPO_REAL_TEXT.tables.departamentoColumn}</TableHead>
+                    <TableHead className="w-28 text-right">{DASHBOARD_TEMPO_REAL_TEXT.tables.receitaColumn}</TableHead>
+                    <TableHead className="w-20 text-right">{DASHBOARD_TEMPO_REAL_TEXT.tables.percentualColumn}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -191,7 +199,7 @@ export function DashboardTempoRealTablesSection({
               </Table>
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">
-                Nenhum departamento com vendas hoje
+                {DASHBOARD_TEMPO_REAL_TEXT.tables.noDepartments}
               </div>
             )}
           </div>

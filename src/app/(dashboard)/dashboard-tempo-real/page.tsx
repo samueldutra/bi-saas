@@ -6,6 +6,11 @@ import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
 import type { FilialOption } from '@/components/filters'
 import { DashboardTempoRealChartsSection } from '@/components/dashboard-tempo-real/charts-section'
+import {
+  DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL,
+  DASHBOARD_TEMPO_REAL_SECTION_NAMES,
+  DASHBOARD_TEMPO_REAL_TEXT,
+} from '@/components/dashboard-tempo-real/config'
 import { DashboardTempoRealHeader } from '@/components/dashboard-tempo-real/header'
 import { DashboardTempoRealLoadingBanner } from '@/components/dashboard-tempo-real/loading-banner'
 import { DashboardTempoRealRankingsSection } from '@/components/dashboard-tempo-real/rankings-section'
@@ -22,9 +27,6 @@ import type {
   VendasPorHoraData,
   VendasPorLojaResponse,
 } from '@/components/dashboard-tempo-real/types'
-
-// Constants
-const REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
 // Fetcher
 const fetcher = async (url: string) => {
@@ -134,37 +136,37 @@ export default function DashboardTempoRealPage() {
   const { data: resumo, error: resumoError, mutate: mutateResumo, isLoading: isLoadingResumo } = useSWR<ResumoData>(
     resumoUrl,
     fetcher,
-    { refreshInterval: REFRESH_INTERVAL }
+    { refreshInterval: DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL }
   )
 
   const { data: vendasPorHora, error: vendasHoraError, mutate: mutateVendasHora, isLoading: isLoadingVendasHora } = useSWR<VendasPorHoraData>(
     vendasHoraUrl,
     fetcher,
-    { refreshInterval: REFRESH_INTERVAL }
+    { refreshInterval: DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL }
   )
 
   const { data: produtosData, error: produtosError, mutate: mutateProdutos, isLoading: isLoadingProdutos } = useSWR<ProdutosResponse>(
     produtosUrl,
     fetcher,
-    { refreshInterval: REFRESH_INTERVAL }
+    { refreshInterval: DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL }
   )
 
   const { data: departamentosData, error: departamentosError, mutate: mutateDepartamentos, isLoading: isLoadingDepartamentos } = useSWR<DepartamentosResponse>(
     departamentosUrl,
     fetcher,
-    { refreshInterval: REFRESH_INTERVAL }
+    { refreshInterval: DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL }
   )
 
   const { data: rankingData, error: rankingError, mutate: mutateRanking, isLoading: isLoadingRanking } = useSWR<RankingResponse>(
     rankingUrl,
     fetcher,
-    { refreshInterval: REFRESH_INTERVAL }
+    { refreshInterval: DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL }
   )
 
   const { data: vendasPorLojaData, error: vendasPorLojaError, mutate: mutateVendasPorLoja, isLoading: isLoadingVendasPorLoja } = useSWR<VendasPorLojaResponse>(
     vendasPorLojaUrl,
     fetcher,
-    { refreshInterval: REFRESH_INTERVAL }
+    { refreshInterval: DASHBOARD_TEMPO_REAL_REFRESH_INTERVAL }
   )
 
   // Manual refresh
@@ -284,12 +286,12 @@ export default function DashboardTempoRealPage() {
   // Estado global de carregamento
   const loadingState = useMemo(() => {
     const sections = [
-      { name: 'Resumo', isLoading: isLoadingResumo, isLoaded: !!resumo },
-      { name: 'Vendas por Hora', isLoading: isLoadingVendasHora, isLoaded: !!vendasPorHora },
-      { name: 'Vendas por Loja', isLoading: isLoadingVendasPorLoja, isLoaded: !!vendasPorLojaData },
-      { name: 'Produtos', isLoading: isLoadingProdutos, isLoaded: !!produtosData },
-      { name: 'Departamentos', isLoading: isLoadingDepartamentos, isLoaded: !!departamentosData },
-      { name: 'Ranking', isLoading: isLoadingRanking, isLoaded: !!rankingData },
+      { name: DASHBOARD_TEMPO_REAL_SECTION_NAMES.resumo, isLoading: isLoadingResumo, isLoaded: !!resumo },
+      { name: DASHBOARD_TEMPO_REAL_SECTION_NAMES.vendasHora, isLoading: isLoadingVendasHora, isLoaded: !!vendasPorHora },
+      { name: DASHBOARD_TEMPO_REAL_SECTION_NAMES.vendasPorLoja, isLoading: isLoadingVendasPorLoja, isLoaded: !!vendasPorLojaData },
+      { name: DASHBOARD_TEMPO_REAL_SECTION_NAMES.produtos, isLoading: isLoadingProdutos, isLoaded: !!produtosData },
+      { name: DASHBOARD_TEMPO_REAL_SECTION_NAMES.departamentos, isLoading: isLoadingDepartamentos, isLoaded: !!departamentosData },
+      { name: DASHBOARD_TEMPO_REAL_SECTION_NAMES.ranking, isLoading: isLoadingRanking, isLoaded: !!rankingData },
     ]
 
     const loadedCount = sections.filter(s => s.isLoaded).length
@@ -322,7 +324,7 @@ export default function DashboardTempoRealPage() {
   if (!currentTenant) {
     return (
       <div className="flex items-center justify-center h-[400px]">
-        <p className="text-muted-foreground">Selecione uma empresa para visualizar o dashboard</p>
+        <p className="text-muted-foreground">{DASHBOARD_TEMPO_REAL_TEXT.header.missingTenant}</p>
       </div>
     )
   }

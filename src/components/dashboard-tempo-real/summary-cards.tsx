@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 
+import { DASHBOARD_TEMPO_REAL_TEXT } from './config'
 import { formatCurrency, formatNumber } from './formatters'
 import { DashboardTempoRealSectionError } from './section-error'
 import type { ResumoData } from './types'
@@ -33,7 +34,7 @@ export function DashboardTempoRealSummaryCards({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Receita
+              {DASHBOARD_TEMPO_REAL_TEXT.summary.receita}
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -46,16 +47,16 @@ export function DashboardTempoRealSummaryCards({
                   {formatCurrency(resumo?.receita_total || 0)}
                 </p>
                 <div className="space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Meta dia:</span>
-                    <span>{formatCurrency(resumo?.meta_dia || 0)}</span>
-                  </div>
-                  <Progress value={Math.min(resumo?.atingimento_percentual || 0, 100)} className="h-2" />
-                  <div className="text-right text-xs text-muted-foreground">
-                    {(resumo?.atingimento_percentual || 0).toFixed(1)}% atingido
-                  </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{DASHBOARD_TEMPO_REAL_TEXT.summary.metaDia}</span>
+                  <span>{formatCurrency(resumo?.meta_dia || 0)}</span>
                 </div>
-              </>
+                <Progress value={Math.min(resumo?.atingimento_percentual || 0, 100)} className="h-2" />
+                <div className="text-right text-xs text-muted-foreground">
+                  {(resumo?.atingimento_percentual || 0).toFixed(1)}{DASHBOARD_TEMPO_REAL_TEXT.summary.atingidoSuffix}
+                </div>
+              </div>
+            </>
             )}
           </CardContent>
         </Card>
@@ -63,7 +64,7 @@ export function DashboardTempoRealSummaryCards({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Ticket Médio
+              {DASHBOARD_TEMPO_REAL_TEXT.summary.ticketMedio}
             </CardTitle>
             <Receipt className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -81,7 +82,7 @@ export function DashboardTempoRealSummaryCards({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Qtde Cupons
+              {DASHBOARD_TEMPO_REAL_TEXT.summary.qtdeCupons}
             </CardTitle>
             <Receipt className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -99,7 +100,7 @@ export function DashboardTempoRealSummaryCards({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Qtde SKUs
+              {DASHBOARD_TEMPO_REAL_TEXT.summary.qtdeSkus}
             </CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -117,7 +118,7 @@ export function DashboardTempoRealSummaryCards({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Cancelamentos
+              {DASHBOARD_TEMPO_REAL_TEXT.summary.cancelamentos}
             </CardTitle>
             <XCircle className="h-4 w-4 text-destructive" />
           </CardHeader>
@@ -129,12 +130,12 @@ export function DashboardTempoRealSummaryCards({
                 <p className="text-[36px] font-bold text-destructive">
                   {formatCurrency(resumo?.cancelamentos || 0)}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  {formatNumber(resumo?.cancelamentos_qtde_skus || 0)} SKUs cancelados
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {(resumo?.cancelamentos_percentual || 0).toFixed(2)}% da receita
-                </p>
+              <p className="text-sm text-muted-foreground">
+                {formatNumber(resumo?.cancelamentos_qtde_skus || 0)} {DASHBOARD_TEMPO_REAL_TEXT.summary.skusCanceladosSuffix}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {(resumo?.cancelamentos_percentual || 0).toFixed(2)}{DASHBOARD_TEMPO_REAL_TEXT.summary.receitaSuffix}
+              </p>
               </>
             )}
           </CardContent>

@@ -5,6 +5,7 @@ import { Radio, RefreshCw } from 'lucide-react'
 import { MultiFilialFilter } from '@/components/filters'
 import { Button } from '@/components/ui/button'
 
+import { DASHBOARD_TEMPO_REAL_TEXT } from './config'
 import type { DashboardTempoRealHeaderProps } from './types'
 
 export function DashboardTempoRealHeader({
@@ -21,10 +22,10 @@ export function DashboardTempoRealHeader({
       <div className="flex flex-col gap-2">
         <h1 className="flex items-center gap-2 text-2xl font-bold">
           <Radio className="h-6 w-6 animate-pulse-live" />
-          Dashboard Tempo Real
+          {DASHBOARD_TEMPO_REAL_TEXT.header.title}
         </h1>
         <p className="text-sm text-muted-foreground">
-          Monitoramento de vendas do dia com atualização automática
+          {DASHBOARD_TEMPO_REAL_TEXT.header.description}
         </p>
       </div>
 
@@ -35,7 +36,7 @@ export function DashboardTempoRealHeader({
             selectedFiliais={filiaisSelecionadas}
             onChange={onFiliaisChange}
             disabled={isLoadingBranches}
-            placeholder="Todas as filiais..."
+            placeholder={DASHBOARD_TEMPO_REAL_TEXT.header.allBranchesPlaceholder}
           />
         </div>
 
@@ -48,11 +49,11 @@ export function DashboardTempoRealHeader({
             className="gap-2"
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Atualizar
+            {DASHBOARD_TEMPO_REAL_TEXT.header.refreshButton}
           </Button>
 
           <span className="whitespace-nowrap text-sm text-muted-foreground">
-            Última atualização: {lastUpdateFormatted}
+            {DASHBOARD_TEMPO_REAL_TEXT.header.lastUpdateLabel} {lastUpdateFormatted}
           </span>
         </div>
       </div>

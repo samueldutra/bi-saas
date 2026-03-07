@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 
+import { DASHBOARD_TEMPO_REAL_TEXT } from './config'
 import { formatCurrency, formatValueShort } from './formatters'
 import { DashboardTempoRealSectionError } from './section-error'
 import type { VendasPorHoraData, VendasPorLojaResponse } from './types'
@@ -29,11 +30,11 @@ type DashboardTempoRealChartsSectionProps = {
 
 const barChartConfig = {
   receita_oferta: {
-    label: 'Receita Oferta',
+    label: DASHBOARD_TEMPO_REAL_TEXT.charts.ofertaLabel,
     color: 'hsl(38, 92%, 50%)',
   },
   receita_normal: {
-    label: 'Receita Geral',
+    label: DASHBOARD_TEMPO_REAL_TEXT.charts.geralLabel,
     color: 'hsl(142, 76%, 45%)',
   },
 }
@@ -51,9 +52,9 @@ export function DashboardTempoRealChartsSection({
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle>Venda por Hora/Loja</CardTitle>
+          <CardTitle>{DASHBOARD_TEMPO_REAL_TEXT.charts.vendasHoraTitle}</CardTitle>
           <CardDescription>
-            Receita acumulada por hora e filial ({vendasPorHora?.filiais?.length || 0} filiais)
+            {DASHBOARD_TEMPO_REAL_TEXT.charts.vendasHoraDescription} ({vendasPorHora?.filiais?.length || 0} {DASHBOARD_TEMPO_REAL_TEXT.charts.branchesSuffix})
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -86,7 +87,7 @@ export function DashboardTempoRealChartsSection({
 
                       return (
                         <div className="rounded-lg border bg-background p-2 shadow-md">
-                          <p className="mb-2 text-sm font-medium">Hora: {label}</p>
+                          <p className="mb-2 text-sm font-medium">{DASHBOARD_TEMPO_REAL_TEXT.charts.hourLabel} {label}</p>
                           <div className="space-y-1">
                             {payload.map((entry) => {
                               const filialName =
@@ -143,7 +144,7 @@ export function DashboardTempoRealChartsSection({
             </div>
           ) : (
             <div className="flex h-80 items-center justify-center text-muted-foreground">
-              Nenhum dado de vendas disponível
+              {DASHBOARD_TEMPO_REAL_TEXT.charts.noSalesData}
             </div>
           )}
         </CardContent>
@@ -151,9 +152,9 @@ export function DashboardTempoRealChartsSection({
 
       <Card>
         <CardHeader>
-          <CardTitle>Venda Acumulada por Loja</CardTitle>
+          <CardTitle>{DASHBOARD_TEMPO_REAL_TEXT.charts.vendasPorLojaTitle}</CardTitle>
           <CardDescription>
-            Ranking de vendas do dia ({vendasPorLojaData?.lojas?.length || 0} filiais)
+            {DASHBOARD_TEMPO_REAL_TEXT.charts.vendasPorLojaDescription} ({vendasPorLojaData?.lojas?.length || 0} {DASHBOARD_TEMPO_REAL_TEXT.charts.branchesSuffix})
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -205,7 +206,9 @@ export function DashboardTempoRealChartsSection({
                               />
                               <div className="flex flex-1 items-center justify-between gap-4 leading-none">
                                 <span className="text-muted-foreground">
-                                  {name === 'receita_oferta' ? 'Oferta' : 'Geral'}
+                                  {name === 'receita_oferta'
+                                    ? DASHBOARD_TEMPO_REAL_TEXT.charts.ofertaLabel
+                                    : DASHBOARD_TEMPO_REAL_TEXT.charts.geralLabel}
                                 </span>
                                 <span className="font-mono text-foreground font-medium tabular-nums">
                                   {formatCurrency(Number(value))}
@@ -245,7 +248,7 @@ export function DashboardTempoRealChartsSection({
               {vendasPorLojaData.lojas.length <= 8 && (
                 <div className="border-t pt-4">
                   <p className="mb-2 text-xs font-medium text-muted-foreground">
-                    Atingimento de Meta
+                    {DASHBOARD_TEMPO_REAL_TEXT.charts.metaTitle}
                   </p>
                   <div
                     className="space-y-2 overflow-y-auto"
@@ -268,7 +271,7 @@ export function DashboardTempoRealChartsSection({
             </div>
           ) : (
             <div className="flex h-80 items-center justify-center text-muted-foreground">
-              Nenhum dado disponível
+              {DASHBOARD_TEMPO_REAL_TEXT.charts.noStoreData}
             </div>
           )}
         </CardContent>

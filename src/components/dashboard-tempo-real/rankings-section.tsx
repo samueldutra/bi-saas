@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
+import { DASHBOARD_TEMPO_REAL_TEXT } from './config'
 import { formatCurrency, formatNumber } from './formatters'
 import { DashboardTempoRealSectionError } from './section-error'
 import type {
@@ -57,8 +58,8 @@ export function DashboardTempoRealRankingsSection({
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>Ranking Operacional - Venda</CardTitle>
-          <CardDescription>Desempenho de vendas por filial e caixa</CardDescription>
+          <CardTitle>{DASHBOARD_TEMPO_REAL_TEXT.rankings.vendaTitle}</CardTitle>
+          <CardDescription>{DASHBOARD_TEMPO_REAL_TEXT.rankings.vendaDescription}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[400px] overflow-auto">
@@ -87,7 +88,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onVendaSortClick('filial_nome')}
                     >
                       <div className="flex items-center gap-1">
-                        Filial
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.filialColumn}
                         <SortIcon
                           active={vendaSortField === 'filial_nome'}
                           direction={vendaSortDirection}
@@ -99,7 +100,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onVendaSortClick('caixa')}
                     >
                       <div className="flex items-center gap-1">
-                        Caixa
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.caixaColumn}
                         <SortIcon active={vendaSortField === 'caixa'} direction={vendaSortDirection} />
                       </div>
                     </TableHead>
@@ -108,7 +109,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onVendaSortClick('skus_venda')}
                     >
                       <div className="flex items-center justify-end gap-1">
-                        SKUs
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.skusColumn}
                         <SortIcon
                           active={vendaSortField === 'skus_venda'}
                           direction={vendaSortDirection}
@@ -120,7 +121,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onVendaSortClick('valor_vendido')}
                     >
                       <div className="flex items-center justify-end gap-1">
-                        Valor Vendido
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.valorVendidoColumn}
                         <SortIcon
                           active={vendaSortField === 'valor_vendido'}
                           direction={vendaSortDirection}
@@ -148,7 +149,7 @@ export function DashboardTempoRealRankingsSection({
               </Table>
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">
-                Nenhum dado de venda disponível
+                {DASHBOARD_TEMPO_REAL_TEXT.rankings.noSales}
               </div>
             )}
           </div>
@@ -157,8 +158,8 @@ export function DashboardTempoRealRankingsSection({
 
       <Card>
         <CardHeader>
-          <CardTitle>Ranking Operacional - Cancelamentos</CardTitle>
-          <CardDescription>Cancelamentos por filial e caixa</CardDescription>
+          <CardTitle>{DASHBOARD_TEMPO_REAL_TEXT.rankings.cancelamentoTitle}</CardTitle>
+          <CardDescription>{DASHBOARD_TEMPO_REAL_TEXT.rankings.cancelamentoDescription}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[400px] overflow-auto">
@@ -187,7 +188,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onCancelamentoSortClick('filial_nome')}
                     >
                       <div className="flex items-center gap-1">
-                        Filial
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.filialColumn}
                         <SortIcon
                           active={cancelamentoSortField === 'filial_nome'}
                           direction={cancelamentoSortDirection}
@@ -199,7 +200,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onCancelamentoSortClick('caixa')}
                     >
                       <div className="flex items-center gap-1">
-                        Caixa
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.caixaColumn}
                         <SortIcon
                           active={cancelamentoSortField === 'caixa'}
                           direction={cancelamentoSortDirection}
@@ -211,7 +212,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onCancelamentoSortClick('skus_cancelados')}
                     >
                       <div className="flex items-center justify-end gap-1">
-                        SKUs
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.skusColumn}
                         <SortIcon
                           active={cancelamentoSortField === 'skus_cancelados'}
                           direction={cancelamentoSortDirection}
@@ -223,7 +224,7 @@ export function DashboardTempoRealRankingsSection({
                       onClick={() => onCancelamentoSortClick('valor_cancelamentos')}
                     >
                       <div className="flex items-center justify-end gap-1">
-                        Valor Canc.
+                        {DASHBOARD_TEMPO_REAL_TEXT.rankings.valorCanceladoColumn}
                         <SortIcon
                           active={cancelamentoSortField === 'valor_cancelamentos'}
                           direction={cancelamentoSortDirection}
@@ -251,7 +252,7 @@ export function DashboardTempoRealRankingsSection({
               </Table>
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">
-                Nenhum cancelamento registrado
+                {DASHBOARD_TEMPO_REAL_TEXT.rankings.noCancellations}
               </div>
             )}
           </div>
