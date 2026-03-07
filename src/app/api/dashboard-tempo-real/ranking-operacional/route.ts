@@ -1,7 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import {
+  getAuthorizedRealtimeFiliais,
+  getBranchNameMapForTenant,
+  getRealtimeDirectClient,
+  getTenantIdBySchema,
+} from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // FORCAR ROTA DINAMICA - NAO CACHEAR
@@ -42,30 +47,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Get user's authorized branches
-    const authorizedBranches = await getUserAuthorizedBranchCodes(supabase, user.id)
-
-    // Determine which filiais to use
-    let finalFiliais: number[] | null = null
-
-    if (authorizedBranches === null) {
-      if (filiais && filiais !== 'all') {
-        finalFiliais = filiais.split(',').map((f) => parseInt(f.trim(), 10)).filter((n) => !isNaN(n))
-      }
-    } else if (!filiais || filiais === 'all') {
-      finalFiliais = authorizedBranches.map((f) => parseInt(f, 10)).filter((n) => !isNaN(n))
-    } else {
-      const requestedFiliais = filiais.split(',')
-      const allowedFiliais = requestedFiliais.filter((f) => authorizedBranches.includes(f))
-      finalFiliais =
-        allowedFiliais.length > 0
-          ? allowedFiliais.map((f) => parseInt(f, 10)).filter((n) => !isNaN(n))
-          : authorizedBranches.map((f) => parseInt(f, 10)).filter((n) => !isNaN(n))
-    }
+    const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
 
     // Direct Supabase client for schema queries
-    const { createDirectClient } = await import('@/lib/supabase/admin')
-    const directSupabase = createDirectClient()
+    const directSupabase = getRealtimeDirectClient()
 
     // Query vendas_hoje to get caixa information
     let vendasQuery = directSupabase
@@ -116,25 +101,8 @@ export async function GET(req: Request) {
       )
     }
 
-    // Get tenant_id from schema
-    const { data: tenantData } = await supabase
-      .from('tenants')
-      .select('id')
-      .eq('supabase_schema', requestedSchema)
-      .single() as { data: { id: string } | null }
-
-    // Get branch names from public.branches filtered by tenant_id
-    const { data: branchesData } = await supabase
-      .from('branches')
-      .select('branch_code, descricao')
-      .eq('tenant_id', tenantData?.id || '') as { data: { branch_code: string; descricao: string | null }[] | null }
-
-    const branchNameMap = new Map<string, string>()
-    if (branchesData) {
-      branchesData.forEach((b) => {
-        branchNameMap.set(b.branch_code, b.descricao || `Filial ${b.branch_code}`)
-      })
-    }
+    const tenantId = await getTenantIdBySchema(supabase, requestedSchema)
+    const branchNameMap = await getBranchNameMapForTenant(supabase, tenantId)
 
     // Aggregate by filial_id and caixa
     const aggregateMap = new Map<string, {
