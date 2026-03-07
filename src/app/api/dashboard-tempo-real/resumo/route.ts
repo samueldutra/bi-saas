@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
   calculatePercentage,
-  calculateSimpleItemRevenue,
   createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
   getRealtimeCurrentDate,
@@ -58,8 +57,6 @@ export async function GET(req: Request) {
     const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
     monitor.mark('authorized_filiais', { count: finalFiliais?.length ?? 0 })
 
-    // Direct Supabase client for schema queries
-    const directSupabase = getRealtimeDirectClient()
     const currentDate = getRealtimeCurrentDate()
 
     let receitaTotal = 0
@@ -67,93 +64,38 @@ export async function GET(req: Request) {
     let cancelamentos = 0
     let qtdeSkus = 0
     let metaDia = 0
-
-    // Query 1: Receita e Cupons (vendas nao canceladas)
-    try {
-      let receitaQuery = directSupabase
-        .schema(requestedSchema as 'public')
-        .from('vendas_hoje')
-        .select('valor_total')
-        .eq('cancelada', false)
-        .eq('data_extracao', currentDate)
-
-      if (finalFiliais && finalFiliais.length > 0) {
-        receitaQuery = receitaQuery.in('filial_id', finalFiliais)
-      }
-
-      const { data: receitaData, error: receitaError } = await receitaQuery
-
-      if (receitaError) {
-        console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Receita Query Error:', receitaError.message)
-      } else if (receitaData) {
-        receitaTotal = receitaData.reduce((sum, row) => sum + parseRealtimeNumber(row.valor_total), 0)
-        qtdeCupons = receitaData.length
-      }
-      monitor.mark('query_receita', { rows: receitaData?.length ?? 0 })
-    } catch (err) {
-      console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Receita Exception:', err)
-      monitor.mark('query_receita_error')
-    }
-
-    // Query 2: Cancelamentos (de vendas_hoje_itens onde cancelado = true)
     let cancelamentosQtdeSkus = 0
-    try {
-      let cancelQuery = directSupabase
-        .schema(requestedSchema as 'public')
-        .from('vendas_hoje_itens')
-        .select('produto_id, quantidade_vendida, preco_venda')
-        .eq('cancelado', true)
-        .eq('data_extracao', currentDate)
 
-      if (finalFiliais && finalFiliais.length > 0) {
-        cancelQuery = cancelQuery.in('filial_id', finalFiliais)
+    let ultimaAtualizacao: string | null = null
+
+    const { data: resumoRpcData, error: resumoRpcError } = await supabase.rpc(
+      'get_dashboard_tempo_real_resumo',
+      {
+        p_schema: requestedSchema,
+        p_data_extracao: currentDate,
+        p_filial_ids: finalFiliais && finalFiliais.length > 0 ? finalFiliais : null,
       }
+    )
 
-      const { data: cancelData, error: cancelError } = await cancelQuery
-
-      if (cancelError) {
-        console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Cancel Query Error:', cancelError.message)
-      } else if (cancelData) {
-        cancelamentos = cancelData.reduce((sum, row) => sum + calculateSimpleItemRevenue(row), 0)
-        // Contar SKUs distintos cancelados
-        const skusCancelados = new Set(cancelData.map(item => item.produto_id))
-        cancelamentosQtdeSkus = skusCancelados.size
-      }
-      monitor.mark('query_cancelamentos', { rows: cancelData?.length ?? 0 })
-    } catch (err) {
-      console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Cancel Exception:', err)
-      monitor.mark('query_cancelamentos_error')
+    if (resumoRpcError) {
+      console.error('[API/DASHBOARD-TEMPO-REAL/RESUMO] RPC Error:', resumoRpcError.message)
+      return NextResponse.json(
+        { error: 'Error fetching resumo data' },
+        { status: 500 }
+      )
     }
 
-    // Query 3: SKUs distintos
-    try {
-      let skusQuery = directSupabase
-        .schema(requestedSchema as 'public')
-        .from('vendas_hoje_itens')
-        .select('produto_id, filial_id, cupom')
-        .eq('cancelado', false)
-        .eq('data_extracao', currentDate)
+    const resumoRpcRow = resumoRpcData && resumoRpcData.length > 0 ? resumoRpcData[0] : null
+    receitaTotal = Number(resumoRpcRow?.receita_total || 0)
+    qtdeCupons = Number(resumoRpcRow?.qtde_cupons || 0)
+    cancelamentos = Number(resumoRpcRow?.cancelamentos || 0)
+    cancelamentosQtdeSkus = Number(resumoRpcRow?.cancelamentos_qtde_skus || 0)
+    qtdeSkus = Number(resumoRpcRow?.qtde_skus || 0)
+    ultimaAtualizacao = resumoRpcRow?.ultima_atualizacao || null
+    monitor.mark('rpc_resumo', { rows: resumoRpcData?.length ?? 0 })
 
-      if (finalFiliais && finalFiliais.length > 0) {
-        skusQuery = skusQuery.in('filial_id', finalFiliais)
-      }
-
-      const { data: skusData, error: skusError } = await skusQuery
-
-      if (skusError) {
-        console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] SKUs Query Error:', skusError.message)
-      } else if (skusData) {
-        // Get unique produto_ids
-        const uniqueSkus = new Set(skusData.map(item => item.produto_id))
-        qtdeSkus = uniqueSkus.size
-      }
-      monitor.mark('query_skus', { rows: skusData?.length ?? 0 })
-    } catch (err) {
-      console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] SKUs Exception:', err)
-      monitor.mark('query_skus_error')
-    }
-
-    // Query 4: Meta do dia
+    // Query meta do dia
+    const directSupabase = getRealtimeDirectClient()
     try {
       let metaQuery = directSupabase
         .schema(requestedSchema as 'public')
@@ -176,34 +118,6 @@ export async function GET(req: Request) {
     } catch (err) {
       console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Meta Exception:', err)
       monitor.mark('query_meta_error')
-    }
-
-    // Query 5: Última atualização dos dados (created_at mais recente)
-    let ultimaAtualizacao: string | null = null
-    try {
-      let ultimaQuery = directSupabase
-        .schema(requestedSchema as 'public')
-        .from('vendas_hoje')
-        .select('created_at')
-        .eq('data_extracao', currentDate)
-        .order('created_at', { ascending: false })
-        .limit(1)
-
-      if (finalFiliais && finalFiliais.length > 0) {
-        ultimaQuery = ultimaQuery.in('filial_id', finalFiliais)
-      }
-
-      const { data: ultimaData, error: ultimaError } = await ultimaQuery
-
-      if (ultimaError) {
-        console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Ultima Atualizacao Query Error:', ultimaError.message)
-      } else if (ultimaData && ultimaData.length > 0) {
-        ultimaAtualizacao = ultimaData[0].created_at
-      }
-      monitor.mark('query_ultima_atualizacao', { rows: ultimaData?.length ?? 0 })
-    } catch (err) {
-      console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Ultima Atualizacao Exception:', err)
-      monitor.mark('query_ultima_atualizacao_error')
     }
 
     // Calculate derived values

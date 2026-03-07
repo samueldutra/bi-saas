@@ -2,12 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
-  calculateSimpleItemRevenue,
   createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
   getBranchNameMapForTenant,
   getRealtimeCurrentDate,
-  getRealtimeDirectClient,
   getTenantIdBySchema,
 } from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
@@ -58,133 +56,48 @@ export async function GET(req: Request) {
     const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
     monitor.mark('authorized_filiais', { count: finalFiliais?.length ?? 0 })
 
-    // Direct Supabase client for schema queries
-    const directSupabase = getRealtimeDirectClient()
     const currentDate = getRealtimeCurrentDate()
 
-    // Query vendas_hoje to get caixa information
-    let vendasQuery = directSupabase
-      .schema(requestedSchema as 'public')
-      .from('vendas_hoje')
-      .select('filial_id, cupom, caixa')
-      .eq('data_extracao', currentDate)
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'get_dashboard_tempo_real_ranking_operacional',
+      {
+        p_schema: requestedSchema,
+        p_data_extracao: currentDate,
+        p_filial_ids: finalFiliais && finalFiliais.length > 0 ? finalFiliais : null,
+      }
+    )
 
-    if (finalFiliais && finalFiliais.length > 0) {
-      vendasQuery = vendasQuery.in('filial_id', finalFiliais)
-    }
-
-    const { data: vendasData, error: vendasError } = await vendasQuery
-
-    if (vendasError) {
-      console.error('[API/DASHBOARD-TEMPO-REAL/RANKING-OPERACIONAL] Vendas Query Error:', vendasError.message)
+    if (rpcError) {
+      console.error('[API/DASHBOARD-TEMPO-REAL/RANKING-OPERACIONAL] RPC Error:', rpcError.message)
       return NextResponse.json(
-        { error: 'Error fetching vendas data' },
+        { error: 'Error fetching ranking data' },
         { status: 500 }
       )
     }
-    monitor.mark('query_vendas', { rows: vendasData?.length ?? 0 })
-
-    // Create a map of cupom -> caixa for lookup
-    const cupomCaixaMap = new Map<string, number>()
-    if (vendasData) {
-      vendasData.forEach((venda) => {
-        const key = `${venda.filial_id}-${venda.cupom}`
-        cupomCaixaMap.set(key, venda.caixa)
-      })
-    }
-    monitor.mark('build_cupom_caixa_map', { rows: cupomCaixaMap.size })
-
-    // Query vendas_hoje_itens
-    let itensQuery = directSupabase
-      .schema(requestedSchema as 'public')
-      .from('vendas_hoje_itens')
-      .select('filial_id, cupom, produto_id, cancelado, quantidade_vendida, preco_venda')
-      .eq('data_extracao', currentDate)
-
-    if (finalFiliais && finalFiliais.length > 0) {
-      itensQuery = itensQuery.in('filial_id', finalFiliais)
-    }
-
-    const { data: itensData, error: itensError } = await itensQuery
-
-    if (itensError) {
-      console.error('[API/DASHBOARD-TEMPO-REAL/RANKING-OPERACIONAL] Itens Query Error:', itensError.message)
-      return NextResponse.json(
-        { error: 'Error fetching itens data' },
-        { status: 500 }
-      )
-    }
-    monitor.mark('query_itens', { rows: itensData?.length ?? 0 })
+    monitor.mark('rpc_ranking', { rows: rpcData?.length ?? 0 })
 
     const tenantId = await getTenantIdBySchema(supabase, requestedSchema)
     const branchNameMap = await getBranchNameMapForTenant(supabase, tenantId)
     monitor.mark('branch_lookup', { branchCount: branchNameMap.size })
 
-    // Aggregate by filial_id and caixa
-    const aggregateMap = new Map<string, {
-      filial_id: number
-      filial_nome: string
-      caixa: number
-      skus_venda: Set<number>
-      skus_cancelados: Set<number>
-      valor_cancelamentos: number
-      valor_vendido: number
-    }>()
-
-    if (itensData) {
-      itensData.forEach((item) => {
-        // Lookup caixa from vendas_hoje
-        const cupomKey = `${item.filial_id}-${item.cupom}`
-        const caixa = cupomCaixaMap.get(cupomKey) || 0
-
-        const key = `${item.filial_id}-${caixa}`
-        const valor = calculateSimpleItemRevenue(item)
-
-        if (!aggregateMap.has(key)) {
-          aggregateMap.set(key, {
-            filial_id: item.filial_id,
-            filial_nome: branchNameMap.get(item.filial_id.toString()) || `Filial ${item.filial_id}`,
-            caixa: caixa,
-            skus_venda: new Set(),
-            skus_cancelados: new Set(),
-            valor_cancelamentos: 0,
-            valor_vendido: 0,
-          })
-        }
-
-        const entry = aggregateMap.get(key)!
-
-        if (item.cancelado) {
-          entry.skus_cancelados.add(item.produto_id)
-          entry.valor_cancelamentos += valor
-        } else {
-          entry.skus_venda.add(item.produto_id)
-          entry.valor_vendido += valor
-        }
-      })
-    }
-    monitor.mark('aggregate_ranking', { groups: aggregateMap.size })
-
-    // Convert to array and transform Sets to counts
-    const ranking = Array.from(aggregateMap.values()).map((entry) => ({
-      filial_id: entry.filial_id,
-      filial_nome: entry.filial_nome,
-      caixa: entry.caixa,
-      skus_venda: entry.skus_venda.size,
-      skus_cancelados: entry.skus_cancelados.size,
-      valor_cancelamentos: entry.valor_cancelamentos,
-      valor_vendido: entry.valor_vendido,
+    const ranking = (rpcData || []).map((row) => ({
+      filial_id: Number(row.filial_id),
+      filial_nome: branchNameMap.get(String(row.filial_id)) || `Filial ${row.filial_id}`,
+      caixa: Number(row.caixa || 0),
+      skus_venda: Number(row.skus_venda || 0),
+      skus_cancelados: Number(row.skus_cancelados || 0),
+      valor_cancelamentos: Number(row.valor_cancelamentos || 0),
+      valor_vendido: Number(row.valor_vendido || 0),
     }))
+    monitor.mark('build_response', { rows: ranking.length })
 
     // Sort by valor_vendido descending (default)
     ranking.sort((a, b) => b.valor_vendido - a.valor_vendido)
-    monitor.mark('sort_ranking', { rows: ranking.length })
 
     console.log('[API/DASHBOARD-TEMPO-REAL/RANKING-OPERACIONAL] Result count:', ranking.length)
     monitor.finish({
       currentDate,
-      vendasRows: vendasData?.length ?? 0,
-      itensRows: itensData?.length ?? 0,
+      rpcRows: rpcData?.length ?? 0,
       rankingRows: ranking.length,
     })
 
