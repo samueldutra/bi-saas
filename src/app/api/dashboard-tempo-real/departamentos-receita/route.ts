@@ -2,10 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
-  calculatePercentage,
-  calculateRealtimeItemRevenue,
+  createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
-  getRealtimeDirectClient,
+  getRealtimeCurrentDate,
 } from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
@@ -20,6 +19,8 @@ const querySchema = z.object({
 })
 
 export async function GET(req: Request) {
+  const monitor = createRealtimeRouteMonitor('API/DASHBOARD-TEMPO-REAL/DEPARTAMENTOS')
+
   try {
     const supabase = await createClient()
     const {
@@ -29,6 +30,7 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    monitor.mark('auth')
 
     const { searchParams } = new URL(req.url)
     const queryParams = Object.fromEntries(searchParams.entries())
@@ -40,6 +42,7 @@ export async function GET(req: Request) {
         { status: 400 }
       )
     }
+    monitor.mark('validation')
 
     const { schema: requestedSchema, filiais, limit } = validation.data
     const limitNum = Math.min(parseInt(limit, 10), 100)
@@ -48,132 +51,50 @@ export async function GET(req: Request) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    monitor.mark('schema_access')
 
     const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
+    monitor.mark('authorized_filiais', { count: finalFiliais?.length ?? 0, limit: limitNum })
 
-    // Direct Supabase client for schema queries
-    const directSupabase = getRealtimeDirectClient()
+    const currentDate = getRealtimeCurrentDate()
 
-    // Query vendas_hoje_itens
-    let itensQuery = directSupabase
-      .schema(requestedSchema as 'public')
-      .from('vendas_hoje_itens')
-      .select('produto_id, filial_id, quantidade_vendida, preco_venda, valor_desconto, valor_acrescimo')
-      .eq('cancelado', false)
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'get_dashboard_tempo_real_departamentos_receita',
+      {
+        p_schema: requestedSchema,
+        p_data_extracao: currentDate,
+        p_filial_ids: finalFiliais && finalFiliais.length > 0 ? finalFiliais : null,
+        p_limit: limitNum,
+      }
+    )
 
-    if (finalFiliais && finalFiliais.length > 0) {
-      itensQuery = itensQuery.in('filial_id', finalFiliais)
-    }
-
-    const { data: itensData, error: itensError } = await itensQuery
-
-    if (itensError) {
-      console.error('[API/DASHBOARD-TEMPO-REAL/DEPARTAMENTOS] Itens Query Error:', itensError.message)
+    if (rpcError) {
+      console.error('[API/DASHBOARD-TEMPO-REAL/DEPARTAMENTOS] RPC Error:', rpcError.message)
       return NextResponse.json(
-        { error: 'Error fetching items data' },
+        { error: 'Error fetching departamentos data' },
         { status: 500 }
       )
     }
+    monitor.mark('rpc_departamentos', { rows: rpcData?.length ?? 0 })
 
-    // Get produtos with departamento_id
-    const produtoIds = new Set<number>()
-    if (itensData) {
-      itensData.forEach((item) => produtoIds.add(item.produto_id))
-    }
+    const receitaTotal =
+      rpcData && rpcData.length > 0 ? Number(rpcData[0].receita_total || 0) : 0
 
-    const productDeptMap = new Map<number, number | null>()
-    if (produtoIds.size > 0) {
-      // Processar em lotes para evitar limite de URL do Supabase
-      const BATCH_SIZE = 500
-      const produtoIdsArray = Array.from(produtoIds)
-      let totalProdutosRetornados = 0
-      let totalProdutosSemDepto = 0
-
-      for (let i = 0; i < produtoIdsArray.length; i += BATCH_SIZE) {
-        const batch = produtoIdsArray.slice(i, i + BATCH_SIZE)
-
-        const { data: produtosData, error: produtosError } = await directSupabase
-          .schema(requestedSchema as 'public')
-          .from('produtos')
-          .select('id, departamento_id')
-          .in('id', batch)
-
-        if (produtosError) {
-          console.error('[API/DASHBOARD-TEMPO-REAL/DEPARTAMENTOS] Produtos batch error:', produtosError.message)
-          continue
-        }
-
-        if (produtosData) {
-          totalProdutosRetornados += produtosData.length
-          produtosData.forEach((p) => {
-            productDeptMap.set(p.id, p.departamento_id)
-            if (p.departamento_id === null || p.departamento_id === undefined) {
-              totalProdutosSemDepto++
-            }
-          })
-        }
-      }
-
-      console.log('[API/DASHBOARD-TEMPO-REAL/DEPARTAMENTOS] Produtos query:', {
-        schema: requestedSchema,
-        produtoIds: produtoIds.size,
-        produtosRetornados: totalProdutosRetornados,
-        produtosSemDepto: totalProdutosSemDepto,
-        batches: Math.ceil(produtoIdsArray.length / BATCH_SIZE)
-      })
-    }
-
-    // Aggregate by departamento_id
-    const deptMap = new Map<number | null, number>()
-    let receitaTotal = 0
-
-    if (itensData) {
-      itensData.forEach((item) => {
-        const receita = calculateRealtimeItemRevenue(item)
-
-        receitaTotal += receita
-
-        const deptId = productDeptMap.get(item.produto_id) ?? null
-
-        if (deptMap.has(deptId)) {
-          deptMap.set(deptId, deptMap.get(deptId)! + receita)
-        } else {
-          deptMap.set(deptId, receita)
-        }
-      })
-    }
-
-    // Get department names
-    const deptIds = Array.from(deptMap.keys()).filter((id) => id !== null) as number[]
-    const deptNameMap = new Map<number, string>()
-
-    if (deptIds.length > 0) {
-      const { data: deptsData } = await directSupabase
-        .schema(requestedSchema as 'public')
-        .from('departments_level_1')
-        .select('departamento_id, descricao')
-        .in('departamento_id', deptIds)
-
-      if (deptsData) {
-        deptsData.forEach((d) => {
-          deptNameMap.set(d.departamento_id, d.descricao || `Departamento ${d.departamento_id}`)
-        })
-      }
-    }
-
-    // Build result sorted by receita
-    const sortedDepts = Array.from(deptMap.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limitNum)
-
-    const departamentos = sortedDepts.map(([deptId, receita]) => ({
-      departamento_id: deptId ?? 0,
-      departamento_nome: deptId ? (deptNameMap.get(deptId) || `Departamento ${deptId}`) : 'Sem Departamento',
-      receita,
-      participacao_percentual: calculatePercentage(receita, receitaTotal),
+    const departamentos = (rpcData || []).map((row) => ({
+      departamento_id: Number(row.departamento_id || 0),
+      departamento_nome: row.departamento_nome || 'Sem Departamento',
+      receita: Number(row.receita || 0),
+      participacao_percentual: Number(row.participacao_percentual || 0),
     }))
 
+    monitor.mark('build_response', { rows: departamentos.length })
+
     console.log('[API/DASHBOARD-TEMPO-REAL/DEPARTAMENTOS] Result count:', departamentos.length)
+    monitor.finish({
+      currentDate,
+      rpcRows: rpcData?.length ?? 0,
+      departments: departamentos.length,
+    })
 
     return NextResponse.json({
       receita_total: receitaTotal,
@@ -181,6 +102,7 @@ export async function GET(req: Request) {
     })
   } catch (e) {
     const error = e as Error
+    monitor.fail(error)
     console.error('Unexpected error in dashboard-tempo-real/departamentos-receita API:', error)
     return NextResponse.json(
       { error: 'An unexpected error occurred' },

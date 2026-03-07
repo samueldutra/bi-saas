@@ -4,7 +4,9 @@ import { z } from 'zod'
 import {
   calculatePercentage,
   calculateSimpleItemRevenue,
+  createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
+  getRealtimeCurrentDate,
   getRealtimeDirectClient,
   parseRealtimeNumber,
 } from '@/lib/dashboard-tempo-real/server'
@@ -20,6 +22,8 @@ const querySchema = z.object({
 })
 
 export async function GET(req: Request) {
+  const monitor = createRealtimeRouteMonitor('API/DASHBOARD-TEMPO-REAL/RESUMO')
+
   try {
     const supabase = await createClient()
     const {
@@ -29,6 +33,7 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    monitor.mark('auth')
 
     const { searchParams } = new URL(req.url)
     const queryParams = Object.fromEntries(searchParams.entries())
@@ -40,6 +45,7 @@ export async function GET(req: Request) {
         { status: 400 }
       )
     }
+    monitor.mark('validation')
 
     const { schema: requestedSchema, filiais } = validation.data
 
@@ -47,11 +53,14 @@ export async function GET(req: Request) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    monitor.mark('schema_access')
 
     const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
+    monitor.mark('authorized_filiais', { count: finalFiliais?.length ?? 0 })
 
     // Direct Supabase client for schema queries
     const directSupabase = getRealtimeDirectClient()
+    const currentDate = getRealtimeCurrentDate()
 
     let receitaTotal = 0
     let qtdeCupons = 0
@@ -66,6 +75,7 @@ export async function GET(req: Request) {
         .from('vendas_hoje')
         .select('valor_total')
         .eq('cancelada', false)
+        .eq('data_extracao', currentDate)
 
       if (finalFiliais && finalFiliais.length > 0) {
         receitaQuery = receitaQuery.in('filial_id', finalFiliais)
@@ -79,8 +89,10 @@ export async function GET(req: Request) {
         receitaTotal = receitaData.reduce((sum, row) => sum + parseRealtimeNumber(row.valor_total), 0)
         qtdeCupons = receitaData.length
       }
+      monitor.mark('query_receita', { rows: receitaData?.length ?? 0 })
     } catch (err) {
       console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Receita Exception:', err)
+      monitor.mark('query_receita_error')
     }
 
     // Query 2: Cancelamentos (de vendas_hoje_itens onde cancelado = true)
@@ -91,6 +103,7 @@ export async function GET(req: Request) {
         .from('vendas_hoje_itens')
         .select('produto_id, quantidade_vendida, preco_venda')
         .eq('cancelado', true)
+        .eq('data_extracao', currentDate)
 
       if (finalFiliais && finalFiliais.length > 0) {
         cancelQuery = cancelQuery.in('filial_id', finalFiliais)
@@ -106,8 +119,10 @@ export async function GET(req: Request) {
         const skusCancelados = new Set(cancelData.map(item => item.produto_id))
         cancelamentosQtdeSkus = skusCancelados.size
       }
+      monitor.mark('query_cancelamentos', { rows: cancelData?.length ?? 0 })
     } catch (err) {
       console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Cancel Exception:', err)
+      monitor.mark('query_cancelamentos_error')
     }
 
     // Query 3: SKUs distintos
@@ -117,6 +132,7 @@ export async function GET(req: Request) {
         .from('vendas_hoje_itens')
         .select('produto_id, filial_id, cupom')
         .eq('cancelado', false)
+        .eq('data_extracao', currentDate)
 
       if (finalFiliais && finalFiliais.length > 0) {
         skusQuery = skusQuery.in('filial_id', finalFiliais)
@@ -131,18 +147,19 @@ export async function GET(req: Request) {
         const uniqueSkus = new Set(skusData.map(item => item.produto_id))
         qtdeSkus = uniqueSkus.size
       }
+      monitor.mark('query_skus', { rows: skusData?.length ?? 0 })
     } catch (err) {
       console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] SKUs Exception:', err)
+      monitor.mark('query_skus_error')
     }
 
     // Query 4: Meta do dia
     try {
-      const today = new Date().toISOString().split('T')[0]
       let metaQuery = directSupabase
         .schema(requestedSchema as 'public')
         .from('metas_mensais')
         .select('valor_meta')
-        .eq('data', today)
+        .eq('data', currentDate)
 
       if (finalFiliais && finalFiliais.length > 0) {
         metaQuery = metaQuery.in('filial_id', finalFiliais)
@@ -155,8 +172,10 @@ export async function GET(req: Request) {
       } else if (metaData) {
         metaDia = metaData.reduce((sum, row) => sum + parseRealtimeNumber(row.valor_meta), 0)
       }
+      monitor.mark('query_meta', { rows: metaData?.length ?? 0 })
     } catch (err) {
       console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Meta Exception:', err)
+      monitor.mark('query_meta_error')
     }
 
     // Query 5: Última atualização dos dados (created_at mais recente)
@@ -166,6 +185,7 @@ export async function GET(req: Request) {
         .schema(requestedSchema as 'public')
         .from('vendas_hoje')
         .select('created_at')
+        .eq('data_extracao', currentDate)
         .order('created_at', { ascending: false })
         .limit(1)
 
@@ -180,8 +200,10 @@ export async function GET(req: Request) {
       } else if (ultimaData && ultimaData.length > 0) {
         ultimaAtualizacao = ultimaData[0].created_at
       }
+      monitor.mark('query_ultima_atualizacao', { rows: ultimaData?.length ?? 0 })
     } catch (err) {
       console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Ultima Atualizacao Exception:', err)
+      monitor.mark('query_ultima_atualizacao_error')
     }
 
     // Calculate derived values
@@ -203,10 +225,18 @@ export async function GET(req: Request) {
     }
 
     console.log('[API/DASHBOARD-TEMPO-REAL/RESUMO] Result:', result)
+    monitor.finish({
+      currentDate,
+      receitaTotal,
+      qtdeCupons,
+      qtdeSkus,
+      cancelamentosQtdeSkus,
+    })
 
     return NextResponse.json(result)
   } catch (e) {
     const error = e as Error
+    monitor.fail(error)
     console.error('Unexpected error in dashboard-tempo-real/resumo API:', error)
     return NextResponse.json(
       { error: 'An unexpected error occurred' },

@@ -2,9 +2,11 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
+  createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
   getBranchNameMapForTenant,
   getDashboardTempoRealFilialColor,
+  getRealtimeCurrentDate,
   getRealtimeDirectClient,
   getTenantIdBySchema,
   parseRealtimeNumber,
@@ -21,6 +23,8 @@ const querySchema = z.object({
 })
 
 export async function GET(req: Request) {
+  const monitor = createRealtimeRouteMonitor('API/DASHBOARD-TEMPO-REAL/VENDAS-POR-HORA')
+
   try {
     const supabase = await createClient()
     const {
@@ -30,6 +34,7 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    monitor.mark('auth')
 
     const { searchParams } = new URL(req.url)
     const queryParams = Object.fromEntries(searchParams.entries())
@@ -41,6 +46,7 @@ export async function GET(req: Request) {
         { status: 400 }
       )
     }
+    monitor.mark('validation')
 
     const { schema: requestedSchema, filiais } = validation.data
 
@@ -48,17 +54,21 @@ export async function GET(req: Request) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    monitor.mark('schema_access')
 
     const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
+    monitor.mark('authorized_filiais', { count: finalFiliais?.length ?? 0 })
 
     // Direct Supabase client for schema queries
     const directSupabase = getRealtimeDirectClient()
+    const currentDate = getRealtimeCurrentDate()
 
     // Query vendas por hora
     let vendasQuery = directSupabase
       .schema(requestedSchema as 'public')
       .from('vendas_hoje')
       .select('filial_id, horario, valor_total')
+      .eq('data_extracao', currentDate)
       .eq('cancelada', false)
       .not('horario', 'is', null)
 
@@ -75,9 +85,11 @@ export async function GET(req: Request) {
         { status: 500 }
       )
     }
+    monitor.mark('query_vendas', { rows: vendasData?.length ?? 0 })
 
     const tenantId = await getTenantIdBySchema(supabase, requestedSchema)
     const branchNameMap = await getBranchNameMapForTenant(supabase, tenantId)
+    monitor.mark('branch_lookup', { branchCount: branchNameMap.size })
 
     // Group data by hour and filial
     const hourlyData: Record<string, Record<string, number>> = {}
@@ -118,6 +130,7 @@ export async function GET(req: Request) {
         hourlyData[hourKey][filialId] += valor
       })
     }
+    monitor.mark('group_by_hour', { rows: vendasData?.length ?? 0, filiais: filiaisSet.size })
 
     // Build filiais array with colors
     const filiaisArray = Array.from(filiaisSet).sort((a, b) => a - b)
@@ -126,6 +139,7 @@ export async function GET(req: Request) {
       nome: branchNameMap.get(id.toString()) || `Filial ${id}`,
       cor: getDashboardTempoRealFilialColor(index),
     }))
+    monitor.mark('build_filiais_info', { rows: filiaisInfo.length })
 
     // Convert hourly data to array format with cumulative values
     const dataArray: Array<{ hora: string; [key: string]: string | number }> = []
@@ -149,6 +163,7 @@ export async function GET(req: Request) {
 
       dataArray.push(row)
     }
+    monitor.mark('build_cumulative_series', { rows: dataArray.length })
 
     const result = {
       data: dataArray,
@@ -156,10 +171,17 @@ export async function GET(req: Request) {
     }
 
     console.log('[API/DASHBOARD-TEMPO-REAL/VENDAS-POR-HORA] Result filiais:', filiaisInfo.length)
+    monitor.finish({
+      currentDate,
+      vendasRows: vendasData?.length ?? 0,
+      filiais: filiaisInfo.length,
+      points: dataArray.length,
+    })
 
     return NextResponse.json(result)
   } catch (e) {
     const error = e as Error
+    monitor.fail(error)
     console.error('Unexpected error in dashboard-tempo-real/vendas-por-hora API:', error)
     return NextResponse.json(
       { error: 'An unexpected error occurred' },

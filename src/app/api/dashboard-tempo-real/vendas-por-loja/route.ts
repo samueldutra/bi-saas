@@ -4,9 +4,11 @@ import { z } from 'zod'
 import {
   calculatePercentage,
   calculateRealtimeItemRevenue,
+  createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
   getBranchNameMapForTenant,
   getDashboardTempoRealFilialColor,
+  getRealtimeCurrentDate,
   getRealtimeDirectClient,
   getTenantIdBySchema,
   isOfertaItem,
@@ -24,6 +26,8 @@ const querySchema = z.object({
 })
 
 export async function GET(req: Request) {
+  const monitor = createRealtimeRouteMonitor('API/DASHBOARD-TEMPO-REAL/VENDAS-POR-LOJA')
+
   try {
     const supabase = await createClient()
     const {
@@ -33,6 +37,7 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    monitor.mark('auth')
 
     const { searchParams } = new URL(req.url)
     const queryParams = Object.fromEntries(searchParams.entries())
@@ -44,6 +49,7 @@ export async function GET(req: Request) {
         { status: 400 }
       )
     }
+    monitor.mark('validation')
 
     const { schema: requestedSchema, filiais } = validation.data
 
@@ -51,17 +57,21 @@ export async function GET(req: Request) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    monitor.mark('schema_access')
 
     const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
+    monitor.mark('authorized_filiais', { count: finalFiliais?.length ?? 0 })
 
     // Direct Supabase client for schema queries
     const directSupabase = getRealtimeDirectClient()
+    const currentDate = getRealtimeCurrentDate()
 
     // Query vendas_hoje_itens to get oferta data
     let itensQuery = directSupabase
       .schema(requestedSchema as 'public')
       .from('vendas_hoje_itens')
       .select('filial_id, quantidade_vendida, preco_venda, valor_desconto, valor_acrescimo, oferta_id')
+      .eq('data_extracao', currentDate)
       .eq('cancelado', false)
 
     if (finalFiliais && finalFiliais.length > 0) {
@@ -77,17 +87,19 @@ export async function GET(req: Request) {
         { status: 500 }
       )
     }
+    monitor.mark('query_itens', { rows: itensData?.length ?? 0 })
 
     const tenantId = await getTenantIdBySchema(supabase, requestedSchema)
     const branchNameMap = await getBranchNameMapForTenant(supabase, tenantId)
+    monitor.mark('branch_lookup', { branchCount: branchNameMap.size })
 
     // Get metas for today
-    const today = new Date().toISOString().split('T')[0]
     const { data: metasData } = await directSupabase
       .schema(requestedSchema as 'public')
       .from('metas_mensais')
       .select('filial_id, valor_meta')
-      .eq('data', today)
+      .eq('data', currentDate)
+    monitor.mark('query_metas', { rows: metasData?.length ?? 0 })
 
     const metaByFilial = new Map<number, number>()
     if (metasData) {
@@ -117,6 +129,7 @@ export async function GET(req: Request) {
         }
       })
     }
+    monitor.mark('aggregate_filiais', { groups: filialMap.size })
 
     // Build result array sorted by total receita
     const filiaisArray = Array.from(filialMap.entries())
@@ -141,12 +154,20 @@ export async function GET(req: Request) {
       ...item,
       cor: getDashboardTempoRealFilialColor(index),
     }))
+    monitor.mark('build_response', { rows: result.length })
 
     console.log('[API/DASHBOARD-TEMPO-REAL/VENDAS-POR-LOJA] Result:', result.length, 'filiais')
+    monitor.finish({
+      currentDate,
+      itensRows: itensData?.length ?? 0,
+      metasRows: metasData?.length ?? 0,
+      filiais: result.length,
+    })
 
     return NextResponse.json({ lojas: result })
   } catch (e) {
     const error = e as Error
+    monitor.fail(error)
     console.error('Unexpected error in dashboard-tempo-real/vendas-por-loja API:', error)
     return NextResponse.json(
       { error: 'An unexpected error occurred' },

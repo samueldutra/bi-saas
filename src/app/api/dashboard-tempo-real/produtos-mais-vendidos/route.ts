@@ -3,7 +3,9 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
   calculateRealtimeItemRevenue,
+  createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
+  getRealtimeCurrentDate,
   getRealtimeDirectClient,
   isOfertaItem,
   parseRealtimeNumber,
@@ -21,6 +23,8 @@ const querySchema = z.object({
 })
 
 export async function GET(req: Request) {
+  const monitor = createRealtimeRouteMonitor('API/DASHBOARD-TEMPO-REAL/PRODUTOS')
+
   try {
     const supabase = await createClient()
     const {
@@ -30,6 +34,7 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    monitor.mark('auth')
 
     const { searchParams } = new URL(req.url)
     const queryParams = Object.fromEntries(searchParams.entries())
@@ -41,6 +46,7 @@ export async function GET(req: Request) {
         { status: 400 }
       )
     }
+    monitor.mark('validation')
 
     const { schema: requestedSchema, filiais, limit } = validation.data
     const limitNum = Math.min(parseInt(limit, 10), 100)
@@ -49,17 +55,21 @@ export async function GET(req: Request) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    monitor.mark('schema_access')
 
     const finalFiliais = await getAuthorizedRealtimeFiliais(supabase, user.id, filiais)
+    monitor.mark('authorized_filiais', { count: finalFiliais?.length ?? 0, limit: limitNum })
 
     // Direct Supabase client for schema queries
     const directSupabase = getRealtimeDirectClient()
+    const currentDate = getRealtimeCurrentDate()
 
     // Query vendas_hoje_itens
     let itensQuery = directSupabase
       .schema(requestedSchema as 'public')
       .from('vendas_hoje_itens')
       .select('produto_id, filial_id, quantidade_vendida, preco_venda, valor_desconto, valor_acrescimo, oferta_id')
+      .eq('data_extracao', currentDate)
       .eq('cancelado', false)
 
     if (finalFiliais && finalFiliais.length > 0) {
@@ -75,6 +85,7 @@ export async function GET(req: Request) {
         { status: 500 }
       )
     }
+    monitor.mark('query_itens', { rows: itensData?.length ?? 0 })
 
     // Aggregate by produto_id (normalizado como string para evitar mismatch number vs string)
     const productMap = new Map<string, { quantidade: number; receita: number; is_oferta: boolean }>()
@@ -102,6 +113,7 @@ export async function GET(req: Request) {
         }
       })
     }
+    monitor.mark('aggregate_products', { distinctProducts: productMap.size })
 
     // Get top products by receita
     const sortedProducts = Array.from(productMap.entries())
@@ -110,19 +122,30 @@ export async function GET(req: Request) {
 
     // Get product descriptions
     const produtoIds = sortedProducts.map(([id]) => id)
+    const topProdutoIds = new Set(produtoIds)
 
     const productDescMap = new Map<string, string>()
     if (produtoIds.length > 0) {
-      const numericProdutoIds = produtoIds
-        .map((id) => Number(id))
-        .filter((n) => Number.isFinite(n))
+      const produtosPorFilial = new Map<number, Set<string>>()
+
+      if (itensData) {
+        itensData.forEach((item) => {
+          const produtoId = String(item.produto_id ?? '').trim()
+          if (!produtoId || !topProdutoIds.has(produtoId)) return
+
+          if (!produtosPorFilial.has(item.filial_id)) {
+            produtosPorFilial.set(item.filial_id, new Set())
+          }
+
+          produtosPorFilial.get(item.filial_id)!.add(produtoId)
+        })
+      }
 
       const idCandidates = ['id', 'codigo', 'cod_produto', 'produto_codigo', 'sku']
+      const BATCH_SIZE = 200
 
       for (const candidateColumn of idCandidates) {
         if (productDescMap.size >= produtoIds.length) break
-
-        const filterValues = numericProdutoIds.length > 0 ? numericProdutoIds : produtoIds
 
         type ProdutoLookupRow = Record<string, unknown> & { descricao: string | null }
         type ProdutoLookupResult = {
@@ -136,30 +159,57 @@ export async function GET(req: Request) {
             .schema(requestedSchema as 'public')
             .from('produtos') as unknown as {
             select: (columns: string) => {
-              in: (column: string, values: Array<string | number>) => Promise<ProdutoLookupResult>
+              eq: (column: string, value: string | number) => {
+                in: (lookupColumn: string, values: Array<string | number>) => Promise<ProdutoLookupResult>
+              }
             }
           }
         )
 
-        const { data: produtosData, error: produtosError } = await query
-          .select(`${candidateColumn}, descricao`)
-          .in(candidateColumn, filterValues)
+        for (const [filialId, produtosFilial] of produtosPorFilial.entries()) {
+          if (productDescMap.size >= produtoIds.length) break
 
-        if (produtosError) {
-          const isMissingColumn = produtosError.message.includes('does not exist')
-          if (!isMissingColumn) {
-            console.warn(`[API/DASHBOARD-TEMPO-REAL/PRODUTOS] Produtos Query by ${candidateColumn} Error:`, produtosError.message)
-          }
-          continue
-        }
+          const produtosFilialArray = Array.from(produtosFilial)
 
-        if (produtosData) {
-          produtosData.forEach((p) => {
-            const productId = String((p as Record<string, unknown>)[candidateColumn] ?? '').trim()
-            if (productId && !productDescMap.has(productId)) {
-              productDescMap.set(productId, p.descricao || `Produto ${productId}`)
+          for (let i = 0; i < produtosFilialArray.length; i += BATCH_SIZE) {
+            if (productDescMap.size >= produtoIds.length) break
+
+            const batch = produtosFilialArray.slice(i, i + BATCH_SIZE)
+            const filterValues = candidateColumn === 'id'
+              ? batch
+                  .map((id) => Number(id))
+                  .filter((n) => Number.isFinite(n))
+              : batch
+
+            const { data: produtosData, error: produtosError } = await query
+              .select(`${candidateColumn}, descricao`)
+              .eq('filial_id', filialId)
+              .in(candidateColumn, filterValues.length > 0 ? filterValues : batch)
+
+            if (produtosError) {
+              const isMissingColumn = produtosError.message.includes('does not exist')
+              if (!isMissingColumn) {
+                console.warn(`[API/DASHBOARD-TEMPO-REAL/PRODUTOS] Produtos Query by ${candidateColumn} Error:`, produtosError.message)
+              }
+              break
             }
-          })
+
+            if (produtosData) {
+              produtosData.forEach((p) => {
+                const productId = String((p as Record<string, unknown>)[candidateColumn] ?? '').trim()
+                if (productId && !productDescMap.has(productId)) {
+                  productDescMap.set(productId, p.descricao || `Produto ${productId}`)
+                }
+              })
+            }
+
+            monitor.mark(`lookup_descricao_${candidateColumn}`, {
+              filialId,
+              batchSize: batch.length,
+              rows: produtosData?.length ?? 0,
+              found: productDescMap.size,
+            })
+          }
         }
       }
 
@@ -182,12 +232,20 @@ export async function GET(req: Request) {
       receita: data.receita,
       is_oferta: data.is_oferta,
     }))
+    monitor.mark('build_response', { rows: produtos.length })
 
     console.log('[API/DASHBOARD-TEMPO-REAL/PRODUTOS] Result count:', produtos.length)
+    monitor.finish({
+      currentDate,
+      itensRows: itensData?.length ?? 0,
+      distinctProducts: productMap.size,
+      returnedProducts: produtos.length,
+    })
 
     return NextResponse.json({ produtos })
   } catch (e) {
     const error = e as Error
+    monitor.fail(error)
     console.error('Unexpected error in dashboard-tempo-real/produtos-mais-vendidos API:', error)
     return NextResponse.json(
       { error: 'An unexpected error occurred' },

@@ -68,6 +68,12 @@ export function getRealtimeDirectClient() {
   return createDirectClient()
 }
 
+export function getRealtimeCurrentDate() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+  }).format(new Date())
+}
+
 export async function getTenantIdBySchema(
   supabase: ServerSupabaseClient,
   schema: string
@@ -153,4 +159,47 @@ export function calculatePercentage(value: number, total: number) {
   }
 
   return (value / total) * 100
+}
+
+type RealtimeMonitorMeta = Record<string, string | number | boolean | null | undefined>
+
+type RealtimeMonitorStep = {
+  step: string
+  durationMs: number
+  meta?: RealtimeMonitorMeta
+}
+
+export function createRealtimeRouteMonitor(route: string) {
+  const startedAt = Date.now()
+  let lastMark = startedAt
+  const steps: RealtimeMonitorStep[] = []
+
+  return {
+    mark(step: string, meta?: RealtimeMonitorMeta) {
+      const now = Date.now()
+      steps.push({
+        step,
+        durationMs: now - lastMark,
+        ...(meta ? { meta } : {}),
+      })
+      lastMark = now
+    },
+    finish(meta?: RealtimeMonitorMeta) {
+      console.info(`[${route}] PERF`, {
+        route,
+        totalMs: Date.now() - startedAt,
+        steps,
+        ...(meta ? { meta } : {}),
+      })
+    },
+    fail(error: unknown, meta?: RealtimeMonitorMeta) {
+      console.error(`[${route}] PERF_ERROR`, {
+        route,
+        totalMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : 'unknown_error',
+        steps,
+        ...(meta ? { meta } : {}),
+      })
+    },
+  }
 }
