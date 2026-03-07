@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 import { formatCurrency, formatNumber } from './formatters'
+import { DashboardTempoRealSectionError } from './section-error'
 import type { DepartamentosResponse, ProdutosResponse } from './types'
 
 type DashboardTempoRealTablesSectionProps = {
@@ -20,6 +21,8 @@ type DashboardTempoRealTablesSectionProps = {
   departamentosData?: DepartamentosResponse
   isLoadingProdutos: boolean
   isLoadingDepartamentos: boolean
+  errorProdutos?: string | null
+  errorDepartamentos?: string | null
   limitProdutos: string
   limitDepartamentos: string
   onLimitProdutosChange: (value: string) => void
@@ -31,6 +34,8 @@ export function DashboardTempoRealTablesSection({
   departamentosData,
   isLoadingProdutos,
   isLoadingDepartamentos,
+  errorProdutos,
+  errorDepartamentos,
   limitProdutos,
   limitDepartamentos,
   onLimitProdutosChange,
@@ -57,11 +62,21 @@ export function DashboardTempoRealTablesSection({
         </CardHeader>
         <CardContent>
           <div className="h-[400px] overflow-auto">
+            {errorProdutos && (isLoadingProdutos || produtosData) && (
+              <DashboardTempoRealSectionError
+                className="mb-4"
+                message={errorProdutos}
+              />
+            )}
             {isLoadingProdutos ? (
               <div className="space-y-2">
                 {Array.from({ length: 10 }).map((_, i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
+              </div>
+            ) : errorProdutos && !produtosData ? (
+              <div className="flex h-full items-center justify-center">
+                <DashboardTempoRealSectionError message={errorProdutos} />
               </div>
             ) : produtosData?.produtos &&
               Array.isArray(produtosData.produtos) &&
@@ -128,11 +143,21 @@ export function DashboardTempoRealTablesSection({
         </CardHeader>
         <CardContent>
           <div className="h-[400px] overflow-auto">
+            {errorDepartamentos && (isLoadingDepartamentos || departamentosData) && (
+              <DashboardTempoRealSectionError
+                className="mb-4"
+                message={errorDepartamentos}
+              />
+            )}
             {isLoadingDepartamentos ? (
               <div className="space-y-2">
                 {Array.from({ length: 10 }).map((_, i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
+              </div>
+            ) : errorDepartamentos && !departamentosData ? (
+              <div className="flex h-full items-center justify-center">
+                <DashboardTempoRealSectionError message={errorDepartamentos} />
               </div>
             ) : departamentosData?.departamentos &&
               Array.isArray(departamentosData.departamentos) &&

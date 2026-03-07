@@ -29,8 +29,18 @@ const REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
 // Fetcher
 const fetcher = async (url: string) => {
   const res = await fetch(url)
-  if (!res.ok) throw new Error('Failed to fetch')
+  if (!res.ok) {
+    throw new Error(`Falha na requisicao (${res.status})`)
+  }
   return res.json()
+}
+
+const getErrorMessage = (error: unknown, sectionName: string): string => {
+  if (error instanceof Error && error.message) {
+    return `${sectionName}: ${error.message}`
+  }
+
+  return `${sectionName}: erro inesperado ao carregar dados`
 }
 
 export default function DashboardTempoRealPage() {
@@ -121,37 +131,37 @@ export default function DashboardTempoRealPage() {
   }, [apiParams])
 
   // SWR hooks for each endpoint
-  const { data: resumo, mutate: mutateResumo, isLoading: isLoadingResumo } = useSWR<ResumoData>(
+  const { data: resumo, error: resumoError, mutate: mutateResumo, isLoading: isLoadingResumo } = useSWR<ResumoData>(
     resumoUrl,
     fetcher,
     { refreshInterval: REFRESH_INTERVAL }
   )
 
-  const { data: vendasPorHora, mutate: mutateVendasHora, isLoading: isLoadingVendasHora } = useSWR<VendasPorHoraData>(
+  const { data: vendasPorHora, error: vendasHoraError, mutate: mutateVendasHora, isLoading: isLoadingVendasHora } = useSWR<VendasPorHoraData>(
     vendasHoraUrl,
     fetcher,
     { refreshInterval: REFRESH_INTERVAL }
   )
 
-  const { data: produtosData, mutate: mutateProdutos, isLoading: isLoadingProdutos } = useSWR<ProdutosResponse>(
+  const { data: produtosData, error: produtosError, mutate: mutateProdutos, isLoading: isLoadingProdutos } = useSWR<ProdutosResponse>(
     produtosUrl,
     fetcher,
     { refreshInterval: REFRESH_INTERVAL }
   )
 
-  const { data: departamentosData, mutate: mutateDepartamentos, isLoading: isLoadingDepartamentos } = useSWR<DepartamentosResponse>(
+  const { data: departamentosData, error: departamentosError, mutate: mutateDepartamentos, isLoading: isLoadingDepartamentos } = useSWR<DepartamentosResponse>(
     departamentosUrl,
     fetcher,
     { refreshInterval: REFRESH_INTERVAL }
   )
 
-  const { data: rankingData, mutate: mutateRanking, isLoading: isLoadingRanking } = useSWR<RankingResponse>(
+  const { data: rankingData, error: rankingError, mutate: mutateRanking, isLoading: isLoadingRanking } = useSWR<RankingResponse>(
     rankingUrl,
     fetcher,
     { refreshInterval: REFRESH_INTERVAL }
   )
 
-  const { data: vendasPorLojaData, mutate: mutateVendasPorLoja, isLoading: isLoadingVendasPorLoja } = useSWR<VendasPorLojaResponse>(
+  const { data: vendasPorLojaData, error: vendasPorLojaError, mutate: mutateVendasPorLoja, isLoading: isLoadingVendasPorLoja } = useSWR<VendasPorLojaResponse>(
     vendasPorLojaUrl,
     fetcher,
     { refreshInterval: REFRESH_INTERVAL }
@@ -296,6 +306,19 @@ export default function DashboardTempoRealPage() {
     }
   }, [isLoadingResumo, isLoadingVendasHora, isLoadingVendasPorLoja, isLoadingProdutos, isLoadingDepartamentos, isLoadingRanking, resumo, vendasPorHora, vendasPorLojaData, produtosData, departamentosData, rankingData])
 
+  const errorMessages = useMemo(() => ({
+    resumo: resumoError ? getErrorMessage(resumoError, 'Resumo') : null,
+    vendasHora: vendasHoraError ? getErrorMessage(vendasHoraError, 'Vendas por Hora') : null,
+    vendasPorLoja: vendasPorLojaError ? getErrorMessage(vendasPorLojaError, 'Vendas por Loja') : null,
+    produtos: produtosError ? getErrorMessage(produtosError, 'Produtos') : null,
+    departamentos: departamentosError ? getErrorMessage(departamentosError, 'Departamentos') : null,
+    ranking: rankingError ? getErrorMessage(rankingError, 'Ranking') : null,
+  }), [resumoError, vendasHoraError, vendasPorLojaError, produtosError, departamentosError, rankingError])
+
+  const globalErrorSections = useMemo(() => {
+    return Object.values(errorMessages).filter((message): message is string => Boolean(message))
+  }, [errorMessages])
+
   if (!currentTenant) {
     return (
       <div className="flex items-center justify-center h-[400px]">
@@ -316,11 +339,15 @@ export default function DashboardTempoRealPage() {
         onRefresh={handleRefresh}
       />
 
-      <DashboardTempoRealLoadingBanner loadingState={loadingState} />
+      <DashboardTempoRealLoadingBanner
+        loadingState={loadingState}
+        errorSections={globalErrorSections}
+      />
 
       <DashboardTempoRealSummaryCards
         resumo={resumo}
         isLoadingResumo={isLoadingResumo}
+        errorMessage={errorMessages.resumo}
       />
 
       <DashboardTempoRealChartsSection
@@ -329,6 +356,8 @@ export default function DashboardTempoRealPage() {
         isLoadingVendasHora={isLoadingVendasHora}
         isLoadingVendasPorLoja={isLoadingVendasPorLoja}
         areaChartConfig={areaChartConfig}
+        errorVendasHora={errorMessages.vendasHora}
+        errorVendasPorLoja={errorMessages.vendasPorLoja}
       />
 
       <DashboardTempoRealTablesSection
@@ -336,6 +365,8 @@ export default function DashboardTempoRealPage() {
         departamentosData={departamentosData}
         isLoadingProdutos={isLoadingProdutos}
         isLoadingDepartamentos={isLoadingDepartamentos}
+        errorProdutos={errorMessages.produtos}
+        errorDepartamentos={errorMessages.departamentos}
         limitProdutos={limitProdutos}
         limitDepartamentos={limitDepartamentos}
         onLimitProdutosChange={setLimitProdutos}
@@ -350,6 +381,7 @@ export default function DashboardTempoRealPage() {
         vendaSortDirection={vendaSortDirection}
         cancelamentoSortField={cancelamentoSortField}
         cancelamentoSortDirection={cancelamentoSortDirection}
+        errorMessage={errorMessages.ranking}
         onVendaSortClick={handleVendaSortClick}
         onCancelamentoSortClick={handleCancelamentoSortClick}
       />

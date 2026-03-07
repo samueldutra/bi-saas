@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 import { formatCurrency, formatNumber } from './formatters'
+import { DashboardTempoRealSectionError } from './section-error'
 import type {
   RankingOperacional,
   SortDirection,
@@ -22,6 +23,7 @@ type DashboardTempoRealRankingsSectionProps = {
   vendaSortDirection: SortDirection
   cancelamentoSortField: SortFieldCancelamento
   cancelamentoSortDirection: SortDirection
+  errorMessage?: string | null
   onVendaSortClick: (field: SortFieldVenda) => void
   onCancelamentoSortClick: (field: SortFieldCancelamento) => void
 }
@@ -47,6 +49,7 @@ export function DashboardTempoRealRankingsSection({
   vendaSortDirection,
   cancelamentoSortField,
   cancelamentoSortDirection,
+  errorMessage,
   onVendaSortClick,
   onCancelamentoSortClick,
 }: DashboardTempoRealRankingsSectionProps) {
@@ -59,11 +62,21 @@ export function DashboardTempoRealRankingsSection({
         </CardHeader>
         <CardContent>
           <div className="h-[400px] overflow-auto">
+            {errorMessage && (isLoadingRanking || sortedRankingVenda.length > 0) && (
+              <DashboardTempoRealSectionError
+                className="mb-4"
+                message={errorMessage}
+              />
+            )}
             {isLoadingRanking ? (
               <div className="space-y-2">
                 {Array.from({ length: 10 }).map((_, i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
+              </div>
+            ) : errorMessage && sortedRankingVenda.length === 0 ? (
+              <div className="flex h-full items-center justify-center">
+                <DashboardTempoRealSectionError message={errorMessage} />
               </div>
             ) : sortedRankingVenda.length > 0 ? (
               <Table>
@@ -149,11 +162,21 @@ export function DashboardTempoRealRankingsSection({
         </CardHeader>
         <CardContent>
           <div className="h-[400px] overflow-auto">
+            {errorMessage && (isLoadingRanking || sortedRankingCancelamentos.length > 0) && (
+              <DashboardTempoRealSectionError
+                className="mb-4"
+                message={errorMessage}
+              />
+            )}
             {isLoadingRanking ? (
               <div className="space-y-2">
                 {Array.from({ length: 10 }).map((_, i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
+              </div>
+            ) : errorMessage && sortedRankingCancelamentos.length === 0 ? (
+              <div className="flex h-full items-center justify-center">
+                <DashboardTempoRealSectionError message={errorMessage} />
               </div>
             ) : sortedRankingCancelamentos.length > 0 ? (
               <Table>

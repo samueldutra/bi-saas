@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 
 import { formatCurrency, formatValueShort } from './formatters'
+import { DashboardTempoRealSectionError } from './section-error'
 import type { VendasPorHoraData, VendasPorLojaResponse } from './types'
 
 type DashboardTempoRealChartsSectionProps = {
@@ -22,6 +23,8 @@ type DashboardTempoRealChartsSectionProps = {
   isLoadingVendasHora: boolean
   isLoadingVendasPorLoja: boolean
   areaChartConfig: Record<string, { label: string; color: string }>
+  errorVendasHora?: string | null
+  errorVendasPorLoja?: string | null
 }
 
 const barChartConfig = {
@@ -41,6 +44,8 @@ export function DashboardTempoRealChartsSection({
   isLoadingVendasHora,
   isLoadingVendasPorLoja,
   areaChartConfig,
+  errorVendasHora,
+  errorVendasPorLoja,
 }: DashboardTempoRealChartsSectionProps) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -52,8 +57,18 @@ export function DashboardTempoRealChartsSection({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {errorVendasHora && (isLoadingVendasHora || vendasPorHora) && (
+            <DashboardTempoRealSectionError
+              className="mb-4"
+              message={errorVendasHora}
+            />
+          )}
           {isLoadingVendasHora ? (
             <Skeleton className="h-80 w-full" />
+          ) : errorVendasHora && !vendasPorHora ? (
+            <div className="flex h-80 items-center justify-center">
+              <DashboardTempoRealSectionError message={errorVendasHora} />
+            </div>
           ) : vendasPorHora?.data &&
             Array.isArray(vendasPorHora.data) &&
             vendasPorHora.data.length > 0 &&
@@ -142,8 +157,18 @@ export function DashboardTempoRealChartsSection({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {errorVendasPorLoja && (isLoadingVendasPorLoja || vendasPorLojaData) && (
+            <DashboardTempoRealSectionError
+              className="mb-4"
+              message={errorVendasPorLoja}
+            />
+          )}
           {isLoadingVendasPorLoja ? (
             <Skeleton className="h-80 w-full" />
+          ) : errorVendasPorLoja && !vendasPorLojaData ? (
+            <div className="flex h-80 items-center justify-center">
+              <DashboardTempoRealSectionError message={errorVendasPorLoja} />
+            </div>
           ) : vendasPorLojaData?.lojas && vendasPorLojaData.lojas.length > 0 ? (
             <div className="space-y-4">
               <div
