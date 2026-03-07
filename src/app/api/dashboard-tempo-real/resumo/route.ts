@@ -1,7 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthorizedRealtimeFiliais, getRealtimeDirectClient } from '@/lib/dashboard-tempo-real/server'
+import {
+  calculatePercentage,
+  calculateSimpleItemRevenue,
+  getAuthorizedRealtimeFiliais,
+  getRealtimeDirectClient,
+  parseRealtimeNumber,
+} from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // FORCAR ROTA DINAMICA - NAO CACHEAR
@@ -70,7 +76,7 @@ export async function GET(req: Request) {
       if (receitaError) {
         console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Receita Query Error:', receitaError.message)
       } else if (receitaData) {
-        receitaTotal = receitaData.reduce((sum, row) => sum + (parseFloat(row.valor_total) || 0), 0)
+        receitaTotal = receitaData.reduce((sum, row) => sum + parseRealtimeNumber(row.valor_total), 0)
         qtdeCupons = receitaData.length
       }
     } catch (err) {
@@ -95,12 +101,7 @@ export async function GET(req: Request) {
       if (cancelError) {
         console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Cancel Query Error:', cancelError.message)
       } else if (cancelData) {
-        // Calcular valor total dos cancelamentos (quantidade * preco)
-        cancelamentos = cancelData.reduce((sum, row) => {
-          const quantidade = parseFloat(row.quantidade_vendida) || 0
-          const preco = parseFloat(row.preco_venda) || 0
-          return sum + (quantidade * preco)
-        }, 0)
+        cancelamentos = cancelData.reduce((sum, row) => sum + calculateSimpleItemRevenue(row), 0)
         // Contar SKUs distintos cancelados
         const skusCancelados = new Set(cancelData.map(item => item.produto_id))
         cancelamentosQtdeSkus = skusCancelados.size
@@ -152,7 +153,7 @@ export async function GET(req: Request) {
       if (metaError) {
         console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Meta Query Error:', metaError.message)
       } else if (metaData) {
-        metaDia = metaData.reduce((sum, row) => sum + (parseFloat(row.valor_meta) || 0), 0)
+        metaDia = metaData.reduce((sum, row) => sum + parseRealtimeNumber(row.valor_meta), 0)
       }
     } catch (err) {
       console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Meta Exception:', err)
@@ -185,8 +186,8 @@ export async function GET(req: Request) {
 
     // Calculate derived values
     const ticketMedio = qtdeCupons > 0 ? receitaTotal / qtdeCupons : 0
-    const atingimentoPercentual = metaDia > 0 ? (receitaTotal / metaDia) * 100 : 0
-    const cancelamentosPercentual = receitaTotal > 0 ? (cancelamentos / receitaTotal) * 100 : 0
+    const atingimentoPercentual = calculatePercentage(receitaTotal, metaDia)
+    const cancelamentosPercentual = calculatePercentage(cancelamentos, receitaTotal)
 
     const result = {
       receita_total: receitaTotal,

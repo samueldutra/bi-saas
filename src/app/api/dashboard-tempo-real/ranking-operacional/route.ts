@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
+  calculateSimpleItemRevenue,
   getAuthorizedRealtimeFiliais,
   getBranchNameMapForTenant,
   getRealtimeDirectClient,
@@ -122,9 +123,7 @@ export async function GET(req: Request) {
         const caixa = cupomCaixaMap.get(cupomKey) || 0
 
         const key = `${item.filial_id}-${caixa}`
-        const quantidade = parseFloat(item.quantidade_vendida) || 0
-        const preco = parseFloat(item.preco_venda) || 0
-        const valor = quantidade * preco
+        const valor = calculateSimpleItemRevenue(item)
 
         if (!aggregateMap.has(key)) {
           aggregateMap.set(key, {

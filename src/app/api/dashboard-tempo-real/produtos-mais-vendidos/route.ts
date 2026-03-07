@@ -1,7 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthorizedRealtimeFiliais, getRealtimeDirectClient } from '@/lib/dashboard-tempo-real/server'
+import {
+  calculateRealtimeItemRevenue,
+  getAuthorizedRealtimeFiliais,
+  getRealtimeDirectClient,
+  isOfertaItem,
+  parseRealtimeNumber,
+} from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // FORCAR ROTA DINAMICA - NAO CACHEAR
@@ -77,14 +83,9 @@ export async function GET(req: Request) {
       itensData.forEach((item) => {
         const produtoId = String(item.produto_id ?? '').trim()
         if (!produtoId) return
-        const quantidade = parseFloat(item.quantidade_vendida) || 0
-        const preco = parseFloat(item.preco_venda) || 0
-        const desconto = parseFloat(item.valor_desconto) || 0
-        const acrescimo = parseFloat(item.valor_acrescimo) || 0
-        const receita = quantidade * preco - desconto + acrescimo
-        // Check if product is on sale (oferta_id is not null/empty/whitespace)
-        const ofertaId = item.oferta_id ? String(item.oferta_id).trim() : ''
-        const isOferta = ofertaId.length > 0
+        const quantidade = parseRealtimeNumber(item.quantidade_vendida)
+        const receita = calculateRealtimeItemRevenue(item)
+        const isOferta = isOfertaItem(item.oferta_id)
 
         if (productMap.has(produtoId)) {
           const existing = productMap.get(produtoId)!

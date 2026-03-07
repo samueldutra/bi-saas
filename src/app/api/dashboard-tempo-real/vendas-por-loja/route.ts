@@ -2,11 +2,15 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
+  calculatePercentage,
+  calculateRealtimeItemRevenue,
   getAuthorizedRealtimeFiliais,
   getBranchNameMapForTenant,
   getDashboardTempoRealFilialColor,
   getRealtimeDirectClient,
   getTenantIdBySchema,
+  isOfertaItem,
+  parseRealtimeNumber,
 } from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
@@ -88,7 +92,7 @@ export async function GET(req: Request) {
     const metaByFilial = new Map<number, number>()
     if (metasData) {
       metasData.forEach((m: { filial_id: number; valor_meta: string | number }) => {
-        metaByFilial.set(m.filial_id, parseFloat(String(m.valor_meta)) || 0)
+        metaByFilial.set(m.filial_id, parseRealtimeNumber(m.valor_meta))
       })
     }
 
@@ -98,15 +102,8 @@ export async function GET(req: Request) {
     if (itensData) {
       itensData.forEach((item) => {
         const filialId = item.filial_id
-        const quantidade = parseFloat(item.quantidade_vendida) || 0
-        const preco = parseFloat(item.preco_venda) || 0
-        const desconto = parseFloat(item.valor_desconto) || 0
-        const acrescimo = parseFloat(item.valor_acrescimo) || 0
-        const receita = quantidade * preco - desconto + acrescimo
-
-        // Check if product is on sale (oferta_id is not null/empty/whitespace)
-        const ofertaId = item.oferta_id ? String(item.oferta_id).trim() : ''
-        const isOferta = ofertaId.length > 0
+        const receita = calculateRealtimeItemRevenue(item)
+        const isOferta = isOfertaItem(item.oferta_id)
 
         if (!filialMap.has(filialId)) {
           filialMap.set(filialId, { receita_oferta: 0, receita_normal: 0 })
@@ -134,7 +131,7 @@ export async function GET(req: Request) {
           receita_total,
           cor: getDashboardTempoRealFilialColor(index),
           meta,
-          atingimento_meta: meta > 0 ? (receita_total / meta) * 100 : 0,
+          atingimento_meta: calculatePercentage(receita_total, meta),
         }
       })
       .sort((a, b) => b.receita_total - a.receita_total)

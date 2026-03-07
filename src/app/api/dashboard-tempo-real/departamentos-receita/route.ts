@@ -1,7 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthorizedRealtimeFiliais, getRealtimeDirectClient } from '@/lib/dashboard-tempo-real/server'
+import {
+  calculatePercentage,
+  calculateRealtimeItemRevenue,
+  getAuthorizedRealtimeFiliais,
+  getRealtimeDirectClient,
+} from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // FORCAR ROTA DINAMICA - NAO CACHEAR
@@ -124,11 +129,7 @@ export async function GET(req: Request) {
 
     if (itensData) {
       itensData.forEach((item) => {
-        const quantidade = parseFloat(item.quantidade_vendida) || 0
-        const preco = parseFloat(item.preco_venda) || 0
-        const desconto = parseFloat(item.valor_desconto) || 0
-        const acrescimo = parseFloat(item.valor_acrescimo) || 0
-        const receita = quantidade * preco - desconto + acrescimo
+        const receita = calculateRealtimeItemRevenue(item)
 
         receitaTotal += receita
 
@@ -169,7 +170,7 @@ export async function GET(req: Request) {
       departamento_id: deptId ?? 0,
       departamento_nome: deptId ? (deptNameMap.get(deptId) || `Departamento ${deptId}`) : 'Sem Departamento',
       receita,
-      participacao_percentual: receitaTotal > 0 ? (receita / receitaTotal) * 100 : 0,
+      participacao_percentual: calculatePercentage(receita, receitaTotal),
     }))
 
     console.log('[API/DASHBOARD-TEMPO-REAL/DEPARTAMENTOS] Result count:', departamentos.length)

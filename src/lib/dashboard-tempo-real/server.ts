@@ -107,3 +107,50 @@ export async function getBranchNameMapForTenant(
 
   return branchNameMap
 }
+
+export function parseRealtimeNumber(value: string | number | null | undefined) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0
+  }
+
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  return 0
+}
+
+export function calculateRealtimeItemRevenue(item: {
+  quantidade_vendida?: string | number | null
+  preco_venda?: string | number | null
+  valor_desconto?: string | number | null
+  valor_acrescimo?: string | number | null
+}) {
+  const quantidade = parseRealtimeNumber(item.quantidade_vendida)
+  const preco = parseRealtimeNumber(item.preco_venda)
+  const desconto = parseRealtimeNumber(item.valor_desconto)
+  const acrescimo = parseRealtimeNumber(item.valor_acrescimo)
+
+  return quantidade * preco - desconto + acrescimo
+}
+
+export function calculateSimpleItemRevenue(item: {
+  quantidade_vendida?: string | number | null
+  preco_venda?: string | number | null
+}) {
+  return parseRealtimeNumber(item.quantidade_vendida) * parseRealtimeNumber(item.preco_venda)
+}
+
+export function isOfertaItem(ofertaId: unknown) {
+  const normalized = ofertaId ? String(ofertaId).trim() : ''
+  return normalized.length > 0
+}
+
+export function calculatePercentage(value: number, total: number) {
+  if (total <= 0) {
+    return 0
+  }
+
+  return (value / total) * 100
+}

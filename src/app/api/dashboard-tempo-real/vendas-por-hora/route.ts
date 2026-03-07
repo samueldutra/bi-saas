@@ -7,6 +7,7 @@ import {
   getDashboardTempoRealFilialColor,
   getRealtimeDirectClient,
   getTenantIdBySchema,
+  parseRealtimeNumber,
 } from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
@@ -107,7 +108,7 @@ export async function GET(req: Request) {
 
         const hourKey = `${hour.toString().padStart(2, '0')}:00`
         const filialId = venda.filial_id
-        const valor = parseFloat(venda.valor_total) || 0
+        const valor = parseRealtimeNumber(venda.valor_total)
 
         filiaisSet.add(filialId)
 
