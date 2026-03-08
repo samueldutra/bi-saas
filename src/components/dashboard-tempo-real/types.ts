@@ -9,6 +9,7 @@ export interface ResumoData {
   ticket_medio: number
   qtde_cupons: number
   qtde_skus: number
+  descontos: number
   cancelamentos: number
   cancelamentos_percentual: number
   cancelamentos_qtde_skus: number

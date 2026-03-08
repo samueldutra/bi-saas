@@ -36,6 +36,7 @@ export const DASHBOARD_TEMPO_REAL_TEXT = {
     ticketMedio: 'Ticket Médio',
     qtdeCupons: 'Qtde Cupons',
     qtdeSkus: 'Qtde SKUs',
+    descontos: 'Descontos',
     cancelamentos: 'Cancelamentos',
     metaDia: 'Meta dia:',
     atingidoSuffix: '% atingido',

@@ -65,6 +65,7 @@ export async function GET(req: Request) {
     let cancelamentos = 0
     let qtdeSkus = 0
     let metaDia = 0
+    let descontos = 0
     let cancelamentosQtdeSkus = 0
 
     let ultimaAtualizacao: string | null = null
@@ -129,6 +130,33 @@ export async function GET(req: Request) {
       monitor.mark('query_meta_error')
     }
 
+    try {
+      let descontosQuery = directSupabase
+        .schema(requestedSchema as 'public')
+        .from('resumo_vendas_caixa')
+        .select('valor_total_descontos')
+        .eq('data', currentDate)
+
+      if (finalFiliais && finalFiliais.length > 0) {
+        descontosQuery = descontosQuery.in('filial_id', finalFiliais)
+      }
+
+      const { data: descontosData, error: descontosError } = await descontosQuery
+
+      if (descontosError) {
+        console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Descontos Query Error:', descontosError.message)
+      } else if (descontosData) {
+        descontos = descontosData.reduce(
+          (sum, row) => sum + parseRealtimeNumber(row.valor_total_descontos),
+          0
+        )
+      }
+      monitor.mark('query_descontos', { rows: descontosData?.length ?? 0 })
+    } catch (err) {
+      console.warn('[API/DASHBOARD-TEMPO-REAL/RESUMO] Descontos Exception:', err)
+      monitor.mark('query_descontos_error')
+    }
+
     // Calculate derived values
     const ticketMedio = qtdeCupons > 0 ? receitaTotal / qtdeCupons : 0
     const atingimentoPercentual = calculatePercentage(receitaTotal, metaDia)
@@ -141,6 +169,7 @@ export async function GET(req: Request) {
       ticket_medio: ticketMedio,
       qtde_cupons: qtdeCupons,
       qtde_skus: qtdeSkus,
+      descontos,
       cancelamentos: cancelamentos,
       cancelamentos_percentual: cancelamentosPercentual,
       cancelamentos_qtde_skus: cancelamentosQtdeSkus,
@@ -153,6 +182,7 @@ export async function GET(req: Request) {
       receitaTotal,
       qtdeCupons,
       qtdeSkus,
+      descontos,
       cancelamentosQtdeSkus,
     })
 
