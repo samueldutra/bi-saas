@@ -16,15 +16,11 @@ export interface ResumoData {
   ultima_atualizacao: string
 }
 
-export interface VendasPorHoraFilial {
-  id: number
-  nome: string
-  cor: string
-}
-
 export interface VendasPorHoraData {
-  data: Array<{ hora: string; [key: string]: string | number }>
-  filiais: VendasPorHoraFilial[]
+  data: Array<{
+    faixa: string
+    total_vendas: number
+  }>
 }
 
 export interface ProdutoMaisVendido {

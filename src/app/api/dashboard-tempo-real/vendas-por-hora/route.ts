@@ -4,11 +4,8 @@ import { z } from 'zod'
 import {
   createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
-  getBranchNameMapForTenant,
-  getDashboardTempoRealFilialColor,
   getRealtimeCurrentDate,
   getRealtimeDirectClient,
-  getTenantIdBySchema,
   parseRealtimeNumber,
 } from '@/lib/dashboard-tempo-real/server'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
@@ -67,7 +64,7 @@ export async function GET(req: Request) {
     let vendasQuery = directSupabase
       .schema(requestedSchema as 'public')
       .from('vendas_hoje')
-      .select('filial_id, horario, valor_total')
+      .select('horario, valor_total')
       .eq('data_extracao', currentDate)
       .eq('cancelada', false)
       .not('horario', 'is', null)
@@ -87,94 +84,63 @@ export async function GET(req: Request) {
     }
     monitor.mark('query_vendas', { rows: vendasData?.length ?? 0 })
 
-    const tenantId = await getTenantIdBySchema(supabase, requestedSchema)
-    const branchNameMap = await getBranchNameMapForTenant(supabase, tenantId)
-    monitor.mark('branch_lookup', { branchCount: branchNameMap.size })
+    const rangeData: Record<string, number> = {}
 
-    // Group data by hour and filial
-    const hourlyData: Record<string, Record<string, number>> = {}
-    const filiaisSet = new Set<number>()
+    for (let h = 6; h <= 22; h++) {
+      const rangeKey = `${h.toString().padStart(2, '0')} às ${(h + 1).toString().padStart(2, '0')}`
+      rangeData[rangeKey] = 0
+    }
 
-    // Initialize hours from 06:00 to 23:00
-    for (let h = 6; h <= 23; h++) {
-      const hourKey = `${h.toString().padStart(2, '0')}:00`
-      hourlyData[hourKey] = {}
+    const getRangeKeyFromHorario = (horario: string | Date) => {
+      let hour: number
+      let minute: number
+
+      if (typeof horario === 'string') {
+        const parts = horario.split(':')
+        hour = parseInt(parts[0], 10)
+        minute = parseInt(parts[1] ?? '0', 10)
+      } else {
+        hour = horario.getHours()
+        minute = horario.getMinutes()
+      }
+
+      const rangeStartHour = minute === 0 ? hour - 1 : hour
+      if (rangeStartHour < 6 || rangeStartHour > 22) {
+        return null
+      }
+
+      return `${rangeStartHour.toString().padStart(2, '0')} às ${(rangeStartHour + 1).toString().padStart(2, '0')}`
     }
 
     if (vendasData) {
       vendasData.forEach((venda) => {
-        const horario = venda.horario
-        if (!horario) return
+        if (!venda.horario) return
 
-        // Extract hour from horario (format: "HH:MM:SS" or timestamp)
-        let hour: number
-        if (typeof horario === 'string') {
-          const parts = horario.split(':')
-          hour = parseInt(parts[0], 10)
-        } else {
-          const date = new Date(horario)
-          hour = date.getHours()
-        }
+        const rangeKey = getRangeKeyFromHorario(venda.horario)
+        if (!rangeKey) return
 
-        if (hour < 6 || hour > 23) return
-
-        const hourKey = `${hour.toString().padStart(2, '0')}:00`
-        const filialId = venda.filial_id
-        const valor = parseRealtimeNumber(venda.valor_total)
-
-        filiaisSet.add(filialId)
-
-        if (!hourlyData[hourKey][filialId]) {
-          hourlyData[hourKey][filialId] = 0
-        }
-        hourlyData[hourKey][filialId] += valor
+        rangeData[rangeKey] += parseRealtimeNumber(venda.valor_total)
       })
     }
-    monitor.mark('group_by_hour', { rows: vendasData?.length ?? 0, filiais: filiaisSet.size })
+    monitor.mark('group_by_range', { rows: vendasData?.length ?? 0, ranges: Object.keys(rangeData).length })
 
-    // Build filiais array with colors
-    const filiaisArray = Array.from(filiaisSet).sort((a, b) => a - b)
-    const filiaisInfo = filiaisArray.map((id, index) => ({
-      id,
-      nome: branchNameMap.get(id.toString()) || `Filial ${id}`,
-      cor: getDashboardTempoRealFilialColor(index),
+    const dataArray = Object.entries(rangeData).map(([faixa, total_vendas]) => ({
+      faixa,
+      total_vendas,
     }))
-    monitor.mark('build_filiais_info', { rows: filiaisInfo.length })
-
-    // Convert hourly data to array format with cumulative values
-    const dataArray: Array<{ hora: string; [key: string]: string | number }> = []
-    const cumulativeByFilial: Record<number, number> = {}
-
-    // Initialize cumulative values
-    filiaisArray.forEach((id) => {
-      cumulativeByFilial[id] = 0
-    })
-
-    // Build data array with cumulative values
-    for (let h = 6; h <= 23; h++) {
-      const hourKey = `${h.toString().padStart(2, '0')}:00`
-      const row: { hora: string; [key: string]: string | number } = { hora: hourKey }
-
-      filiaisArray.forEach((filialId) => {
-        const valorHora = hourlyData[hourKey][filialId] || 0
-        cumulativeByFilial[filialId] += valorHora
-        row[filialId.toString()] = cumulativeByFilial[filialId]
-      })
-
-      dataArray.push(row)
-    }
-    monitor.mark('build_cumulative_series', { rows: dataArray.length })
+    monitor.mark('build_range_series', { rows: dataArray.length })
 
     const result = {
       data: dataArray,
-      filiais: filiaisInfo,
     }
 
-    console.log('[API/DASHBOARD-TEMPO-REAL/VENDAS-POR-HORA] Result filiais:', filiaisInfo.length)
+    const activeRanges = dataArray.filter((item) => item.total_vendas > 0).length
+    console.log('[API/DASHBOARD-TEMPO-REAL/VENDAS-POR-HORA] Result faixas:', activeRanges)
     monitor.finish({
       currentDate,
       vendasRows: vendasData?.length ?? 0,
-      filiais: filiaisInfo.length,
+      faixas: dataArray.length,
+      faixasAtivas: activeRanges,
       points: dataArray.length,
     })
 

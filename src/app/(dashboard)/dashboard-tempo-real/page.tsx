@@ -254,19 +254,6 @@ export default function DashboardTempoRealPage() {
     }
   }, [cancelamentoSortField])
 
-  // Chart config for area chart
-  const areaChartConfig = useMemo(() => {
-    if (!Array.isArray(vendasPorHora?.filiais)) return {}
-    const config: Record<string, { label: string; color: string }> = {}
-    vendasPorHora.filiais.forEach(filial => {
-      config[filial.id.toString()] = {
-        label: filial.nome,
-        color: filial.cor,
-      }
-    })
-    return config
-  }, [vendasPorHora])
-
   // Format last update time (timezone São Paulo)
   const lastUpdateFormatted = useMemo(() => {
     if (!resumo?.ultima_atualizacao) return '--:--:--'
@@ -350,7 +337,10 @@ export default function DashboardTempoRealPage() {
       !loadingState.isAnyLoading &&
       globalErrorSections.length === 0 &&
       resumoSemDados &&
-      Boolean(vendasPorHora && vendasPorHora.filiais.length === 0) &&
+      Boolean(
+        vendasPorHora &&
+        vendasPorHora.data.every((faixa) => faixa.total_vendas === 0)
+      ) &&
       Boolean(vendasPorLojaData && vendasPorLojaData.lojas.length === 0) &&
       Boolean(produtosData && produtosData.produtos.length === 0) &&
       Boolean(departamentosData && departamentosData.departamentos.length === 0) &&
@@ -407,7 +397,6 @@ export default function DashboardTempoRealPage() {
         vendasPorLojaData={vendasPorLojaData}
         isLoadingVendasHora={isLoadingVendasHora}
         isLoadingVendasPorLoja={isLoadingVendasPorLoja}
-        areaChartConfig={areaChartConfig}
         errorVendasHora={errorMessages.vendasHora}
         errorVendasPorLoja={errorMessages.vendasPorLoja}
       />

@@ -45,7 +45,7 @@ export const DASHBOARD_TEMPO_REAL_TEXT = {
   },
   charts: {
     vendasHoraTitle: 'Venda por Hora/Loja',
-    vendasHoraDescription: 'Receita acumulada por hora e filial',
+    vendasHoraDescription: 'Total vendido por faixa horária no dia',
     vendasPorLojaTitle: 'Venda Acumulada por Loja',
     vendasPorLojaDescription: 'Ranking de vendas do dia',
     ofertaLabel: 'Oferta',

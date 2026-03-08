@@ -1,6 +1,6 @@
 'use client'
 
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from 'recharts'
 
 import {
   ChartContainer,
@@ -8,6 +8,7 @@ import {
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
+  type ChartConfig,
 } from '@/components/ui/chart'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -23,10 +24,16 @@ type DashboardTempoRealChartsSectionProps = {
   vendasPorLojaData?: VendasPorLojaResponse
   isLoadingVendasHora: boolean
   isLoadingVendasPorLoja: boolean
-  areaChartConfig: Record<string, { label: string; color: string }>
   errorVendasHora?: string | null
   errorVendasPorLoja?: string | null
 }
+
+const vendasHoraChartConfig = {
+  total_vendas: {
+    label: 'Total vendido',
+    color: 'hsl(142, 76%, 45%)',
+  },
+} satisfies ChartConfig
 
 const barChartConfig = {
   receita_oferta: {
@@ -39,12 +46,75 @@ const barChartConfig = {
   },
 }
 
+type VendasHoraTickProps = {
+  x?: number
+  y?: number
+  payload?: {
+    value?: string
+  }
+}
+
+type VendasHoraYAxisTickProps = {
+  x?: number
+  y?: number
+  payload?: {
+    value?: number
+  }
+}
+
+function VendasHoraXAxisTick({ x = 0, y = 0, payload }: VendasHoraTickProps) {
+  const faixa = payload?.value ?? ''
+  const [inicio = '', fim = ''] = faixa.split(' às ')
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={10}
+        textAnchor="middle"
+        fill="currentColor"
+        className="fill-muted-foreground text-[11px]"
+      >
+        <tspan x={0} dy={0}>
+          {`${inicio}:00`}
+        </tspan>
+        <tspan x={0} dy={14}>
+          às
+        </tspan>
+        <tspan x={0} dy={14}>
+          {`${fim}:00`}
+        </tspan>
+      </text>
+    </g>
+  )
+}
+
+function VendasHoraYAxisTick({ x = 0, y = 0, payload }: VendasHoraYAxisTickProps) {
+  const value = payload?.value ?? 0
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={4}
+        textAnchor="end"
+        fill="currentColor"
+        className="fill-muted-foreground text-[11px]"
+        style={{ whiteSpace: 'pre' }}
+      >
+        {formatValueShort(Number(value))}
+      </text>
+    </g>
+  )
+}
+
 export function DashboardTempoRealChartsSection({
   vendasPorHora,
   vendasPorLojaData,
   isLoadingVendasHora,
   isLoadingVendasPorLoja,
-  areaChartConfig,
   errorVendasHora,
   errorVendasPorLoja,
 }: DashboardTempoRealChartsSectionProps) {
@@ -54,7 +124,7 @@ export function DashboardTempoRealChartsSection({
         <CardHeader>
           <CardTitle>{DASHBOARD_TEMPO_REAL_TEXT.charts.vendasHoraTitle}</CardTitle>
           <CardDescription>
-            {DASHBOARD_TEMPO_REAL_TEXT.charts.vendasHoraDescription} ({vendasPorHora?.filiais?.length || 0} {DASHBOARD_TEMPO_REAL_TEXT.charts.branchesSuffix})
+            {DASHBOARD_TEMPO_REAL_TEXT.charts.vendasHoraDescription}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -73,74 +143,60 @@ export function DashboardTempoRealChartsSection({
           ) : vendasPorHora?.data &&
             Array.isArray(vendasPorHora.data) &&
             vendasPorHora.data.length > 0 &&
-            Array.isArray(vendasPorHora.filiais) &&
-            vendasPorHora.filiais.length > 0 ? (
+            vendasPorHora.data.some((faixa) => faixa.total_vendas > 0) ? (
             <div className="space-y-3">
-              <ChartContainer config={areaChartConfig} className="h-64 w-full">
-                <AreaChart data={vendasPorHora.data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="hora" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={(value) => formatValueShort(value)} tick={{ fontSize: 12 }} />
-                  <ChartTooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload || payload.length === 0) return null
-
-                      return (
-                        <div className="rounded-lg border bg-background p-2 shadow-md">
-                          <p className="mb-2 text-sm font-medium">{DASHBOARD_TEMPO_REAL_TEXT.charts.hourLabel} {label}</p>
-                          <div className="space-y-1">
-                            {payload.map((entry) => {
-                              const filialName =
-                                areaChartConfig[entry.dataKey as string]?.label || entry.dataKey
-
-                              return (
-                                <div key={entry.dataKey} className="flex items-center gap-2 text-sm">
-                                  <div
-                                    className="h-3 w-3 shrink-0 rounded-sm"
-                                    style={{ backgroundColor: entry.color }}
-                                  />
-                                  <span>
-                                    {filialName} - {formatCurrency(Number(entry.value))}
-                                  </span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    }}
+              <ChartContainer config={vendasHoraChartConfig} className="h-72 w-full">
+                <BarChart
+                  accessibilityLayer
+                  data={vendasPorHora.data}
+                  margin={{ top: 24, right: 12, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="faixa"
+                    tickLine={false}
+                    tickMargin={16}
+                    axisLine={false}
+                    height={56}
+                    interval={0}
+                    tick={<VendasHoraXAxisTick />}
                   />
-                  {vendasPorHora.filiais.map((filial) => (
-                    <Area
-                      key={filial.id}
-                      type="monotone"
-                      dataKey={filial.id.toString()}
-                      name={filial.nome}
-                      fill={filial.cor}
-                      fillOpacity={0.3}
-                      stroke={filial.cor}
-                      strokeWidth={2}
+                  <YAxis
+                    width={68}
+                    tick={<VendasHoraYAxisTick />}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        hideLabel
+                        formatter={(value) => (
+                          <div className="flex flex-1 items-center justify-between gap-4 leading-none">
+                            <span className="text-muted-foreground">Total vendido</span>
+                            <span className="font-mono font-medium tabular-nums text-foreground">
+                              {formatCurrency(Number(value))}
+                            </span>
+                          </div>
+                        )}
+                      />
+                    }
+                  />
+                  <Bar
+                    dataKey="total_vendas"
+                    fill="var(--color-total_vendas)"
+                    radius={8}
+                  >
+                    <LabelList
+                      dataKey="total_vendas"
+                      position="top"
+                      offset={12}
+                      className="fill-foreground"
+                      fontSize={12}
+                      formatter={(value: number) => formatValueShort(value)}
                     />
-                  ))}
-                </AreaChart>
+                  </Bar>
+                </BarChart>
               </ChartContainer>
-
-              <div
-                className="flex flex-wrap justify-center gap-2 overflow-y-auto border-t pt-3"
-                style={{ maxHeight: vendasPorHora.filiais.length > 10 ? '80px' : 'auto' }}
-              >
-                {vendasPorHora.filiais.map((filial) => (
-                  <div key={filial.id} className="flex items-center gap-1.5 text-xs">
-                    <div
-                      className="h-3 w-3 shrink-0 rounded-sm"
-                      style={{ backgroundColor: filial.cor }}
-                    />
-                    <span className="max-w-[100px] truncate text-muted-foreground" title={filial.nome}>
-                      {filial.nome}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           ) : (
             <div className="flex h-80 items-center justify-center text-muted-foreground">
