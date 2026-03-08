@@ -44,7 +44,7 @@ export const DASHBOARD_TEMPO_REAL_TEXT = {
     receitaSuffix: '% da receita',
   },
   charts: {
-    vendasHoraTitle: 'Venda por Hora/Loja',
+    vendasHoraTitle: 'Total de Vendas por Faixa de hora',
     vendasHoraDescription: 'Total vendido por faixa horária no dia',
     vendasPorLojaTitle: 'Venda Acumulada por Loja',
     vendasPorLojaDescription: 'Ranking de vendas do dia',
