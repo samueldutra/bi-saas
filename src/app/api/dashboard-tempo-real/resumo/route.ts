@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
+  callRealtimeRpc,
   calculatePercentage,
   createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
@@ -68,7 +69,15 @@ export async function GET(req: Request) {
 
     let ultimaAtualizacao: string | null = null
 
-    const { data: resumoRpcData, error: resumoRpcError } = await supabase.rpc(
+    const { data: resumoRpcData, error: resumoRpcError } = await callRealtimeRpc<{
+      receita_total: number | string | null
+      qtde_cupons: number | string | null
+      cancelamentos: number | string | null
+      cancelamentos_qtde_skus: number | string | null
+      qtde_skus: number | string | null
+      ultima_atualizacao: string | null
+    }>(
+      supabase,
       'get_dashboard_tempo_real_resumo',
       {
         p_schema: requestedSchema,

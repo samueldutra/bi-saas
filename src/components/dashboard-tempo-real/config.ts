@@ -26,6 +26,11 @@ export const DASHBOARD_TEMPO_REAL_TEXT = {
     currentLoadingLabel: 'Carregando:',
     globalErrorPrefix: 'Falha ao atualizar:',
   },
+  emptyState: {
+    title: 'Sem dados para hoje até o momento',
+    descriptionPrefix: 'Não há registros para',
+    descriptionSuffix: 'neste dashboard. O módulo exibe apenas a data atual de extração.',
+  },
   summary: {
     receita: 'Receita',
     ticketMedio: 'Ticket Médio',

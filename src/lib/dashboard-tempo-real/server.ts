@@ -68,6 +68,27 @@ export function getRealtimeDirectClient() {
   return createDirectClient()
 }
 
+type UntypedRpcClient = {
+  rpc(
+    fn: string,
+    params?: Record<string, unknown>
+  ): Promise<{ data: unknown; error: { message: string } | null }>
+}
+
+export async function callRealtimeRpc<T>(
+  supabase: ServerSupabaseClient,
+  fn: string,
+  params?: Record<string, unknown>
+): Promise<{ data: T[] | null; error: { message: string } | null }> {
+  const rpcClient = supabase as unknown as UntypedRpcClient
+  const result = await rpcClient.rpc(fn, params)
+
+  return {
+    data: (result.data as T[] | null) ?? null,
+    error: result.error,
+  }
+}
+
 export function getRealtimeCurrentDate() {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',

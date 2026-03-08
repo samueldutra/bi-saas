@@ -11,6 +11,7 @@ import {
   DASHBOARD_TEMPO_REAL_SECTION_NAMES,
   DASHBOARD_TEMPO_REAL_TEXT,
 } from '@/components/dashboard-tempo-real/config'
+import { DashboardTempoRealEmptyBanner } from '@/components/dashboard-tempo-real/empty-banner'
 import { DashboardTempoRealHeader } from '@/components/dashboard-tempo-real/header'
 import { DashboardTempoRealLoadingBanner } from '@/components/dashboard-tempo-real/loading-banner'
 import { DashboardTempoRealRankingsSection } from '@/components/dashboard-tempo-real/rankings-section'
@@ -283,6 +284,19 @@ export default function DashboardTempoRealPage() {
     }
   }, [resumo])
 
+  const currentDateLabel = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      }).format(new Date())
+    } catch {
+      return new Date().toLocaleDateString('pt-BR')
+    }
+  }, [])
+
   // Estado global de carregamento
   const loadingState = useMemo(() => {
     const sections = [
@@ -321,6 +335,38 @@ export default function DashboardTempoRealPage() {
     return Object.values(errorMessages).filter((message): message is string => Boolean(message))
   }, [errorMessages])
 
+  const hasNoDataForToday = useMemo(() => {
+    const resumoSemDados = Boolean(
+      resumo &&
+      resumo.receita_total === 0 &&
+      resumo.qtde_cupons === 0 &&
+      resumo.qtde_skus === 0 &&
+      resumo.cancelamentos === 0 &&
+      resumo.cancelamentos_qtde_skus === 0
+    )
+
+    return (
+      loadingState.isComplete &&
+      !loadingState.isAnyLoading &&
+      globalErrorSections.length === 0 &&
+      resumoSemDados &&
+      Boolean(vendasPorHora && vendasPorHora.filiais.length === 0) &&
+      Boolean(vendasPorLojaData && vendasPorLojaData.lojas.length === 0) &&
+      Boolean(produtosData && produtosData.produtos.length === 0) &&
+      Boolean(departamentosData && departamentosData.departamentos.length === 0) &&
+      Boolean(rankingData && rankingData.ranking.length === 0)
+    )
+  }, [
+    loadingState,
+    globalErrorSections,
+    resumo,
+    vendasPorHora,
+    vendasPorLojaData,
+    produtosData,
+    departamentosData,
+    rankingData,
+  ])
+
   if (!currentTenant) {
     return (
       <div className="flex items-center justify-center h-[400px]">
@@ -345,6 +391,10 @@ export default function DashboardTempoRealPage() {
         loadingState={loadingState}
         errorSections={globalErrorSections}
       />
+
+      {hasNoDataForToday && (
+        <DashboardTempoRealEmptyBanner currentDateLabel={currentDateLabel} />
+      )}
 
       <DashboardTempoRealSummaryCards
         resumo={resumo}

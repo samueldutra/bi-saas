@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
+  callRealtimeRpc,
   createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
   getBranchNameMapForTenant,
@@ -58,7 +59,15 @@ export async function GET(req: Request) {
 
     const currentDate = getRealtimeCurrentDate()
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc(
+    const { data: rpcData, error: rpcError } = await callRealtimeRpc<{
+      filial_id: number | string | null
+      caixa: number | string | null
+      skus_venda: number | string | null
+      skus_cancelados: number | string | null
+      valor_cancelamentos: number | string | null
+      valor_vendido: number | string | null
+    }>(
+      supabase,
       'get_dashboard_tempo_real_ranking_operacional',
       {
         p_schema: requestedSchema,

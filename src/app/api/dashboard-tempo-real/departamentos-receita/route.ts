@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
+  callRealtimeRpc,
   createRealtimeRouteMonitor,
   getAuthorizedRealtimeFiliais,
   getRealtimeCurrentDate,
@@ -58,7 +59,14 @@ export async function GET(req: Request) {
 
     const currentDate = getRealtimeCurrentDate()
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc(
+    const { data: rpcData, error: rpcError } = await callRealtimeRpc<{
+      receita_total: number | string | null
+      departamento_id: number | string | null
+      departamento_nome: string | null
+      receita: number | string | null
+      participacao_percentual: number | string | null
+    }>(
+      supabase,
       'get_dashboard_tempo_real_departamentos_receita',
       {
         p_schema: requestedSchema,
