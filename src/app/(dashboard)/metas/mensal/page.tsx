@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -64,6 +64,11 @@ interface GroupedByDate {
   }
 }
 
+interface LoadReportOptions {
+  refreshRealized?: boolean
+  forceRefreshRealized?: boolean
+}
+
 export default function MetaMensalPage() {
   const { currentTenant, userProfile } = useTenantContext()
   const { branchOptions: branches, isLoading: isLoadingBranches } = useBranchesOptions({
@@ -96,6 +101,10 @@ export default function MetaMensalPage() {
 
   // Estado para botão atualizar valores
   const [isUpdatingValues, setIsUpdatingValues] = useState(false)
+  const isRefreshingValuesRef = useRef(false)
+  const lastUpdatedPeriodKeyRef = useRef('')
+  const latestLoadRequestIdRef = useRef(0)
+  const reportAbortControllerRef = useRef<AbortController | null>(null)
 
   // Log audit on mount
   useEffect(() => {
@@ -116,56 +125,96 @@ export default function MetaMensalPage() {
     logAccess()
   }, [currentTenant, userProfile])
 
+  useEffect(() => {
+    lastUpdatedPeriodKeyRef.current = ''
+    isRefreshingValuesRef.current = false
+    latestLoadRequestIdRef.current = 0
+    reportAbortControllerRef.current?.abort()
+    reportAbortControllerRef.current = null
+  }, [currentTenant?.id])
+
   // Ao carregar filiais, selecionar todas por padrão e carregar dados
   useEffect(() => {
     if (!isLoadingBranches && branches && branches.length > 0 && filiaisSelecionadas.length === 0) {
-      console.log('[METAS] Selecionando todas as filiais automaticamente:', branches.length)
       setFiliaisSelecionadas(branches)
       // Carregar dados automaticamente com todas as filiais
-      loadReport(branches, mes, ano)
+      loadReport(branches, mes, ano, { refreshRealized: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingBranches, branches, filiaisSelecionadas.length])
 
-  const loadReport = async (filiais?: FilialOption[], mesParam?: number, anoParam?: number) => {
+  const updateRealizedValues = async (
+    mesParam: number,
+    anoParam: number,
+    force = false
+  ) => {
+    if (!currentTenant?.supabase_schema) return false
+
+    const updateKey = `${currentTenant.supabase_schema}-${anoParam}-${mesParam}`
+    const shouldRefresh = force || lastUpdatedPeriodKeyRef.current !== updateKey
+
+    if (!shouldRefresh || isRefreshingValuesRef.current) {
+      return false
+    }
+
+    isRefreshingValuesRef.current = true
+
+    try {
+      const updateResponse = await fetch('/api/metas/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schema: currentTenant.supabase_schema,
+          mes: mesParam,
+          ano: anoParam
+        })
+      })
+
+      if (!updateResponse.ok) {
+        console.warn('[METAS] ⚠️ Aviso: Não foi possível atualizar valores realizados')
+        return false
+      }
+
+      await updateResponse.json()
+      lastUpdatedPeriodKeyRef.current = updateKey
+      return true
+    } catch (error) {
+      console.warn('[METAS] ⚠️ Falha ao atualizar valores realizados:', error)
+      return false
+    } finally {
+      isRefreshingValuesRef.current = false
+    }
+  }
+
+  const loadReport = async (
+    filiais?: FilialOption[],
+    mesParam?: number,
+    anoParam?: number,
+    options: LoadReportOptions = {}
+  ) => {
     if (!currentTenant?.supabase_schema) return
 
     // Usar parâmetros passados ou estados atuais
     const filiaisToUse = filiais !== undefined ? filiais : filiaisSelecionadas
     const mesToUse = mesParam !== undefined ? mesParam : mes
     const anoToUse = anoParam !== undefined ? anoParam : ano
+    const requestId = latestLoadRequestIdRef.current + 1
+    latestLoadRequestIdRef.current = requestId
 
-    console.log('[METAS] 📥 Loading report with:', { 
-      numFiliais: filiaisToUse.length,
-      filialIds: filiaisToUse.map(f => ({ id: f.value, nome: f.label })),
-      mes: mesToUse, 
-      ano: anoToUse 
-    })
+    reportAbortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    reportAbortControllerRef.current = abortController
 
     setLoading(true)
     try {
-      // PASSO 1: Atualizar valores realizados antes de carregar o relatório
-      console.log('[METAS] 🔄 Atualizando valores realizados...')
-      const updateResponse = await fetch('/api/metas/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          schema: currentTenant.supabase_schema,
-          mes: mesToUse,
-          ano: anoToUse
-          // Não passa filial_id para atualizar todas as filiais
-        })
-      })
-
-      if (!updateResponse.ok) {
-        console.warn('[METAS] ⚠️ Aviso: Não foi possível atualizar valores realizados')
-        // Continua mesmo se falhar a atualização
-      } else {
-        const updateData = await updateResponse.json()
-        console.log('[METAS] ✅ Valores atualizados:', updateData)
+      if (options.refreshRealized || options.forceRefreshRealized) {
+        await updateRealizedValues(
+          mesToUse,
+          anoToUse,
+          options.forceRefreshRealized === true
+        )
       }
 
-      // PASSO 2: Buscar relatório atualizado
       const params = new URLSearchParams({
         schema: currentTenant.supabase_schema,
         mes: mesToUse.toString(),
@@ -179,16 +228,11 @@ export default function MetaMensalPage() {
           .join(',')
 
         params.append('filial_id', filialIds)
-        console.log('[METAS] 🔗 URL params:', {
-          schema: currentTenant.supabase_schema,
-          mes: mesToUse,
-          ano: anoToUse,
-          filial_id: filialIds,
-          fullURL: `/api/metas/report?${params}`
-        })
       }
 
-      const response = await fetch(`/api/metas/report?${params}`)
+      const response = await fetch(`/api/metas/report?${params}`, {
+        signal: abortController.signal
+      })
 
       if (!response.ok) {
         let errorMessage = 'Erro ao carregar relatório'
@@ -204,65 +248,49 @@ export default function MetaMensalPage() {
       }
 
       const data = await response.json()
-      console.log('[METAS] 📊 Report data loaded:', {
-        totalMetas: data.metas?.length || 0,
-        firstDate: data.metas?.[0]?.data,
-        firstMeta: data.metas?.[0],
-        lastDate: data.metas?.[data.metas?.length - 1]?.data,
-        lastMeta: data.metas?.[data.metas?.length - 1],
-        filiaisUsadas: filiaisToUse.length,
-        mes: mesToUse,
-        ano: anoToUse,
-        primeiras5Metas: data.metas?.slice(0, 5).map((m: Meta) => ({
-          data: m.data,
-          filial_id: m.filial_id,
-          valor_realizado: m.valor_realizado,
-          valor_meta: m.valor_meta
-        }))
-      })
-      
-      console.log('[METAS] 🎯 Verificando data inicial:', {
-        primeiraData: data.metas?.[0]?.data,
-        esperado: `${anoToUse}-${mesToUse.toString().padStart(2, '0')}-01`,
-        match: data.metas?.[0]?.data === `${anoToUse}-${mesToUse.toString().padStart(2, '0')}-01`
-      })
-      
-      // Se não há metas, mostrar mensagem informativa
-      if (!data.metas || data.metas.length === 0) {
-        console.log('[METAS] ℹ️ Nenhuma meta encontrada para o período')
+      if (latestLoadRequestIdRef.current === requestId) {
+        setReport(data)
       }
-      
-      setReport(data)
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return
+      }
+
       console.error('[METAS] ❌ Error loading report:', error)
-      // Não mostrar alert, apenas setar report vazio para permitir uso do módulo
-      setReport({
-        metas: [],
-        total_realizado: 0,
-        total_meta: 0,
-        total_custo: 0,
-        total_lucro: 0,
-        percentual_atingido: 0,
-        margem_bruta: 0
-      })
+      if (latestLoadRequestIdRef.current === requestId) {
+        // Não mostrar alert, apenas setar report vazio para permitir uso do módulo
+        setReport({
+          metas: [],
+          total_realizado: 0,
+          total_meta: 0,
+          total_custo: 0,
+          total_lucro: 0,
+          percentual_atingido: 0,
+          margem_bruta: 0
+        })
+      }
     } finally {
-      setLoading(false)
+      if (latestLoadRequestIdRef.current === requestId) {
+        setLoading(false)
+      }
+
+      if (reportAbortControllerRef.current === abortController) {
+        reportAbortControllerRef.current = null
+      }
     }
   }
 
   // Handler para aplicar filtros
   const handleFilter = (filiais: FilialOption[], mesParam: number, anoParam: number) => {
     if (!currentTenant?.supabase_schema) return
-    
-    console.log('[METAS] handleFilter called with:', { filiais: filiais.length, mes: mesParam, ano: anoParam })
-    
+
     // Atualizar os estados
     setFiliaisSelecionadas(filiais)
     setMes(mesParam)
     setAno(anoParam)
     
     // Carregar com os parâmetros diretamente para evitar delay de state
-    loadReport(filiais, mesParam, anoParam)
+    loadReport(filiais, mesParam, anoParam, { refreshRealized: true })
   }
 
   const handleGenerateMetas = async () =>  {
@@ -296,7 +324,8 @@ export default function MetaMensalPage() {
           description: data.message || `${data.metas_criadas || 31} metas criadas para o período`
         })
         setDialogOpen(false)
-        loadReport(filiaisSelecionadas, mes, ano)
+        lastUpdatedPeriodKeyRef.current = ''
+        loadReport(filiaisSelecionadas, mes, ano, { refreshRealized: true })
       } else {
         toast.error('Erro ao gerar metas', {
           description: data.error || 'Verifique os dados e tente novamente'
@@ -316,7 +345,7 @@ export default function MetaMensalPage() {
     setIsUpdatingValues(true)
     try {
       // Recarregar o relatório com os filtros atuais
-      await loadReport(filiaisSelecionadas, mes, ano)
+      await loadReport(filiaisSelecionadas, mes, ano, { forceRefreshRealized: true })
     } finally {
       setIsUpdatingValues(false)
     }
@@ -354,7 +383,7 @@ export default function MetaMensalPage() {
     return true
   }
 
-  const getFilialLabel = () => {
+  const filialLabel = useMemo(() => {
     if (filiaisSelecionadas.length === 0) {
       return 'Todas as Filiais'
     }
@@ -362,11 +391,16 @@ export default function MetaMensalPage() {
       return filiaisSelecionadas[0].label
     }
     return `${filiaisSelecionadas.length} Filiais`
-  }
+  }, [filiaisSelecionadas])
+
+  const branchNamesById = useMemo(() => {
+    return new Map(
+      branches.map((branch) => [branch.value, branch.label])
+    )
+  }, [branches])
 
   const getFilialName = (filial_id: number) => {
-    const branch = branches.find((f: { value: string; label: string }) => f.value === filial_id.toString())
-    return branch ? branch.label : `Filial ${filial_id}`
+    return branchNamesById.get(filial_id.toString()) ?? `Filial ${filial_id}`
   }
 
   const toggleDateExpanded = (date: string) => {
@@ -377,19 +411,12 @@ export default function MetaMensalPage() {
   }
 
   const groupMetasByDate = (metas: Meta[]): GroupedByDate => {
-    console.log('[METAS] 📊 Iniciando agrupamento de metas:', {
-      totalMetas: metas.length,
-      primeiraMeta: metas[0],
-      ultimaMeta: metas[metas.length - 1]
-    })
-
     const grouped: GroupedByDate = {}
 
-    metas.forEach((meta, index) => {
+    metas.forEach((meta) => {
       const dateKey = meta.data
 
       if (!grouped[dateKey]) {
-        console.log(`[METAS] ➕ Criando novo grupo para data: ${dateKey} (meta #${index})`)
         grouped[dateKey] = {
           data: meta.data,
           dia_semana: meta.dia_semana,
@@ -405,13 +432,6 @@ export default function MetaMensalPage() {
           margem_bruta: 0
         }
       }
-
-      console.log(`[METAS] ➡️ Adicionando meta ao grupo ${dateKey}:`, {
-        filial_id: meta.filial_id,
-        valor_realizado: meta.valor_realizado,
-        valor_meta: meta.valor_meta,
-        diferenca: meta.diferenca
-      })
 
       grouped[dateKey].metas.push(meta)
       grouped[dateKey].total_valor_referencia += meta.valor_referencia || 0
@@ -439,24 +459,66 @@ export default function MetaMensalPage() {
           group.margem_bruta = (group.total_lucro / group.total_realizado) * 100
         }
       }
-
-      console.log(`[METAS] 📊 Grupo ${dateKey} finalizado:`, {
-        numFiliais,
-        total_realizado: group.total_realizado,
-        total_meta: group.total_meta,
-        total_lucro: group.total_lucro,
-        margem_bruta: group.margem_bruta,
-        diferenca_percentual: group.diferenca_percentual
-      })
-    })
-
-    console.log('[METAS] ✅ Agrupamento concluído:', {
-      totalGrupos: Object.keys(grouped).length,
-      grupos: Object.keys(grouped).sort()
     })
 
     return grouped
   }
+
+  const filteredMetas = useMemo(() => {
+    const reportMetas = report?.metas ?? []
+
+    return reportMetas
+      .filter((meta) => {
+        const [year, month] = meta.data.split('-').map(Number)
+        return month === mes && year === ano
+      })
+      .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
+  }, [report?.metas, mes, ano])
+
+  const groupedEntries = useMemo(() => {
+    return Object.entries(groupMetasByDate(filteredMetas)).sort(([dateA], [dateB]) => {
+      return new Date(dateA).getTime() - new Date(dateB).getTime()
+    })
+  }, [filteredMetas])
+
+  const d1Progress = useMemo(() => {
+    const hoje = new Date()
+    const periodoSelecionado = new Date(ano, mes - 1, 1)
+    const periodoAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+
+    let cutoffDayExclusive: number
+
+    if (periodoSelecionado.getTime() < periodoAtual.getTime()) {
+      cutoffDayExclusive = Number.POSITIVE_INFINITY
+    } else if (periodoSelecionado.getTime() > periodoAtual.getTime()) {
+      cutoffDayExclusive = 1
+    } else {
+      cutoffDayExclusive = hoje.getDate()
+    }
+
+    if (cutoffDayExclusive <= 1) {
+      return {
+        percentual: 0,
+        strokeDasharray: '0 351.86',
+        colorClass: 'text-primary'
+      }
+    }
+
+    const metasAteOntem = filteredMetas.filter((meta) => {
+      const [, , day] = meta.data.split('-').map(Number)
+      return day < cutoffDayExclusive
+    })
+
+    const totalRealizadoD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_realizado || 0), 0)
+    const totalMetaD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_meta || 0), 0)
+    const percentual = totalMetaD1 > 0 ? (totalRealizadoD1 / totalMetaD1) * 100 : 0
+
+    return {
+      percentual,
+      strokeDasharray: `${((percentual / 100) * 351.86).toFixed(2)} 351.86`,
+      colorClass: percentual >= 100 ? 'text-green-500' : 'text-primary'
+    }
+  }, [filteredMetas, mes, ano])
 
   // Funções de edição inline
   const startEditing = (metaId: number, field: 'percentual' | 'valor', currentValue: number) => {
@@ -519,15 +581,6 @@ export default function MetaMensalPage() {
         valorMeta,
         metaPercentual
       }
-
-      console.log('[METAS] 📤 Enviando para API:', {
-        requestBody,
-        types: {
-          metaId: typeof requestBody.metaId,
-          valorMeta: typeof requestBody.valorMeta,
-          metaPercentual: typeof requestBody.metaPercentual
-        }
-      })
 
       const response = await fetch('/api/metas/update', {
         method: 'POST',
@@ -816,7 +869,7 @@ export default function MetaMensalPage() {
             <CardHeader className="relative">
               <div className="absolute top-6 right-6">
                 <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                  {getFilialLabel()}
+                  {filialLabel}
                 </div>
               </div>
               <CardTitle>Vendas do Período</CardTitle>
@@ -855,7 +908,7 @@ export default function MetaMensalPage() {
           <CardHeader className="relative">
             <div className="absolute top-6 right-6">
               <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                {getFilialLabel()}
+                {filialLabel}
               </div>
             </div>
             <CardTitle>Progresso da Meta</CardTitle>
@@ -911,41 +964,9 @@ export default function MetaMensalPage() {
                       cy="64"
                     />
                     <circle
-                      className={`${(() => {
-                        const hoje = new Date()
-                        const diaAnterior = hoje.getDate() - 1
-                        
-                        if (diaAnterior <= 0 || !report?.metas) return 0
-                        
-                        const metasAteOntem = report.metas.filter(meta => {
-                          const [year, month, day] = meta.data.split('-').map(Number)
-                          return month === mes && year === ano && day < hoje.getDate()
-                        })
-                        
-                        const totalRealizadoD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_realizado || 0), 0)
-                        const totalMetaD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_meta || 0), 0)
-                        const percentualD1 = totalMetaD1 > 0 ? (totalRealizadoD1 / totalMetaD1) * 100 : 0
-                        
-                        return percentualD1 >= 100 ? 'text-green-500' : 'text-primary'
-                      })()}`}
+                      className={d1Progress.colorClass}
                       strokeWidth="10"
-                      strokeDasharray={`${(() => {
-                        const hoje = new Date()
-                        const diaAnterior = hoje.getDate() - 1
-                        
-                        if (diaAnterior <= 0 || !report?.metas) return 0
-                        
-                        const metasAteOntem = report.metas.filter(meta => {
-                          const [year, month, day] = meta.data.split('-').map(Number)
-                          return month === mes && year === ano && day < hoje.getDate()
-                        })
-                        
-                        const totalRealizadoD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_realizado || 0), 0)
-                        const totalMetaD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_meta || 0), 0)
-                        const percentualD1 = totalMetaD1 > 0 ? (totalRealizadoD1 / totalMetaD1) * 100 : 0
-                        
-                        return ((percentualD1 / 100) * 351.86).toFixed(2)
-                      })()} 351.86`}
+                      strokeDasharray={d1Progress.strokeDasharray}
                       strokeLinecap="round"
                       stroke="currentColor"
                       fill="transparent"
@@ -956,23 +977,7 @@ export default function MetaMensalPage() {
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
                     <span className="text-2xl font-bold">
-                      {(() => {
-                        const hoje = new Date()
-                        const diaAnterior = hoje.getDate() - 1
-                        
-                        if (diaAnterior <= 0 || !report?.metas) return '0.0'
-                        
-                        const metasAteOntem = report.metas.filter(meta => {
-                          const [year, month, day] = meta.data.split('-').map(Number)
-                          return month === mes && year === ano && day < hoje.getDate()
-                        })
-                        
-                        const totalRealizadoD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_realizado || 0), 0)
-                        const totalMetaD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_meta || 0), 0)
-                        const percentualD1 = totalMetaD1 > 0 ? (totalRealizadoD1 / totalMetaD1) * 100 : 0
-                        
-                        return percentualD1.toFixed(1)
-                      })()}%
+                      {d1Progress.percentual.toFixed(1)}%
                     </span>
                   </div>
                 </div>
@@ -987,7 +992,7 @@ export default function MetaMensalPage() {
           <CardHeader className="relative">
             <div className="absolute top-6 right-6">
               <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                {getFilialLabel()}
+                {filialLabel}
               </div>
             </div>
             <CardTitle>Lucro e Margem</CardTitle>
@@ -1031,7 +1036,7 @@ export default function MetaMensalPage() {
         <CardHeader className="relative">
           <div className="absolute top-6 right-6">
             <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-              {getFilialLabel()}
+              {filialLabel}
             </div>
           </div>
           <CardTitle>Metas Diárias</CardTitle>
@@ -1084,84 +1089,7 @@ export default function MetaMensalPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(() => {
-                    // Log para debug
-                    const allMetas = report?.metas || []
-                    console.log('[METAS] 🔍 Filtrando metas:', {
-                      totalMetas: allMetas.length,
-                      mesAtual: mes,
-                      anoAtual: ano,
-                      filiaisSelecionadas: filiaisSelecionadas.map(f => f.value),
-                      primeiraData: allMetas[0]?.data,
-                      ultimaData: allMetas[allMetas.length - 1]?.data,
-                      primeiras5Metas: allMetas.slice(0, 5).map(m => ({ 
-                        data: m.data, 
-                        filial_id: m.filial_id,
-                        valor_realizado: m.valor_realizado 
-                      }))
-                    })
-                    
-                    const filteredMetas = allMetas
-                      .filter((meta) => {
-                        const [year, month, day] = meta.data.split('-').map(Number)
-                        const matches = month === mes && year === ano
-                        if (!matches) {
-                          console.log('[METAS] ❌ Meta não passa no filtro:', { 
-                            data: meta.data,
-                            parsedDate: { year, month, day },
-                            metaMes: month, 
-                            metaAno: year,
-                            filtroMes: mes,
-                            filtroAno: ano
-                          })
-                        }
-                        return matches
-                      })
-                      .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
-                    
-                    console.log('[METAS] ✅ Metas após filtro:', {
-                      total: filteredMetas.length,
-                      primeira: filteredMetas[0]?.data,
-                      ultima: filteredMetas[filteredMetas.length - 1]?.data,
-                      primeiras3Filtradas: filteredMetas.slice(0, 3).map(m => ({ 
-                        data: m.data, 
-                        filial_id: m.filial_id 
-                      }))
-                    })
-                    
-                    const grouped = groupMetasByDate(filteredMetas)
-                    const datasAgrupadas = Object.keys(grouped).sort()
-                    console.log('[METAS] 📅 Datas agrupadas:', {
-                      total: datasAgrupadas.length,
-                      primeira: datasAgrupadas[0],
-                      ultima: datasAgrupadas[datasAgrupadas.length - 1],
-                      todasDatas: datasAgrupadas
-                    })
-                    
-                    const sortedEntries = Object.entries(grouped).sort(([dateA], [dateB]) => {
-                      return new Date(dateA).getTime() - new Date(dateB).getTime()
-                    })
-                    
-                    console.log('[METAS] 🗂️ Entries ordenadas ANTES DE RENDERIZAR:', {
-                      total: sortedEntries.length,
-                      primeira: sortedEntries[0]?.[0],
-                      ultima: sortedEntries[sortedEntries.length - 1]?.[0],
-                      TODAS_AS_DATAS: sortedEntries.map(([date]) => date),
-                      primeiras5: sortedEntries.slice(0, 5).map(([date, group]) => ({
-                        data: date,
-                        numFiliais: group.metas.length,
-                        total_realizado: group.total_realizado,
-                        total_meta: group.total_meta
-                      }))
-                    })
-                    
-                    return sortedEntries
-                  })().map(([dateKey, group], index) => {
-                    console.log(`[METAS] 🎨 Renderizando linha #${index}:`, {
-                      data: dateKey,
-                      numFiliais: group.metas.length,
-                      total_realizado: group.total_realizado
-                    })
+                  {groupedEntries.map(([dateKey, group]) => {
                     const isExpanded = expandedDates[dateKey] === true // Fechado por padrão
                     const diferencaValor = group.total_diferenca || 0
                     const diferencaPerc = group.diferenca_percentual || 0
@@ -1380,62 +1308,7 @@ export default function MetaMensalPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(() => {
-                    const allMetas = report?.metas || []
-                    console.log('[METAS] 🔍 FILIAL ÚNICA - Metas antes do filtro:', {
-                      total: allMetas.length,
-                      primeiraData: allMetas[0]?.data,
-                      ultimaData: allMetas[allMetas.length - 1]?.data,
-                      mes: mes,
-                      ano: ano,
-                      primeiras5: allMetas.slice(0, 5).map(m => ({
-                        data: m.data,
-                        filial_id: m.filial_id,
-                        valor_realizado: m.valor_realizado
-                      }))
-                    })
-                    
-                    const filteredMetas = allMetas.filter((meta) => {
-                      // Extrair mês e ano da string de data no formato YYYY-MM-DD
-                      const [metaAno, metaMes] = meta.data.split('-').map(Number)
-                      const matches = metaMes === mes && metaAno === ano
-                      
-                      if (!matches) {
-                        console.log('[METAS] ❌ FILIAL ÚNICA - Meta não passa no filtro:', {
-                          data: meta.data,
-                          metaMes,
-                          metaAno,
-                          filtroMes: mes,
-                          filtroAno: ano
-                        })
-                      }
-                      
-                      return matches
-                    })
-                    
-                    console.log('[METAS] ✅ FILIAL ÚNICA - Metas após filtro:', {
-                      total: filteredMetas.length,
-                      primeiraData: filteredMetas[0]?.data,
-                      ultimaData: filteredMetas[filteredMetas.length - 1]?.data,
-                      todasDatas: filteredMetas.map(m => m.data)
-                    })
-                    
-                    const sortedMetas = filteredMetas.sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
-                    
-                    console.log('[METAS] 📅 FILIAL ÚNICA - Metas após ordenação:', {
-                      total: sortedMetas.length,
-                      primeiraData: sortedMetas[0]?.data,
-                      ultimaData: sortedMetas[sortedMetas.length - 1]?.data
-                    })
-                    
-                    return sortedMetas
-                  })().map((meta, index) => {
-                      console.log(`[METAS] 🎨 FILIAL ÚNICA - Renderizando linha #${index}:`, {
-                        data: meta.data,
-                        filial_id: meta.filial_id,
-                        valor_realizado: meta.valor_realizado
-                      })
-                      
+                  {filteredMetas.map((meta) => {
                       const diferencaValor = meta.diferenca || 0
                       const diferencaPerc = meta.diferenca_percentual || 0
                       const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
