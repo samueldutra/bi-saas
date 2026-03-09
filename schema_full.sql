@@ -7583,7 +7583,7 @@ SELECT public.get_previsao_ruptura_report(
 -- Name: get_produtos_sem_vendas(text, text, integer, integer, date, text, text, text, text, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_produtos_sem_vendas(p_schema text, p_filiais text DEFAULT 'all'::text, p_dias_sem_vendas_min integer DEFAULT 15, p_dias_sem_vendas_max integer DEFAULT 90, p_data_referencia date DEFAULT CURRENT_DATE, p_curva_abc text DEFAULT 'all'::text, p_filtro_tipo text DEFAULT 'all'::text, p_departamento_ids text DEFAULT NULL::text, p_produto_ids text DEFAULT NULL::text, p_limit integer DEFAULT 500, p_offset integer DEFAULT 0) RETURNS TABLE(filial_id bigint, produto_id bigint, descricao text, estoque_atual numeric, data_ultima_venda date, preco_custo numeric, curva_abcd text, curva_lucro character varying, dias_sem_venda integer, total_count bigint)
+CREATE FUNCTION public.get_produtos_sem_vendas(p_schema text, p_filiais text DEFAULT 'all'::text, p_dias_sem_vendas_min integer DEFAULT 15, p_dias_sem_vendas_max integer DEFAULT 90, p_data_referencia date DEFAULT CURRENT_DATE, p_curva_abc text DEFAULT 'all'::text, p_filtro_tipo text DEFAULT 'all'::text, p_departamento_ids text DEFAULT NULL::text, p_produto_ids text DEFAULT NULL::text, p_limit integer DEFAULT 500, p_offset integer DEFAULT 0) RETURNS TABLE(filial_id bigint, produto_id bigint, descricao text, estoque_atual numeric, data_ultima_venda date, data_ultima_entrada date, preco_custo numeric, curva_abcd text, curva_lucro character varying, dias_sem_venda integer, total_count bigint)
     LANGUAGE plpgsql SECURITY DEFINER
     SET statement_timeout TO '25s'
     AS $_$
@@ -7666,6 +7666,7 @@ BEGIN
         p.descricao::TEXT,
         p.estoque_atual::NUMERIC(18,6),
         uv.data_ultima_venda::DATE,
+        ue.data_ultima_entrada::DATE,
         p.preco_de_custo::NUMERIC(15,5),
         p.curva_abcd::TEXT,
         p.curva_lucro::VARCHAR(2),
@@ -7677,6 +7678,17 @@ BEGIN
       LEFT JOIN ultimas_vendas uv 
         ON p.id = uv.id_produto 
         AND p.filial_id = uv.filial_id
+      LEFT JOIN LATERAL (
+        SELECT
+          e.data_entrada as data_ultima_entrada
+        FROM %I.entradas_produtos ep
+        INNER JOIN %I.entradas e
+          ON e.id = ep.entrada_id
+        WHERE ep.produto_id = p.id
+          AND e.filial_id = p.filial_id
+        ORDER BY e.data_entrada DESC, e.id DESC
+        LIMIT 1
+      ) ue ON true
       WHERE (
         -- SOMENTE última venda no RANGE especificado
         uv.data_ultima_venda >= $1 
@@ -7692,6 +7704,7 @@ BEGIN
       psv.descricao,
       psv.estoque_atual,
       psv.data_ultima_venda,
+      psv.data_ultima_entrada,
       psv.preco_de_custo,
       psv.curva_abcd,
       psv.curva_lucro,
@@ -7708,6 +7721,8 @@ BEGIN
   v_curva_condition,
   v_departamento_condition,
   v_produto_condition,
+  p_schema,
+  p_schema,
   p_schema
   );
 
@@ -17150,4 +17165,3 @@ ALTER TABLE storage.vector_indexes ENABLE ROW LEVEL SECURITY;
 --
 
 \unrestrict 1SawDsH8ffVdBdz8k0pXSQ4HM6E81SWsjZlI4LYr3VcbCE2r9qK0LLfMpD7gOVO
-

@@ -18,6 +18,7 @@ export interface ProdutoSemVenda {
   descricao: string
   estoque_atual: number
   data_ultima_venda: string | null
+  data_ultima_entrada: string | null
   preco_custo: number
   curva_abcd: string | null
   curva_lucro: string | null
@@ -141,6 +142,29 @@ export const createColumns = (): ColumnDef<ProdutoSemVenda>[] => [
     },
     cell: ({ row }) => {
       const data = row.getValue("data_ultima_venda") as string | null
+      return data ? (
+        format(new Date(data), 'dd/MM/yyyy')
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      )
+    },
+  },
+  {
+    accessorKey: "data_ultima_entrada",
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="h-8 px-2 -ml-3 justify-start"
+        >
+          Últ. Entrada
+          <ArrowUpDown className="ml-[2px] h-4 w-4" />
+        </Button>
+      )
+    },
+    cell: ({ row }) => {
+      const data = row.getValue("data_ultima_entrada") as string | null
       return data ? (
         format(new Date(data), 'dd/MM/yyyy')
       ) : (

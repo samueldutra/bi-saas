@@ -9,7 +9,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
-import { MultiSelect } from '@/components/ui/multi-select'
 import { DepartmentFilterPopover, SectorFilterPopover } from '@/components/filters'
 import { ChartCandlestick, FileDown, Loader2, FileText } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
@@ -48,11 +47,8 @@ export default function ProdutosSemVendasPage() {
     includeAll: false,
   })
 
-  // Armazena filiais completas para uso no getFilialNome
-  const [filiaisCompletas] = useState<Array<{ value: string; label: string }>>([])
-
   // Estados de filtros
-  const [selectedBranches, setSelectedBranches] = useState<Array<{ value: string; label: string }>>([])
+  const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [diasSemVendasMin, setDiasSemVendasMin] = useState<number>(15)
   const [diasSemVendasMax, setDiasSemVendasMax] = useState<number>(90)
   const [filtroTipo, setFiltroTipo] = useState<string>('all')
@@ -74,28 +70,25 @@ export default function ProdutosSemVendasPage() {
   // Auto-selecionar primeira filial quando opções estiverem disponíveis
   useEffect(() => {
     if (branches.length > 0 && !defaultFilialSet) {
-      // Ordena filiais por ID (numérico) e pega a menor
       const sortedFiliais = [...branches].sort((a, b) => {
         const idA = parseInt(a.value)
         const idB = parseInt(b.value)
         return idA - idB
       })
-      console.log('✅ [Auto-select] Selecionando primeira filial:', sortedFiliais[0])
-      setSelectedBranches([sortedFiliais[0]])
+      const defaultBranch = sortedFiliais[0]
+      console.log('✅ [Auto-select] Selecionando primeira filial:', defaultBranch)
+      setSelectedBranch(defaultBranch.value)
       setDefaultFilialSet(true)
-      
-      // Armazena filiais para uso posterior
-      filiaisCompletas.splice(0, filiaisCompletas.length, ...branches)
     }
-  }, [branches, defaultFilialSet, filiaisCompletas])
+  }, [branches, defaultFilialSet])
 
   // Auto-load: Executar busca quando filtros estiverem prontos (APENAS PRIMEIRA VEZ)
   useEffect(() => {
-    if (currentTenant?.supabase_schema && selectedBranches.length > 0 && !loading && defaultFilialSet) {
+    if (currentTenant?.supabase_schema && selectedBranch && !loading && defaultFilialSet) {
       console.log('✅ [Auto-load] Executando primeira busca automaticamente')
       fetchData(1)
     }
-  }, [currentTenant, selectedBranches, defaultFilialSet]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentTenant, selectedBranch, defaultFilialSet]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carregar departamentos e setores
   useEffect(() => {
@@ -139,9 +132,7 @@ export default function ProdutosSemVendasPage() {
     setCurrentPage(page)
     
     try {
-      const filiaisParam = selectedBranches.length === 0
-        ? 'all'
-        : selectedBranches.map(b => b.value).join(',')
+      const filiaisParam = selectedBranch || 'all'
 
       let departamentoIds = null
       if (filtroTipo === 'departamento' && departamentosSelecionados.length > 0) {
@@ -200,9 +191,7 @@ export default function ProdutosSemVendasPage() {
     setExporting(true)
     try {
       // Buscar TODOS os dados para exportação
-      const filiaisParam = selectedBranches.length === 0
-        ? 'all'
-        : selectedBranches.map(b => b.value).join(',')
+      const filiaisParam = selectedBranch || 'all'
 
       let departamentoIds = null
       if (filtroTipo === 'departamento' && departamentosSelecionados.length > 0) {
@@ -266,6 +255,7 @@ export default function ProdutosSemVendasPage() {
         p.dias_sem_venda,
         p.estoque_atual.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
         p.data_ultima_venda ? format(new Date(p.data_ultima_venda), 'dd/MM/yyyy') : '-',
+        p.data_ultima_entrada ? format(new Date(p.data_ultima_entrada), 'dd/MM/yyyy') : '-',
         `R$ ${p.preco_custo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         p.curva_abcd || '-',
         p.curva_lucro || '-'
@@ -275,7 +265,7 @@ export default function ProdutosSemVendasPage() {
         startY: 32,
         head: [[
           'Filial', 'Código', 'Descrição', 'Dias',
-          'Estoque', 'Últ. Venda', 'Custo', 
+          'Estoque', 'Últ. Venda', 'Últ. Entrada', 'Custo',
           'Curva V.', 'Curva L.'
         ]],
         body: tableData,
@@ -338,27 +328,27 @@ export default function ProdutosSemVendasPage() {
       {/* Filtros */}
       <Card>
         <CardContent className="space-y-4 pt-6 px-4">
-          {/* Linha 1: Apenas Filiais */}
-          <div className="grid grid-cols-1 gap-4">
-            {/* Filiais */}
-            <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-4 xl:flex xl:items-end xl:gap-8">
+            <div className="space-y-2 xl:w-[400px] xl:shrink-0">
               <Label>Filiais</Label>
-              <MultiSelect
-                options={branches}
-                value={selectedBranches}
-                onValueChange={setSelectedBranches}
-                placeholder="Todas as filiais"
-              />
+              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <SelectTrigger className="h-10 w-full xl:w-[400px]">
+                  <SelectValue placeholder="Selecione a filial" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.value} value={branch.value}>
+                      {branch.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
 
-          {/* Linha 2: Período + Filtrar por + Gerar Relatório */}
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
-            {/* Período Sem Vendas */}
-            <div className="space-y-2">
+            <div className="space-y-2 xl:shrink-0">
               <Label>Período Sem Vendas (Em dias)</Label>
               <div className="flex items-center gap-2.5">
-                <span className="text-sm text-muted-foreground">De</span>
+                <span className="text-sm font-medium text-muted-foreground">De</span>
                 <Input
                   id="dias-min"
                   type="number"
@@ -366,10 +356,10 @@ export default function ProdutosSemVendasPage() {
                   max="365"
                   value={diasSemVendasMin}
                   onChange={(e) => setDiasSemVendasMin(parseInt(e.target.value) || 15)}
-                  className="h-10 w-20"
+                  className="h-10 w-[72px]"
                   placeholder="15"
                 />
-                <span className="text-sm text-muted-foreground">a</span>
+                <span className="text-sm font-medium text-muted-foreground">a</span>
                 <Input
                   id="dias-max"
                   type="number"
@@ -377,48 +367,48 @@ export default function ProdutosSemVendasPage() {
                   max="365"
                   value={diasSemVendasMax}
                   onChange={(e) => setDiasSemVendasMax(parseInt(e.target.value) || 90)}
-                  className="h-10 w-20"
+                  className="h-10 w-[72px]"
                   placeholder="90"
                 />
-                <span className="text-sm text-muted-foreground">dias</span>
+                <span className="text-sm font-medium text-muted-foreground">dias</span>
               </div>
             </div>
 
-            {/* Filtrar por */}
-            <div className="space-y-2">
-              <Label htmlFor="filtro-tipo">Filtrar por</Label>
-              <Select value={filtroTipo} onValueChange={(value) => {
-                setFiltroTipo(value)
-                setDepartamentosSelecionados([])
-                setSetoresSelecionados([])
-                setProdutosSelecionados([])
-              }}>
-                <SelectTrigger id="filtro-tipo" className="h-10 py-1">
-                  <SelectValue placeholder="Todos os produtos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os produtos</SelectItem>
-                  <SelectItem value="departamento">Departamentos</SelectItem>
-                  <SelectItem value="setor">Setores</SelectItem>
-                  <SelectItem value="produto">Produtos</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[220px_auto] xl:items-end xl:gap-3 xl:shrink-0">
+              <div className="space-y-2">
+                <Label htmlFor="filtro-tipo">Filtrar por</Label>
+                <Select value={filtroTipo} onValueChange={(value) => {
+                  setFiltroTipo(value)
+                  setDepartamentosSelecionados([])
+                  setSetoresSelecionados([])
+                  setProdutosSelecionados([])
+                }}>
+                  <SelectTrigger id="filtro-tipo" className="h-10 w-full py-1 xl:w-[220px]">
+                    <SelectValue placeholder="Todos os produtos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os produtos</SelectItem>
+                    <SelectItem value="departamento">Departamentos</SelectItem>
+                    <SelectItem value="setor">Setores</SelectItem>
+                    <SelectItem value="produto">Produtos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {/* Botão Gerar Relatório */}
-            <Button onClick={() => fetchData(1)} disabled={loading} className="h-10 min-w-[180px]">
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Gerando...
-                </>
-              ) : (
-                <>
-                  <FileText className="mr-2 h-4 w-4" />
-                  Gerar Relatório
-                </>
-              )}
-            </Button>
+              <Button onClick={() => fetchData(1)} disabled={loading} className="h-10 min-w-[180px] xl:w-auto">
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Gerando...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Gerar Relatório
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
           {/* Linha 3: Filtro específico dinâmico */}
