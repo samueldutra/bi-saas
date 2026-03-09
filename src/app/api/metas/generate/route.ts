@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
-import { isValidSchema } from '@/lib/security/validate-schema'
+import { isValidSchema, validateSchemaAccess } from '@/lib/security/validate-schema'
 import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 import { z } from 'zod'
 
@@ -40,6 +40,11 @@ export async function POST(request: NextRequest) {
 
     const { schema, filialId: requestedFilialId, mes, ano, metaPercentual, dataReferenciaInicial } = validation.data
 
+    const hasAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     // Get user's authorized branches
     const authorizedBranches = await getUserAuthorizedBranchCodes(supabase, user.id)
 
@@ -57,48 +62,38 @@ export async function POST(request: NextRequest) {
       finalFilialId = requestedFilialId
     } else {
       // User has restrictions
-      if (!requestedFilialId || requestedFilialId === 'all') {
-        // Request for all - use first authorized branch
-        if (authorizedBranches.length > 0) {
-          const parsed = parseInt(authorizedBranches[0], 10)
-          if (!isNaN(parsed)) {
-            finalFilialId = parsed
-          } else {
-            return NextResponse.json(
-              { error: 'Nenhuma filial autorizada válida encontrada' },
-              { status: 400 }
-            )
-          }
-        } else {
-          return NextResponse.json(
-            { error: 'Usuário não tem acesso a nenhuma filial' },
-            { status: 403 }
-          )
-        }
-      } else {
-        // Specific filial requested - check if authorized
-        const requestedIdStr = String(requestedFilialId)
-        const parsed = parseInt(requestedIdStr, 10)
-        if (!isNaN(parsed) && authorizedBranches.includes(requestedIdStr)) {
-          finalFilialId = parsed
-        } else if (authorizedBranches.length > 0) {
-          // Not authorized - use first authorized
-          const firstParsed = parseInt(authorizedBranches[0], 10)
-          if (!isNaN(firstParsed)) {
-            finalFilialId = firstParsed
-          } else {
-            return NextResponse.json(
-              { error: 'Nenhuma filial autorizada válida encontrada' },
-              { status: 400 }
-            )
-          }
-        } else {
-          return NextResponse.json(
-            { error: 'Usuário não tem acesso a nenhuma filial' },
-            { status: 403 }
-          )
-        }
+      if (authorizedBranches.length === 0) {
+        return NextResponse.json(
+          { error: 'Usuário não tem acesso a nenhuma filial' },
+          { status: 403 }
+        )
       }
+
+      if (!requestedFilialId || requestedFilialId === 'all') {
+        return NextResponse.json(
+          { error: 'filialId é obrigatório para usuários com acesso restrito' },
+          { status: 400 }
+        )
+      }
+
+      const requestedIdStr = String(requestedFilialId)
+      const parsed = parseInt(requestedIdStr, 10)
+
+      if (isNaN(parsed)) {
+        return NextResponse.json(
+          { error: 'filialId inválido' },
+          { status: 400 }
+        )
+      }
+
+      if (!authorizedBranches.includes(requestedIdStr)) {
+        return NextResponse.json(
+          { error: 'Usuário não possui acesso à filial solicitada' },
+          { status: 403 }
+        )
+      }
+
+      finalFilialId = parsed
     }
 
     console.log('[API/METAS/GENERATE] Params:', {

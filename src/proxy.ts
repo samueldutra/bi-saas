@@ -102,7 +102,7 @@ function checkApiRateLimit(request: NextRequest): NextResponse | null {
   return null
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // 1. Check CSRF protection for mutating requests
   const csrfError = validateCsrf(request)
   if (csrfError) return csrfError

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { safeErrorResponse } from '@/lib/api/error-handler'
-import { isValidSchema } from '@/lib/security/validate-schema'
+import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { isValidSchema, validateSchemaAccess } from '@/lib/security/validate-schema'
 import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 import { z } from 'zod'
 
@@ -26,6 +27,11 @@ const updateMetaLoteSchema = z.object({
   filial_id: z.number().int().positive().optional().nullable(),
 })
 
+interface MetaAuthorizationRecord {
+  id: number
+  filial_id: number
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -36,6 +42,25 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+
+    const schema =
+      typeof body?.schema === 'string'
+        ? body.schema
+        : null
+
+    if (!schema || !isValidSchema(schema)) {
+      return NextResponse.json(
+        { error: 'Schema inválido' },
+        { status: 400 }
+      )
+    }
+
+    const hasAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const authorizedBranchCodes = await getUserAuthorizedBranchCodes(supabase, user.id)
 
     console.log('[API/METAS/UPDATE] 📥 Request received:', {
       body,
@@ -62,6 +87,40 @@ export async function POST(request: NextRequest) {
       }
 
       const { schema, metaId, valorMeta, metaPercentual } = validation.data
+
+      const { data: metaRecord, error: metaLookupError } = await supabase
+        .schema(schema as 'public')
+        .from('metas_mensais')
+        .select('id, filial_id')
+        .eq('id', metaId)
+        .maybeSingle()
+
+      const typedMetaRecord = metaRecord as MetaAuthorizationRecord | null
+
+      if (metaLookupError) {
+        console.error('[API/METAS/UPDATE] Meta lookup error:', metaLookupError)
+        return NextResponse.json(
+          { error: 'Erro ao validar autorização da meta' },
+          { status: 500 }
+        )
+      }
+
+      if (!typedMetaRecord) {
+        return NextResponse.json(
+          { error: 'Meta não encontrada' },
+          { status: 404 }
+        )
+      }
+
+      if (
+        authorizedBranchCodes !== null &&
+        !authorizedBranchCodes.includes(String(typedMetaRecord.filial_id))
+      ) {
+        return NextResponse.json(
+          { error: 'Usuário não possui acesso à meta solicitada' },
+          { status: 403 }
+        )
+      }
 
       console.log('[API/METAS/UPDATE] Updating individual meta:', { 
         schema, 
@@ -130,55 +189,88 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { schema, mes, ano, filial_id } = validation.data
+    const {
+      schema: validatedSchema,
+      mes,
+      ano,
+      filial_id
+    } = validation.data
 
-    const useFaturamentoMetas = await isFaturamentoMetasEnabled(schema)
+    if (authorizedBranchCodes !== null && filial_id) {
+      if (!authorizedBranchCodes.includes(String(filial_id))) {
+        return NextResponse.json(
+          { error: 'Usuário não possui acesso à filial solicitada' },
+          { status: 403 }
+        )
+      }
+    }
+
+    const useFaturamentoMetas = await isFaturamentoMetasEnabled(validatedSchema)
     const rpcName = useFaturamentoMetas
       ? 'atualizar_valores_realizados_metas_com_faturamento'
       : 'atualizar_valores_realizados_metas'
 
-    const params: Record<string, number | string> = {
-      p_schema: schema,
-      p_mes: mes,
-      p_ano: ano
-    }
+    const targetBranchCodes = filial_id
+      ? [String(filial_id)]
+      : (authorizedBranchCodes ?? [null])
 
-    if (filial_id) {
-      params.p_filial_id = filial_id
-    }
+    const normalizedTargets = targetBranchCodes.length > 0
+      ? targetBranchCodes
+      : [null]
 
-    console.log('[API/METAS/UPDATE] Calling RPC with params:', params)
+    const rpcResults: unknown[] = []
 
-    // @ts-expect-error - Function will exist after migration is applied
-    let { data, error } = await supabase.rpc(rpcName, params)
-
-    if (error && useFaturamentoMetas) {
-      console.warn('[API/METAS/UPDATE] RPC com faturamento falhou, fallback legado:', error)
-      // @ts-expect-error - Function exists in legacy
-      const fallback = await supabase.rpc('atualizar_valores_realizados_metas', params)
-      data = fallback.data
-      error = fallback.error
-    }
-
-    if (error) {
-      console.error('[API/METAS/UPDATE] Error:', error)
-      
-      // Se a tabela não existe, retornar sucesso silencioso (primeira vez)
-      if (error.message && error.message.includes('does not exist')) {
-        console.log('[API/METAS/UPDATE] ⚠️ Tabela não existe ainda, ignorando atualização')
-        return NextResponse.json({
-          message: 'Nenhuma meta para atualizar',
-          success: true,
-          registros_atualizados: 0
-        })
+    for (const branchCode of normalizedTargets) {
+      const params: Record<string, number | string> = {
+        p_schema: validatedSchema,
+        p_mes: mes,
+        p_ano: ano
       }
 
-      return safeErrorResponse(error, 'metas-update')
+      if (branchCode !== null) {
+        params.p_filial_id = Number(branchCode)
+      }
+
+      console.log('[API/METAS/UPDATE] Calling RPC with params:', params)
+
+      // @ts-expect-error - Function will exist after migration is applied
+      let { data, error } = await supabase.rpc(rpcName, params)
+
+      if (error && useFaturamentoMetas) {
+        console.warn('[API/METAS/UPDATE] RPC com faturamento falhou, fallback legado:', error)
+        // @ts-expect-error - Function exists in legacy
+        const fallback = await supabase.rpc('atualizar_valores_realizados_metas', params)
+        data = fallback.data
+        error = fallback.error
+      }
+
+      if (error) {
+        console.error('[API/METAS/UPDATE] Error:', error)
+        
+        // Se a tabela não existe, retornar sucesso silencioso (primeira vez)
+        if (error.message && error.message.includes('does not exist')) {
+          console.log('[API/METAS/UPDATE] ⚠️ Tabela não existe ainda, ignorando atualização')
+          return NextResponse.json({
+            message: 'Nenhuma meta para atualizar',
+            success: true,
+            registros_atualizados: 0
+          })
+        }
+
+        return safeErrorResponse(error, 'metas-update')
+      }
+
+      rpcResults.push(data)
     }
 
-    console.log('[API/METAS/UPDATE] Success:', data)
+    console.log('[API/METAS/UPDATE] Success:', rpcResults)
 
-    return NextResponse.json(data)
+    return NextResponse.json(
+      rpcResults.length === 1 ? rpcResults[0] : {
+        success: true,
+        results: rpcResults
+      }
+    )
   } catch (error) {
     console.error('[API/METAS/UPDATE] Unexpected error:', error)
     return NextResponse.json(
