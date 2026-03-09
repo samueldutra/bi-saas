@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/table'
 import { logModuleAccess } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/client'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 // Tipos para jspdf-autotable
 declare module 'jspdf' {
@@ -826,16 +827,12 @@ export default function RupturaVenda60dPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Package className="h-6 w-6" />
-          Ruptura Vendas - Dias sem Giro
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Produtos com histórico de vendas consistente que pararam de girar
-        </p>
-      </div>
+      <PageHeader
+        section="Ruptura"
+        title="Dias sem Giro"
+        description="Produtos com histórico de vendas consistente que pararam de girar"
+        icon={Package}
+      />
 
       {/* Filtros */}
       <Card>

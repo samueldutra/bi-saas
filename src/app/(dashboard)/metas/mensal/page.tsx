@@ -20,6 +20,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DatePicker } from '@/components/ui/date-picker'
 import { type FilialOption } from '@/components/filters'
 import { MetasFilters } from '@/components/metas/filters'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 interface Meta {
   id: number
@@ -670,15 +671,12 @@ export default function MetaMensalPage() {
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <TrendingUp className="h-6 w-6" />
-            Metas Mensais
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Acompanhamento e gestão de metas de vendas por filial
-          </p>
-        </div>
+        <PageHeader
+          section="Metas"
+          title="Meta Mensal"
+          description="Acompanhamento e gestão de metas de vendas por filial"
+          icon={TrendingUp}
+        />
 
         <div className="flex gap-2">
           <Button

@@ -41,6 +41,7 @@ import { logModuleAccess } from '@/lib/audit'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
 import { MultiFilialFilter, type FilialOption } from '@/components/filters'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 interface Setor {
   id: number
@@ -789,15 +790,12 @@ export default function MetaSetorPage() {
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Target className="h-6 w-6" />
-            Metas por Setor
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Acompanhamento de metas por setor e departamento
-          </p>
-        </div>
+        <PageHeader
+          section="Metas"
+          title="Meta por Setor"
+          description="Acompanhamento de metas por setor e departamento"
+          icon={Target}
+        />
 
         <div className="flex gap-2">
           <Button

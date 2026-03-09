@@ -20,6 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { ChartBarBig, FileDown } from 'lucide-react'
 import { MultiFilialFilter } from '@/components/filters'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 // Interfaces para dados estruturados por filial
 interface DespesaPorFilial {
@@ -2010,16 +2011,12 @@ export default function DespesasPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ChartBarBig className="h-6 w-6" />
-          DRE Gerencial
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Análise comparativa de despesas entre filiais
-        </p>
-      </div>
+      <PageHeader
+        section="Gerencial"
+        title="DRE Gerencial"
+        description="Análise comparativa de despesas entre filiais"
+        icon={ChartBarBig}
+      />
 
       {/* Filtros */}
       <DREFilter
@@ -2235,5 +2232,4 @@ export default function DespesasPage() {
     </div>
   )
 }
-
 

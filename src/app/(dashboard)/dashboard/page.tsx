@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useEffect, useMemo } from 'react'
 import useSWR, { mutate } from 'swr'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,13 +15,21 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency, formatPercentage } from '@/lib/chart-config'
 import { useBranchesOptions } from '@/hooks/use-branches'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronUp, ChevronDown, FileDown, LayoutDashboard } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronUp, ChevronDown, FileDown, House } from 'lucide-react'
 import { logModuleAccess } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/client'
 import { DashboardFilter, type FilterType } from '@/components/dashboard/dashboard-filter'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 
 // Tipo de venda para o filtro
 type SalesType = 'complete' | 'pdv' | 'faturamento'
@@ -1272,21 +1281,39 @@ export default function DashboardPage() {
   const isDataLoading = isLoading || !currentTenant
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <LayoutDashboard className="h-6 w-6" />
-          Dashboard 360
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Análise consolidada de vendas, lucro e performance por período
-        </p>
+    <div className="space-y-4">
+      <div className="space-y-2 pl-2">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <Link href="/dashboard" aria-label="Início">
+                  <House className="size-4" />
+                  <span className="inline-block">Início</span>
+                </Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink>Visão Geral</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Dashboard 360</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard 360</h1>
+          <p className="text-sm text-muted-foreground">
+            Análise consolidada de vendas, lucro e performance por período
+          </p>
+        </div>
       </div>
 
       {/* Filtros */}
-      <div className='space-y-4'>
-        <div className="rounded-md border p-4">
+      <div>
+        <div className="rounded-xl bg-muted/50 p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:gap-4">
             {/* FILIAIS */}
             <div className="flex flex-col gap-2 w-full lg:w-[600px]">

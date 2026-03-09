@@ -46,6 +46,7 @@ import {
   Tooltip,
   Sector,
 } from 'recharts'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 // Tipos para jspdf-autotable
 declare module 'jspdf' {
@@ -841,16 +842,12 @@ export default function PerdasPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Newspaper className="h-6 w-6" />
-          Relatório de Perdas
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Análise detalhada de perdas por período e filial
-        </p>
-      </div>
+      <PageHeader
+        section="Perdas"
+        title="Relatório de Perdas"
+        description="Análise detalhada de perdas por período e filial"
+        icon={Newspaper}
+      />
 
       {/* Filtros */}
       <Card>

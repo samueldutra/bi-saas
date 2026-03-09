@@ -16,6 +16,7 @@ import { MultiSelect } from '@/components/ui/multi-select'
 import { Plus, X, FileBarChart, ChevronDown, ChevronRight, CalendarIcon, FileDown } from 'lucide-react'
 import { format, parse, isValid, startOfMonth, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 type PeriodType = 'month' | 'year' | 'custom'
 import {
@@ -495,16 +496,12 @@ export default function DREComparativoPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <FileBarChart className="h-6 w-6" />
-          DRE Comparativo
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Compare o DRE de diferentes períodos e filiais lado a lado
-        </p>
-      </div>
+      <PageHeader
+        section="Gerencial"
+        title="DRE Comparativo"
+        description="Compare o DRE de diferentes períodos e filiais lado a lado"
+        icon={FileBarChart}
+      />
 
       {/* Configurador de Contextos */}
       <Card>

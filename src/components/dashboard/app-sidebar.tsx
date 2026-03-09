@@ -1,9 +1,9 @@
 'use client'
 
 import * as React from 'react'
-/* eslint-disable @next/next/no-img-element */
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
   FileBarChart,
@@ -31,15 +31,19 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
+  SidebarSeparator,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarRail,
+  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useTenantContext } from '@/contexts/tenant-context'
-import { useTheme } from '@/contexts/theme-context'
 import { Badge } from '@/components/ui/badge'
 import { NavUser } from './nav-user'
 import { SidebarCompanySwitcher } from './sidebar-company-switcher'
@@ -56,6 +60,12 @@ interface NavigationItem {
   badge?: string
   comingSoon?: boolean
   moduleId?: SystemModule
+}
+
+interface NavigationSection {
+  title: string
+  icon: LucideIcon
+  items: NavigationItem[]
 }
 
 const visaoGeralNavigation: NavigationItem[] = [
@@ -157,11 +167,9 @@ export function AppSidebar() {
   const pathname = usePathname()
   const { userProfile, currentTenant } = useTenantContext()
   const { state } = useSidebar()
-  const { theme } = useTheme()
   const { parameters } = useTenantParameters(currentTenant?.id)
   const { hasModuleAccess, hasFullAccess } = useAuthorizedModules()
-
-  const logoSrc = theme === 'dark' ? '/logo_bussola_dark_mode.svg' : '/logo_bussola.svg'
+  const isCollapsed = state === 'collapsed'
 
   const isSuperAdmin = userProfile?.role === 'superadmin'
   const isAdminOrAbove = ['superadmin', 'admin'].includes(userProfile?.role || '')
@@ -191,282 +199,136 @@ export function AppSidebar() {
   const filteredMetasNav = filterNavigation(metasNavigation)
   const filteredRupturaNav = filterNavigation(rupturaNavigation)
   const filteredPerdasNav = filterNavigation(perdasNavigation)
+  const isItemActive = (href: string) => {
+    if (href === '/dashboard') {
+      return pathname === href
+    }
+
+    return pathname === href || pathname.startsWith(`${href}/`)
+  }
+  const navigationSections: NavigationSection[] = [
+    {
+      title: 'Visão Geral',
+      icon: LayoutDashboard,
+      items: filteredVisaoGeralNav,
+    },
+    {
+      title: 'Gerencial',
+      icon: ChartBarBig,
+      items: filteredGerencialNav,
+    },
+    {
+      title: 'Vendas',
+      icon: ShoppingCart,
+      items: filteredVendasNav,
+    },
+    {
+      title: 'Metas',
+      icon: Target,
+      items: filteredMetasNav,
+    },
+    {
+      title: 'Ruptura',
+      icon: AlertTriangle,
+      items: filteredRupturaNav,
+    },
+    {
+      title: 'Perdas',
+      icon: Newspaper,
+      items: filteredPerdasNav,
+    },
+  ].filter((section) => section.items.length > 0)
 
   // Use tenant ID as key to force re-render when tenant changes
   return (
-    <Sidebar collapsible="icon" variant="inset" key={currentTenant?.id || 'no-tenant'}>
-      <SidebarHeader className="px-4 py-4">
-        <Link href="/dashboard" className="flex items-center">
-          {state === 'collapsed' ? (
-            <img
-              src="/simbolo_bussola.svg"
-              alt="Bússola"
-              style={{ height: '32px', width: '32px' }}
-            />
-          ) : (
-            <img
-              src={logoSrc}
-              alt="Bússola ByDevIngá"
-              style={{ height: '40px', width: 'auto' }}
-            />
-          )}
-        </Link>
+    <Sidebar collapsible="icon" variant="inset" className="border-r border-sidebar-border" key={currentTenant?.id || 'no-tenant'}>
+      <SidebarHeader className="items-center gap-3 px-2 py-4">
+        <div className={cn('flex w-full', isCollapsed ? 'flex-col items-center gap-2' : 'items-center justify-between gap-3')}>
+          <div className={cn(isCollapsed ? 'w-auto' : 'w-[200px] self-start')}>
+            <SidebarCompanySwitcher />
+          </div>
+          <SidebarTrigger className="size-8 shrink-0" />
+        </div>
       </SidebarHeader>
 
-      {/* Company Switcher */}
-      <div className="p-2">
-        <SidebarCompanySwitcher />
-      </div>
+      <SidebarSeparator />
 
       <SidebarContent>
-        {/* Visão Geral */}
-        <Collapsible defaultOpen className="group/collapsible">
-          <SidebarGroup className="py-1">
-            <SidebarGroupLabel asChild>
-              <CollapsibleTrigger className="flex w-full items-center">
-                <span className="text-xs font-semibold">Visão Geral</span>
-                <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-              </CollapsibleTrigger>
-            </SidebarGroupLabel>
-            <CollapsibleContent>
-              <SidebarMenu>
-                {filteredVisaoGeralNav.map((item) => {
-                  const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
-                  const Icon = item.icon
-                  const isLiveModule = item.href === '/dashboard-tempo-real'
+        <SidebarGroup>
+          <SidebarMenu>
+            {navigationSections.map((section) => {
+              const SectionIcon = section.icon
 
-                  return (
-                    <SidebarMenuItem key={item.name}>
-                      <SidebarMenuButton
-                        asChild
-                        tooltip={item.name}
-                        isActive={isActive}
-                      >
-                        <Link href={item.href}>
-                          <Icon className={isLiveModule ? 'animate-pulse-live' : undefined} />
-                          <span>{item.name}</span>
-                          {item.badge && (
-                            <Badge variant="secondary" className="ml-auto text-xs">
-                              {item.badge}
-                            </Badge>
-                          )}
-                        </Link>
+              return (
+                <Collapsible
+                  key={section.title}
+                  asChild
+                  defaultOpen
+                  className="group/collapsible"
+                >
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip={section.title}>
+                        <SectionIcon />
+                        <span>{section.title}</span>
+                        <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 dark:text-white" />
                       </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </CollapsibleContent>
-          </SidebarGroup>
-        </Collapsible>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {section.items.map((item) => {
+                          const isActive = isItemActive(item.href)
+                          const ItemIcon = item.icon
+                          const isLiveModule = item.href === '/dashboard-tempo-real'
 
-        {/* Gerencial */}
-        <Collapsible defaultOpen className="group/collapsible">
-          <SidebarGroup className="py-1">
-            <SidebarGroupLabel asChild>
-              <CollapsibleTrigger className="flex w-full items-center">
-                <span className="text-xs font-semibold">Gerencial</span>
-                <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-              </CollapsibleTrigger>
-            </SidebarGroupLabel>
-            <CollapsibleContent>
-              <SidebarMenu>
-                {filteredGerencialNav.map((item) => {
-                  const isActive = pathname === item.href || (item.href !== '/dashboard' && item.href !== '#' && pathname.startsWith(item.href))
-                  const Icon = item.icon
-
-                  return (
-                    <SidebarMenuItem key={item.name}>
-                      <SidebarMenuButton
-                        asChild={!item.comingSoon}
-                        tooltip={item.name}
-                        isActive={isActive}
-                        disabled={item.comingSoon}
-                      >
-                        {item.comingSoon ? (
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-2">
-                              <Icon />
-                              <span>{item.name}</span>
-                            </div>
-                            <Badge variant="secondary" className="text-xs">
-                              Em breve
-                            </Badge>
-                          </div>
-                        ) : (
-                          <Link href={item.href}>
-                            <Icon />
-                            <span>{item.name}</span>
-                            {item.badge && (
-                              <Badge variant="secondary" className="ml-auto text-xs">
-                                {item.badge}
-                              </Badge>
-                            )}
-                          </Link>
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </CollapsibleContent>
-          </SidebarGroup>
-        </Collapsible>
-
-        {/* Vendas */}
-        {filteredVendasNav.length > 0 && (
-          <Collapsible defaultOpen className="group/collapsible">
-            <SidebarGroup className="py-1">
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="flex w-full items-center">
-                  <span className="text-xs font-semibold">Vendas</span>
-                  <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarMenu>
-                  {filteredVendasNav.map((item) => {
-                    const isActive = pathname === item.href || pathname.startsWith(item.href)
-                    const Icon = item.icon
-
-                    return (
-                      <SidebarMenuItem key={item.name}>
-                        <SidebarMenuButton
-                          asChild
-                          tooltip={item.name}
-                          isActive={isActive}
-                        >
-                          <Link href={item.href}>
-                            <Icon />
-                            <span>{item.name}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* Metas */}
-        {filteredMetasNav.length > 0 && (
-          <Collapsible defaultOpen className="group/collapsible">
-            <SidebarGroup className="py-1">
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="flex w-full items-center">
-                  <span className="text-xs font-semibold">Metas</span>
-                  <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarMenu>
-                  {filteredMetasNav.map((item) => {
-                    const isActive = pathname === item.href || pathname.startsWith(item.href)
-                    const Icon = item.icon
-
-                    return (
-                      <SidebarMenuItem key={item.name}>
-                        <SidebarMenuButton
-                          asChild
-                          tooltip={item.name}
-                          isActive={isActive}
-                        >
-                          <Link href={item.href}>
-                            <Icon />
-                            <span>{item.name}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* Ruptura */}
-        {filteredRupturaNav.length > 0 && (
-          <Collapsible defaultOpen className="group/collapsible">
-            <SidebarGroup className="py-1">
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="flex w-full items-center">
-                  <span className="text-xs font-semibold">Ruptura</span>
-                  <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarMenu>
-                  {filteredRupturaNav.map((item) => {
-                    const isActive = pathname === item.href || pathname.startsWith(item.href)
-                    const Icon = item.icon
-
-                    return (
-                      <SidebarMenuItem key={item.name}>
-                        <SidebarMenuButton
-                          asChild
-                          tooltip={item.name}
-                          isActive={isActive}
-                        >
-                          <Link href={item.href}>
-                            <Icon />
-                            <span>{item.name}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* Perdas */}
-        {filteredPerdasNav.length > 0 && (
-          <Collapsible defaultOpen className="group/collapsible">
-            <SidebarGroup className="py-1">
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="flex w-full items-center">
-                  <span className="text-xs font-semibold">Perdas</span>
-                  <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarMenu>
-                  {filteredPerdasNav.map((item) => {
-                    const isActive = pathname === item.href || pathname.startsWith(item.href)
-                    const Icon = item.icon
-
-                    return (
-                      <SidebarMenuItem key={item.name}>
-                        <SidebarMenuButton
-                          asChild
-                          tooltip={item.name}
-                          isActive={isActive}
-                        >
-                          <Link href={item.href}>
-                            <Icon />
-                            <span>{item.name}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
+                          return (
+                            <SidebarMenuSubItem key={item.name}>
+                              {item.comingSoon ? (
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={false}
+                                  className="pointer-events-none opacity-70"
+                                >
+                                  <div>
+                                    <ItemIcon />
+                                    <span>{item.name}</span>
+                                    <Badge variant="secondary" className="ml-auto text-xs">
+                                      Em breve
+                                    </Badge>
+                                  </div>
+                                </SidebarMenuSubButton>
+                              ) : (
+                                <SidebarMenuSubButton asChild isActive={isActive}>
+                                  <Link href={item.href}>
+                                    <ItemIcon className={isLiveModule ? 'animate-pulse-live' : undefined} />
+                                    <span>{item.name}</span>
+                                    {item.badge && (
+                                      <Badge variant="secondary" className="ml-auto text-xs">
+                                        {item.badge}
+                                      </Badge>
+                                    )}
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              )}
+                            </SidebarMenuSubItem>
+                          )
+                        })}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              )
+            })}
+          </SidebarMenu>
+        </SidebarGroup>
       </SidebarContent>
 
       {/* Footer with User */}
+      <SidebarSeparator />
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   )
 }

@@ -1,35 +1,50 @@
+'use client'
+
 import * as React from 'react'
+/* eslint-disable @next/next/no-img-element */
+import Link from 'next/link'
 import { ReactNode } from 'react'
 import { AppSidebar } from './app-sidebar'
 import { TopBar } from './top-bar'
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
-import { Separator } from '@/components/ui/separator'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { useTheme } from '@/contexts/theme-context'
 
 interface DashboardShellProps {
   children: ReactNode
 }
 
 export function DashboardShell({ children }: DashboardShellProps) {
+  const { theme } = useTheme()
+  const logoSrc = theme === 'dark' ? '/logo_bussola_dark_mode.svg' : '/logo_bussola.svg'
+
   return (
     <SidebarProvider
       style={{
         "--sidebar-width": "16rem",
         "--sidebar-width-icon": "3.5rem",
-        "--header-height": "3.5rem",
       } as React.CSSProperties}
     >
       <AppSidebar />
-      <SidebarInset className="flex flex-col h-screen overflow-hidden">
-        <header className="sticky top-0 z-50 flex h-[--header-height] shrink-0 items-center gap-2 border-b bg-background px-4 shadow-sm transition-[height] ease-linear">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <TopBar />
+      <SidebarInset className="bg-transparent md:rounded-none md:shadow-none">
+        <header className="relative flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+          <div className="pointer-events-none absolute inset-x-0 flex justify-center">
+            <Link href="/dashboard" className="pointer-events-auto flex items-center justify-center">
+              <img
+                src={logoSrc}
+                alt="Bússola ByDevIngá"
+                style={{ height: '40px', width: 'auto' }}
+              />
+            </Link>
+          </div>
+          <div className="flex w-full items-center gap-2 px-2">
+            <TopBar />
+          </div>
         </header>
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="w-full max-w-[1600px] mx-auto p-4 py-6 overflow-x-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-background shadow-sm">
+          <div className="flex h-full flex-col gap-4 overflow-auto p-4">
             {children}
           </div>
-        </main>
+        </div>
       </SidebarInset>
     </SidebarProvider>
   )

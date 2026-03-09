@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/table'
 import { logModuleAccess } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/client'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 // Tipos para jspdf-autotable
 declare module 'jspdf' {
@@ -820,16 +821,12 @@ export default function RupturaABCDPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <AlertTriangle className="h-6 w-6" />
-          Ruptura por Curva ABCD
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Análise de produtos em ruptura classificados por curva ABC
-        </p>
-      </div>
+      <PageHeader
+        section="Ruptura"
+        title="Ruptura ABCD"
+        description="Análise de produtos em ruptura classificados por curva ABC"
+        icon={AlertTriangle}
+      />
 
       {/* Filtros */}
       <Card>

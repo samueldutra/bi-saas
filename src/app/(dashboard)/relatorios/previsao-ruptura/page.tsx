@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
 import { logModuleAccess } from '@/lib/audit'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 import {
   Card,
@@ -865,16 +866,12 @@ export default function PrevisaoRupturaPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <TrendingDown className="h-6 w-6" />
-          Previsão de Ruptura
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Previsão de produtos que entrarão em ruptura baseado no histórico de vendas
-        </p>
-      </div>
+      <PageHeader
+        section="Ruptura"
+        title="Previsão de Ruptura"
+        description="Previsão de produtos que entrarão em ruptura baseado no histórico de vendas"
+        icon={TrendingDown}
+      />
 
       {/* Filtros */}
       <Card>

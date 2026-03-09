@@ -1,9 +1,18 @@
 'use client'
 
-import { Radio, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { House, Radio, RefreshCw } from 'lucide-react'
 
 import { MultiFilialFilter } from '@/components/filters'
 import { Button } from '@/components/ui/button'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 
 import { DASHBOARD_TEMPO_REAL_TEXT } from './config'
 import type { DashboardTempoRealHeaderProps } from './types'
@@ -20,6 +29,26 @@ export function DashboardTempoRealHeader({
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-col gap-2">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <Link href="/dashboard" aria-label="Início">
+                  <House className="size-4" />
+                  <span className="inline-block">Início</span>
+                </Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink>Visão Geral</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Dashboard Tempo Real</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
         <h1 className="flex items-center gap-2 text-2xl font-bold">
           <Radio className="h-6 w-6 animate-pulse-live" />
           {DASHBOARD_TEMPO_REAL_TEXT.header.title}

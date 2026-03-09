@@ -38,6 +38,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { logModuleAccess } from '@/lib/audit'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 // Tipos para jspdf-autotable
 declare module 'jspdf' {
@@ -417,7 +418,7 @@ export default function VendaCurvaPage() {
   }, [currentTenant?.supabase_schema])
 
   const maxFiliais = 5
-  const [isDirty, setIsDirty] = useState(true)
+  const [, setIsDirty] = useState(true)
   const [activeQueryKey, setActiveQueryKey] = useState<string | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<AppliedFilters | null>(null)
 
@@ -1086,16 +1087,12 @@ export default function VendaCurvaPage() {
   // Continua na próxima parte...
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ShoppingCart className="h-6 w-6" />
-          Vendas por Curva
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Análise de vendas por curva ABC de produtos
-        </p>
-      </div>
+      <PageHeader
+        section="Vendas"
+        title="Vendas por Curva"
+        description="Análise de vendas por curva ABC de produtos"
+        icon={ShoppingCart}
+      />
 
       {/* Filtros */}
       <Card>

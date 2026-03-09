@@ -17,6 +17,7 @@ import { logModuleAccess } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { PageHeader } from '@/components/dashboard/page-header'
 
 // Tipos para jspdf-autotable
 declare module 'jspdf' {
@@ -314,16 +315,12 @@ export default function ProdutosSemVendasPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ChartCandlestick className="h-6 w-6" />
-          Produtos sem Vendas
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Produtos sem movimentação de vendas no período definido
-        </p>
-      </div>
+      <PageHeader
+        section="Vendas"
+        title="Produtos Sem Venda"
+        description="Produtos sem movimentação de vendas no período definido"
+        icon={ChartCandlestick}
+      />
 
       {/* Filtros */}
       <Card>
