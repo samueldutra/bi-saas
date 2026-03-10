@@ -97,7 +97,7 @@ interface PdfCellHookData {
     height: number
     styles: {
       fontStyle?: string
-      fillColor?: number[]
+      fillColor?: unknown
     }
   }
   column: {
