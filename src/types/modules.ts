@@ -74,7 +74,7 @@ export const SYSTEM_MODULES: ModuleConfig[] = [
   },
   {
     id: 'metas_setor',
-    label: 'Metas > Meta por Setor',
+    label: 'Metas > Meta de Vendas de Setor',
     description: 'Gestão de metas por setor de negócio',
     order: 6,
     category: 'metas',

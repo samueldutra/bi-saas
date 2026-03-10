@@ -126,7 +126,7 @@ const metasNavigation: NavigationItem[] = [
     moduleId: 'metas_mensal',
   },
   {
-    name: 'Meta por Setor',
+    name: 'Meta de Vendas Setor',
     href: '/metas/setor',
     icon: Target,
     moduleId: 'metas_setor',

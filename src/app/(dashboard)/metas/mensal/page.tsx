@@ -540,28 +540,12 @@ export default function MetaMensalPage() {
   }
 
   const renderMetaMargemStatus = (
-    metaMargemPercentual: number | null | undefined,
-    margemRealizada: number,
-    shouldDisplayStatus: boolean
+    metaMargemPercentual: number | null | undefined
   ) => {
     if (metaMargemPercentual == null || metaMargemPercentual <= 0) {
       return '-'
     }
-
-    if (!shouldDisplayStatus) {
-      return formatPlainPercentage(metaMargemPercentual)
-    }
-
-    return (
-      <span className="inline-flex items-center gap-2">
-        {margemRealizada >= metaMargemPercentual ? (
-          <CircleArrowUp className="h-4 w-4 text-green-600" />
-        ) : (
-          <CircleArrowDown className="h-4 w-4 text-red-600" />
-        )}
-        {formatPlainPercentage(metaMargemPercentual)}
-      </span>
-    )
+    return formatPlainPercentage(metaMargemPercentual)
   }
 
   const getStatusDirection = (
@@ -1792,13 +1776,22 @@ export default function MetaMensalPage() {
                       ) : null}
                       <TableCell>{formatCurrency(row.lucro_bruto)}</TableCell>
                       <TableCell>
-                        {renderMetaMargemStatus(
-                          row.meta_margem_percentual,
-                          row.margem_bruta,
-                          true
+                        {renderMetaMargemStatus(row.meta_margem_percentual)}
+                      </TableCell>
+                      <TableCell>
+                        {row.meta_margem_percentual != null && row.meta_margem_percentual > 0 ? (
+                          <span className="inline-flex items-center gap-2">
+                            {row.margem_bruta >= row.meta_margem_percentual ? (
+                              <CircleArrowUp className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <CircleArrowDown className="h-4 w-4 text-red-600" />
+                            )}
+                            {formatPlainPercentage(row.margem_bruta)}
+                          </span>
+                        ) : (
+                          formatPlainPercentage(row.margem_bruta)
                         )}
                       </TableCell>
-                      <TableCell>{formatPlainPercentage(row.margem_bruta)}</TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="bg-muted/40 font-medium">
@@ -1840,13 +1833,22 @@ export default function MetaMensalPage() {
                     ) : null}
                     <TableCell>{formatCurrency(summaryTotals.lucroBruto)}</TableCell>
                     <TableCell>
-                      {renderMetaMargemStatus(
-                        summaryTotals.mediaMetaMargem,
-                        summaryTotals.margemBruta,
-                        true
+                      {renderMetaMargemStatus(summaryTotals.mediaMetaMargem)}
+                    </TableCell>
+                    <TableCell>
+                      {summaryTotals.mediaMetaMargem != null ? (
+                        <span className="inline-flex items-center gap-2">
+                          {summaryTotals.margemBruta >= summaryTotals.mediaMetaMargem ? (
+                            <CircleArrowUp className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <CircleArrowDown className="h-4 w-4 text-red-600" />
+                          )}
+                          {formatPlainPercentage(summaryTotals.margemBruta)}
+                        </span>
+                      ) : (
+                        formatPlainPercentage(summaryTotals.margemBruta)
                       )}
                     </TableCell>
-                    <TableCell>{formatPlainPercentage(summaryTotals.margemBruta)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -1961,8 +1963,6 @@ export default function MetaMensalPage() {
                     const percentualAtingidoDia = group.total_meta > 0
                       ? (group.total_realizado / group.total_meta) * 100
                       : 0
-                    const margemRealizadaDia = getMargemRealizada(group.total_realizado, group.total_lucro)
-                    
                     // Verificar se deve mostrar diferença (não mostrar se for dia futuro com realizado zero)
                     const isDateFuture = isTodayOrFuture(dateKey)
                     const hasNoSales = group.total_realizado === 0
@@ -2028,15 +2028,22 @@ export default function MetaMensalPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {renderMetaMargemStatus(
-                              group.media_meta_margem_percentual,
-                              margemRealizadaDia,
-                              showDifference
-                            )}
+                            {renderMetaMargemStatus(group.media_meta_margem_percentual)}
                           </TableCell>
                           <TableCell>
                             {showDifference ? (
-                              `${group.margem_bruta.toFixed(2)}%`
+                              group.media_meta_margem_percentual > 0 ? (
+                                <span className="inline-flex items-center gap-2">
+                                  {group.margem_bruta >= group.media_meta_margem_percentual ? (
+                                    <CircleArrowUp className="h-4 w-4 text-green-600" />
+                                  ) : (
+                                    <CircleArrowDown className="h-4 w-4 text-red-600" />
+                                  )}
+                                  {`${group.margem_bruta.toFixed(2)}%`}
+                                </span>
+                              ) : (
+                                `${group.margem_bruta.toFixed(2)}%`
+                              )
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
@@ -2048,7 +2055,6 @@ export default function MetaMensalPage() {
                           const percentualAtingidoMeta = meta.valor_meta > 0
                             ? (meta.valor_realizado / meta.valor_meta) * 100
                             : 0
-                          const margemRealizadaMeta = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
                           const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                           const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                           const showMetaDifference = shouldShowDifference(meta)
@@ -2151,17 +2157,24 @@ export default function MetaMensalPage() {
                                 )}
                               </TableCell>
                               <TableCell className="text-sm">
-                                {renderMetaMargemStatus(
-                                  meta.meta_margem_percentual,
-                                  margemRealizadaMeta,
-                                  showMetaDifference
-                                )}
+                                {renderMetaMargemStatus(meta.meta_margem_percentual)}
                               </TableCell>
                               <TableCell className="text-sm">
                                 {showMetaDifference ? (
                                   (() => {
                                     const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
-                                    return `${margem.toFixed(2)}%`
+                                    return meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0 ? (
+                                      <span className="inline-flex items-center gap-2">
+                                        {margem >= meta.meta_margem_percentual ? (
+                                          <CircleArrowUp className="h-4 w-4 text-green-600" />
+                                        ) : (
+                                          <CircleArrowDown className="h-4 w-4 text-red-600" />
+                                        )}
+                                        {`${margem.toFixed(2)}%`}
+                                      </span>
+                                    ) : (
+                                      `${margem.toFixed(2)}%`
+                                    )
                                   })()
                                 ) : (
                                   <span className="text-muted-foreground">-</span>
@@ -2240,7 +2253,6 @@ export default function MetaMensalPage() {
                       const percentualAtingidoMeta = meta.valor_meta > 0
                         ? (meta.valor_realizado / meta.valor_meta) * 100
                         : 0
-                      const margemRealizadaMeta = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
                       const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                       const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                       const showDiff = shouldShowDifference(meta)
@@ -2339,17 +2351,24 @@ export default function MetaMensalPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {renderMetaMargemStatus(
-                              meta.meta_margem_percentual,
-                              margemRealizadaMeta,
-                              showDiff
-                            )}
+                            {renderMetaMargemStatus(meta.meta_margem_percentual)}
                           </TableCell>
                           <TableCell>
                             {showDiff ? (
                               (() => {
                                 const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
-                                return `${margem.toFixed(2)}%`
+                                return meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0 ? (
+                                  <span className="inline-flex items-center gap-2">
+                                    {margem >= meta.meta_margem_percentual ? (
+                                      <CircleArrowUp className="h-4 w-4 text-green-600" />
+                                    ) : (
+                                      <CircleArrowDown className="h-4 w-4 text-red-600" />
+                                    )}
+                                    {`${margem.toFixed(2)}%`}
+                                  </span>
+                                ) : (
+                                  `${margem.toFixed(2)}%`
+                                )
                               })()
                             ) : (
                               <span className="text-muted-foreground">-</span>
