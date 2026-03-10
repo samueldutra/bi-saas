@@ -14,6 +14,7 @@ const generateMetaSchema = z.object({
   mes: z.number().int().min(1).max(12),
   ano: z.number().int().min(2020).max(2100),
   metaPercentual: z.number().min(-100).max(1000),
+  metaMargemPercentual: z.number().min(0).max(100).optional().nullable(),
   dataReferenciaInicial: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   filialId: z.union([z.string(), z.number()]).optional(),
 })
@@ -38,7 +39,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { schema, filialId: requestedFilialId, mes, ano, metaPercentual, dataReferenciaInicial } = validation.data
+    const {
+      schema,
+      filialId: requestedFilialId,
+      mes,
+      ano,
+      metaPercentual,
+      metaMargemPercentual,
+      dataReferenciaInicial
+    } = validation.data
 
     const hasAccess = await validateSchemaAccess(supabase, user, schema)
     if (!hasAccess) {
@@ -103,6 +112,7 @@ export async function POST(request: NextRequest) {
       mes,
       ano,
       metaPercentual,
+      metaMargemPercentual,
       dataReferenciaInicial
     })
 
@@ -122,6 +132,7 @@ export async function POST(request: NextRequest) {
       p_mes: mes,
       p_ano: ano,
       p_meta_percentual: metaPercentual,
+      p_meta_margem_percentual: metaMargemPercentual ?? null,
       p_data_referencia_inicial: dataReferenciaInicial
     })
 
@@ -134,6 +145,7 @@ export async function POST(request: NextRequest) {
         p_mes: mes,
         p_ano: ano,
         p_meta_percentual: metaPercentual,
+        p_meta_margem_percentual: metaMargemPercentual ?? null,
         p_data_referencia_inicial: dataReferenciaInicial
       })
       data = fallback.data

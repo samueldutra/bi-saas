@@ -30,12 +30,14 @@ interface Meta {
   data: string
   dia_semana: string
   meta_percentual: number
+  meta_margem_percentual?: number | null
   data_referencia: string
   valor_referencia: number
   valor_meta: number
   valor_realizado: number
   custo_realizado: number
   lucro_realizado: number
+  margem_realizada?: number
   diferenca: number
   diferenca_percentual: number
 }
@@ -57,6 +59,7 @@ interface MetaSummaryRow {
   valor_realizado: number
   percentual_atingido: number
   percentual_atingido_acumulado_d1: number
+  meta_margem_percentual?: number | null
   lucro_bruto: number
   margem_bruta: number
 }
@@ -73,6 +76,7 @@ interface GroupedByDate {
     total_lucro: number
     total_diferenca: number
     media_meta_percentual: number
+    media_meta_margem_percentual: number
     diferenca_percentual: number
     margem_bruta: number
   }
@@ -81,6 +85,40 @@ interface GroupedByDate {
 interface LoadReportOptions {
   refreshRealized?: boolean
   forceRefreshRealized?: boolean
+}
+
+type PdfStatusDirection = 'up' | 'down' | null
+
+interface PdfCellHookData {
+  cell: {
+    x: number
+    y: number
+    width: number
+    height: number
+    styles: {
+      fontStyle?: string
+      fillColor?: number[]
+    }
+  }
+  column: {
+    index: number
+  }
+  row: {
+    index: number
+    section: string
+  }
+  doc: {
+    setFillColor: (r: number, g: number, b: number) => void
+    triangle: (
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      x3: number,
+      y3: number,
+      style: 'F' | 'FD' | 'DF' | 'S'
+    ) => void
+  }
 }
 
 const summaryFilialBadgeClasses = [
@@ -121,13 +159,16 @@ export default function MetaMensalPage() {
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({})
 
   // Estados do formulário de criação
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [salesDialogOpen, setSalesDialogOpen] = useState(false)
+  const [marginDialogOpen, setMarginDialogOpen] = useState(false)
   const [formMes, setFormMes] = useState(currentDate.getMonth() + 1)
   const [formAno, setFormAno] = useState(currentDate.getFullYear())
   const [formFilialId, setFormFilialId] = useState<string>('')
   const [formMetaPercentual, setFormMetaPercentual] = useState('')
+  const [formMetaMargemPercentual, setFormMetaMargemPercentual] = useState('')
   const [formDataReferencia, setFormDataReferencia] = useState<Date | undefined>()
-  const [generating, setGenerating] = useState(false)
+  const [isGeneratingSalesMeta, setIsGeneratingSalesMeta] = useState(false)
+  const [isGeneratingMarginMeta, setIsGeneratingMarginMeta] = useState(false)
 
   // Estados para edição inline
   const [editingCell, setEditingCell] = useState<{ id: number; field: 'percentual' | 'valor' } | null>(null)
@@ -352,26 +393,32 @@ export default function MetaMensalPage() {
     loadReport(filiais, mesParam, anoParam, { refreshRealized: true })
   }
 
-  const handleGenerateMetas = async () =>  {
+  const reloadCurrentReport = () => {
+    lastUpdatedPeriodKeyRef.current = ''
+    loadReport(filiaisSelecionadas, mes, ano, { refreshRealized: true })
+  }
+
+  const handleGenerateSalesMeta = async () =>  {
     if (!currentTenant?.supabase_schema) return
     if (!formFilialId || !formMetaPercentual || !formDataReferencia) {
       toast.error('Campos obrigatórios', {
-        description: 'Preencha todos os campos para gerar as metas'
+        description: 'Preencha todos os campos para gerar a meta de vendas'
       })
       return
     }
 
-    setGenerating(true)
+    setIsGeneratingSalesMeta(true)
     try {
       const response = await fetch('/api/metas/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           schema: currentTenant.supabase_schema,
-          filialId: parseInt(formFilialId),
+          filialId: parseInt(formFilialId, 10),
           mes: formMes,
           ano: formAno,
           metaPercentual: parseFloat(formMetaPercentual),
+          metaMargemPercentual: null,
           dataReferenciaInicial: format(formDataReferencia, 'yyyy-MM-dd')
         })
       })
@@ -379,24 +426,69 @@ export default function MetaMensalPage() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        toast.success('Metas geradas com sucesso', {
+        toast.success('Meta de vendas gerada com sucesso', {
           description: data.message || `${data.metas_criadas || 31} metas criadas para o período`
         })
-        setDialogOpen(false)
-        lastUpdatedPeriodKeyRef.current = ''
-        loadReport(filiaisSelecionadas, mes, ano, { refreshRealized: true })
+        setSalesDialogOpen(false)
+        reloadCurrentReport()
       } else {
-        toast.error('Erro ao gerar metas', {
+        toast.error('Erro ao gerar meta de vendas', {
           description: data.error || 'Verifique os dados e tente novamente'
         })
       }
     } catch (error) {
-      console.error('Error generating metas:', error)
-      toast.error('Erro ao gerar metas', {
+      console.error('Error generating sales metas:', error)
+      toast.error('Erro ao gerar meta de vendas', {
         description: 'Ocorreu um erro inesperado. Tente novamente.'
       })
     } finally {
-      setGenerating(false)
+      setIsGeneratingSalesMeta(false)
+    }
+  }
+
+  const handleGenerateMarginMeta = async () =>  {
+    if (!currentTenant?.supabase_schema) return
+    if (!formFilialId || !formMetaMargemPercentual) {
+      toast.error('Campos obrigatórios', {
+        description: 'Preencha todos os campos para gerar a meta de margem'
+      })
+      return
+    }
+
+    setIsGeneratingMarginMeta(true)
+    try {
+      const response = await fetch('/api/metas/generate-margin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schema: currentTenant.supabase_schema,
+          filialId: parseInt(formFilialId, 10),
+          mes: formMes,
+          ano: formAno,
+          metaMargemPercentual: parseFloat(formMetaMargemPercentual)
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success('Meta de margem gerada com sucesso', {
+          description: data.message || `${data.metas_atualizadas || 0} metas atualizadas para o período`
+        })
+        setMarginDialogOpen(false)
+        reloadCurrentReport()
+      } else {
+        toast.error('Erro ao gerar meta de margem', {
+          description: data.error || 'Verifique os dados e tente novamente'
+        })
+      }
+    } catch (error) {
+      console.error('Error generating margin metas:', error)
+      toast.error('Erro ao gerar meta de margem', {
+        description: 'Ocorreu um erro inesperado. Tente novamente.'
+      })
+    } finally {
+      setIsGeneratingMarginMeta(false)
     }
   }
 
@@ -442,6 +534,87 @@ export default function MetaMensalPage() {
     return true
   }
 
+  const getMargemRealizada = (valorRealizado: number, lucroRealizado: number) => {
+    if (valorRealizado <= 0) return 0
+    return (lucroRealizado / valorRealizado) * 100
+  }
+
+  const renderMetaMargemStatus = (
+    metaMargemPercentual: number | null | undefined,
+    margemRealizada: number,
+    shouldDisplayStatus: boolean
+  ) => {
+    if (metaMargemPercentual == null || metaMargemPercentual <= 0) {
+      return '-'
+    }
+
+    if (!shouldDisplayStatus) {
+      return formatPlainPercentage(metaMargemPercentual)
+    }
+
+    return (
+      <span className="inline-flex items-center gap-2">
+        {margemRealizada >= metaMargemPercentual ? (
+          <CircleArrowUp className="h-4 w-4 text-green-600" />
+        ) : (
+          <CircleArrowDown className="h-4 w-4 text-red-600" />
+        )}
+        {formatPlainPercentage(metaMargemPercentual)}
+      </span>
+    )
+  }
+
+  const getStatusDirection = (
+    condition: boolean,
+    shouldDisplayStatus: boolean
+  ): PdfStatusDirection => {
+    if (!shouldDisplayStatus) return null
+    return condition ? 'up' : 'down'
+  }
+
+  const formatPdfStatusValue = (value: string, direction: PdfStatusDirection) => {
+    return direction ? `   ${value}` : value
+  }
+
+  const drawPdfStatusIcon = (
+    data: PdfCellHookData,
+    statusMatrix: PdfStatusDirection[][]
+  ) => {
+    if (data.row.section !== 'body') return
+
+    const direction = statusMatrix[data.row.index]?.[data.column.index] ?? null
+    if (!direction) return
+
+    const centerX = data.cell.x + 2.6
+    const centerY = data.cell.y + (data.cell.height / 2)
+    const size = 1.1
+
+    if (direction === 'up') {
+      data.doc.setFillColor(22, 163, 74)
+      data.doc.triangle(
+        centerX,
+        centerY - size,
+        centerX - size,
+        centerY + size,
+        centerX + size,
+        centerY + size,
+        'F'
+      )
+      return
+    }
+
+    data.doc.setFillColor(220, 38, 38)
+    data.doc.triangle(
+      centerX - size,
+      centerY - size,
+      centerX + size,
+      centerY - size,
+      centerX,
+      centerY + size,
+      'F'
+    )
+  }
+
   const branchNamesById = useMemo(() => {
     return new Map(
       branches.map((branch) => [branch.value, branch.label])
@@ -485,6 +658,7 @@ export default function MetaMensalPage() {
           total_lucro: 0,
           total_diferenca: 0,
           media_meta_percentual: 0,
+          media_meta_margem_percentual: 0,
           diferenca_percentual: 0,
           margem_bruta: 0
         }
@@ -506,6 +680,7 @@ export default function MetaMensalPage() {
 
       if (numFiliais > 0) {
         group.media_meta_percentual = group.metas.reduce((sum, m) => sum + (m.meta_percentual || 0), 0) / numFiliais
+        group.media_meta_margem_percentual = group.metas.reduce((sum, m) => sum + (m.meta_margem_percentual || 0), 0) / numFiliais
 
         if (group.total_meta > 0) {
           group.diferenca_percentual = ((group.total_realizado - group.total_meta) / group.total_meta) * 100
@@ -556,6 +731,10 @@ export default function MetaMensalPage() {
     const valorRealizado = visibleSummaryRows.reduce((sum, row) => sum + row.valor_realizado, 0)
     const valorMetaAcumuladaD1 = visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta_acumulada_d1, 0)
     const lucroBruto = visibleSummaryRows.reduce((sum, row) => sum + row.lucro_bruto, 0)
+    const metaMargemRows = visibleSummaryRows.filter((row) => row.meta_margem_percentual != null)
+    const mediaMetaMargem = metaMargemRows.length > 0
+      ? metaMargemRows.reduce((sum, row) => sum + (row.meta_margem_percentual || 0), 0) / metaMargemRows.length
+      : null
 
     return {
       valorMeta,
@@ -563,6 +742,7 @@ export default function MetaMensalPage() {
       percentualAtingido: valorMeta > 0 ? (valorRealizado / valorMeta) * 100 : 0,
       valorMetaAcumuladaD1,
       percentualAtingidoAcumuladoD1: valorMetaAcumuladaD1 > 0 ? (valorRealizado / valorMetaAcumuladaD1) * 100 : 0,
+      mediaMetaMargem,
       lucroBruto,
       margemBruta: valorRealizado > 0 ? (lucroBruto / valorRealizado) * 100 : 0,
     }
@@ -736,35 +916,104 @@ export default function MetaMensalPage() {
         '% Atingido Mês',
         ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
         'Lucro Bruto',
+        'Meta Margem',
         'Margem Bruta',
       ]]
 
-      const body = [
-        ...visibleSummaryRows.map((row) => ([
-          getFilialName(row.filial_id),
-          formatCurrency(row.valor_meta),
-          formatCurrency(row.valor_realizado),
-          formatPlainPercentage(row.percentual_atingido),
-          ...(isCurrentSelectedMonth ? [
-            formatCurrency(row.valor_meta_acumulada_d1),
-            formatPlainPercentage(row.percentual_atingido_acumulado_d1),
-          ] : []),
-          formatCurrency(row.lucro_bruto),
-          formatPlainPercentage(row.margem_bruta),
-        ])),
-        [
-          'Todas',
-          formatCurrency(summaryTotals.valorMeta),
-          formatCurrency(summaryTotals.valorRealizado),
-          formatPlainPercentage(summaryTotals.percentualAtingido),
-          ...(isCurrentSelectedMonth ? [
-            formatCurrency(summaryTotals.valorMetaAcumuladaD1),
-            formatPlainPercentage(summaryTotals.percentualAtingidoAcumuladoD1),
-          ] : []),
-          formatCurrency(summaryTotals.lucroBruto),
-          formatPlainPercentage(summaryTotals.margemBruta),
-        ]
-      ]
+      const body: string[][] = []
+      const statusMatrix: PdfStatusDirection[][] = []
+
+      visibleSummaryRows.forEach((row) => {
+        const rowCells: string[] = []
+        const rowStatuses: PdfStatusDirection[] = []
+
+        rowCells.push(getFilialName(row.filial_id))
+        rowStatuses.push(null)
+
+        rowCells.push(formatCurrency(row.valor_meta))
+        rowStatuses.push(null)
+
+        rowCells.push(formatCurrency(row.valor_realizado))
+        rowStatuses.push(null)
+
+        const atingidoMesDirection = isCurrentSelectedMonth
+          ? null
+          : getStatusDirection(row.percentual_atingido >= 100, true)
+        rowCells.push(formatPdfStatusValue(formatPlainPercentage(row.percentual_atingido), atingidoMesDirection))
+        rowStatuses.push(atingidoMesDirection)
+
+        if (isCurrentSelectedMonth) {
+          rowCells.push(formatCurrency(row.valor_meta_acumulada_d1))
+          rowStatuses.push(null)
+
+          const acumuladoDirection = getStatusDirection(row.percentual_atingido_acumulado_d1 >= 100, true)
+          rowCells.push(formatPdfStatusValue(formatPlainPercentage(row.percentual_atingido_acumulado_d1), acumuladoDirection))
+          rowStatuses.push(acumuladoDirection)
+        }
+
+        rowCells.push(formatCurrency(row.lucro_bruto))
+        rowStatuses.push(null)
+
+        const metaMargemDirection = row.meta_margem_percentual != null && row.meta_margem_percentual > 0
+          ? getStatusDirection(row.margem_bruta >= row.meta_margem_percentual, true)
+          : null
+        rowCells.push(
+          row.meta_margem_percentual != null && row.meta_margem_percentual > 0
+            ? formatPdfStatusValue(formatPlainPercentage(row.meta_margem_percentual), metaMargemDirection)
+            : '-'
+        )
+        rowStatuses.push(metaMargemDirection)
+
+        rowCells.push(formatPlainPercentage(row.margem_bruta))
+        rowStatuses.push(null)
+
+        body.push(rowCells)
+        statusMatrix.push(rowStatuses)
+      })
+
+      const totalCells: string[] = []
+      const totalStatuses: PdfStatusDirection[] = []
+
+      totalCells.push('Todas')
+      totalStatuses.push(null)
+      totalCells.push(formatCurrency(summaryTotals.valorMeta))
+      totalStatuses.push(null)
+      totalCells.push(formatCurrency(summaryTotals.valorRealizado))
+      totalStatuses.push(null)
+
+      const totalAtingidoDirection = isCurrentSelectedMonth
+        ? null
+        : getStatusDirection(summaryTotals.percentualAtingido >= 100, true)
+      totalCells.push(formatPdfStatusValue(formatPlainPercentage(summaryTotals.percentualAtingido), totalAtingidoDirection))
+      totalStatuses.push(totalAtingidoDirection)
+
+      if (isCurrentSelectedMonth) {
+        totalCells.push(formatCurrency(summaryTotals.valorMetaAcumuladaD1))
+        totalStatuses.push(null)
+
+        const totalAcumuladoDirection = getStatusDirection(summaryTotals.percentualAtingidoAcumuladoD1 >= 100, true)
+        totalCells.push(formatPdfStatusValue(formatPlainPercentage(summaryTotals.percentualAtingidoAcumuladoD1), totalAcumuladoDirection))
+        totalStatuses.push(totalAcumuladoDirection)
+      }
+
+      totalCells.push(formatCurrency(summaryTotals.lucroBruto))
+      totalStatuses.push(null)
+
+      const totalMetaMargemDirection = summaryTotals.mediaMetaMargem != null && summaryTotals.mediaMetaMargem > 0
+        ? getStatusDirection(summaryTotals.margemBruta >= summaryTotals.mediaMetaMargem, true)
+        : null
+      totalCells.push(
+        summaryTotals.mediaMetaMargem != null && summaryTotals.mediaMetaMargem > 0
+          ? formatPdfStatusValue(formatPlainPercentage(summaryTotals.mediaMetaMargem), totalMetaMargemDirection)
+          : '-'
+      )
+      totalStatuses.push(totalMetaMargemDirection)
+
+      totalCells.push(formatPlainPercentage(summaryTotals.margemBruta))
+      totalStatuses.push(null)
+
+      body.push(totalCells)
+      statusMatrix.push(totalStatuses)
 
       doc.setFontSize(16)
       doc.text(`Resumo Meta mensal: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`, 14, 16)
@@ -787,12 +1036,14 @@ export default function MetaMensalPage() {
           fillColor: [226, 232, 240],
           textColor: [15, 23, 42],
         },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        didParseCell: (data: any) => {
+        didParseCell: (data: PdfCellHookData) => {
           if (data.row.index === body.length - 1 && data.row.section === 'body') {
             data.cell.styles.fontStyle = 'bold'
             data.cell.styles.fillColor = [248, 250, 252]
           }
+        },
+        didDrawCell: (data: PdfCellHookData) => {
+          drawPdfStatusIcon(data, statusMatrix)
         },
       })
 
@@ -832,6 +1083,7 @@ export default function MetaMensalPage() {
             'Valor Realizado',
             '% Atingido',
             'Lucro Bruto',
+            'Meta Margem',
             'Margem Bruta',
           ]]
         : [[
@@ -844,50 +1096,110 @@ export default function MetaMensalPage() {
             'Valor Realizado',
             '% Atingido',
             'Lucro Bruto',
+            'Meta Margem',
             'Margem Bruta',
           ]]
 
-      const body =
-        filiaisSelecionadas.length !== 1
-          ? groupedEntries.map(([, group]) => {
-              const percentualAtingidoDia = group.total_meta > 0
-                ? (group.total_realizado / group.total_meta) * 100
-                : 0
+      const body: string[][] = []
+      const statusMatrix: PdfStatusDirection[][] = []
 
-              return [
-                format(parseISO(group.data), 'dd/MM/yyyy'),
-                group.metas[0]?.dia_semana || '-',
-                formatCurrency(group.total_valor_referencia),
-                formatPlainPercentage(group.media_meta_percentual),
-                formatCurrency(group.total_meta),
-                formatCurrency(group.total_realizado),
-                formatPlainPercentage(percentualAtingidoDia),
-                formatCurrency(group.total_lucro),
-                formatPlainPercentage(group.margem_bruta),
-              ]
-            })
-          : filteredMetas.map((meta) => {
-              const percentualAtingidoMeta = meta.valor_meta > 0
-                ? (meta.valor_realizado / meta.valor_meta) * 100
-                : 0
+      if (filiaisSelecionadas.length !== 1) {
+        groupedEntries.forEach(([dateKey, group]) => {
+          const percentualAtingidoDia = group.total_meta > 0
+            ? (group.total_realizado / group.total_meta) * 100
+            : 0
+          const margemRealizadaDia = getMargemRealizada(group.total_realizado, group.total_lucro)
+          const isDateFuture = isTodayOrFuture(dateKey)
+          const hasNoSales = group.total_realizado === 0
+          const showDifference = !(isDateFuture && hasNoSales)
+          const margemDirection = group.media_meta_margem_percentual > 0
+            ? getStatusDirection(margemRealizadaDia >= group.media_meta_margem_percentual, showDifference)
+            : null
+          const atingidoDirection = getStatusDirection(percentualAtingidoDia >= 100, showDifference)
 
-              const margem = meta.valor_realizado > 0
-                ? ((meta.lucro_realizado || 0) / meta.valor_realizado) * 100
-                : 0
+          body.push([
+            format(parseISO(group.data), 'dd/MM/yyyy'),
+            group.metas[0]?.dia_semana || '-',
+            formatCurrency(group.total_valor_referencia),
+            formatPlainPercentage(group.media_meta_percentual),
+            formatCurrency(group.total_meta),
+            formatCurrency(group.total_realizado),
+            showDifference
+              ? formatPdfStatusValue(formatPlainPercentage(percentualAtingidoDia), atingidoDirection)
+              : '-',
+            showDifference
+              ? formatCurrency(group.total_lucro)
+              : '-',
+            group.media_meta_margem_percentual > 0
+              ? formatPdfStatusValue(formatPlainPercentage(group.media_meta_margem_percentual), margemDirection)
+              : '-',
+            showDifference
+              ? formatPlainPercentage(group.margem_bruta)
+              : '-',
+          ])
 
-              return [
-                format(parseISO(meta.data), 'dd/MM/yyyy'),
-                meta.dia_semana,
-                meta.data_referencia ? format(parseISO(meta.data_referencia), 'dd/MM/yyyy') : '-',
-                formatCurrency(meta.valor_referencia),
-                formatPlainPercentage(meta.meta_percentual),
-                formatCurrency(meta.valor_meta),
-                formatCurrency(meta.valor_realizado),
-                formatPlainPercentage(percentualAtingidoMeta),
-                formatCurrency(meta.lucro_realizado || 0),
-                formatPlainPercentage(margem),
-              ]
-            })
+          statusMatrix.push([
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            atingidoDirection,
+            null,
+            margemDirection,
+            null,
+          ])
+        })
+      } else {
+        filteredMetas.forEach((meta) => {
+          const percentualAtingidoMeta = meta.valor_meta > 0
+            ? (meta.valor_realizado / meta.valor_meta) * 100
+            : 0
+          const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
+          const showDiff = shouldShowDifference(meta)
+          const atingidoDirection = getStatusDirection(percentualAtingidoMeta >= 100, showDiff)
+          const margemDirection = meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
+            ? getStatusDirection(margem >= meta.meta_margem_percentual, showDiff)
+            : null
+
+          body.push([
+            format(parseISO(meta.data), 'dd/MM/yyyy'),
+            meta.dia_semana,
+            meta.data_referencia ? format(parseISO(meta.data_referencia), 'dd/MM/yyyy') : '-',
+            formatCurrency(meta.valor_referencia),
+            formatPlainPercentage(meta.meta_percentual),
+            formatCurrency(meta.valor_meta),
+            formatCurrency(meta.valor_realizado),
+            showDiff
+              ? formatPdfStatusValue(formatPlainPercentage(percentualAtingidoMeta), atingidoDirection)
+              : '-',
+            showDiff
+              ? formatCurrency(meta.lucro_realizado || 0)
+              : '-',
+            meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
+              ? formatPdfStatusValue(formatPlainPercentage(meta.meta_margem_percentual), margemDirection)
+              : '-',
+            showDiff
+              ? formatPlainPercentage(margem)
+              : '-',
+          ])
+
+          statusMatrix.push([
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            atingidoDirection,
+            null,
+            margemDirection,
+            null,
+          ])
+        })
+      }
 
       doc.setFontSize(16)
       doc.text(`Resumo de Metas por Dia: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`, 14, 16)
@@ -905,6 +1217,9 @@ export default function MetaMensalPage() {
         headStyles: {
           fillColor: [241, 245, 249],
           textColor: [15, 23, 42],
+        },
+        didDrawCell: (data: PdfCellHookData) => {
+          drawPdfStatusIcon(data, statusMatrix)
         },
       })
 
@@ -971,18 +1286,18 @@ export default function MetaMensalPage() {
             )}
           </Button>
 
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog open={salesDialogOpen} onOpenChange={setSalesDialogOpen}>
             <DialogTrigger asChild>
               <Button className="h-10">
                 <PlusIcon className="mr-2 h-4 w-4" />
-                Cadastrar Meta
+                Gerar Meta de Vendas
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Gerar Meta de Vendas Geral</DialogTitle>
                 <DialogDescription>
-                  Preencha os dados para gerar as metas do mês. Se já existirem metas para o período, elas serão substituídas.
+                  Preencha os dados para gerar as metas de vendas do mês. Se já existirem metas para o período, elas serão substituídas.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -1063,17 +1378,117 @@ export default function MetaMensalPage() {
                   />
                 </div>
                 <Button
-                  onClick={handleGenerateMetas}
-                  disabled={generating}
+                  onClick={handleGenerateSalesMeta}
+                  disabled={isGeneratingSalesMeta}
                   className="w-full"
                 >
-                  {generating ? (
+                  {isGeneratingSalesMeta ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Gerando...
                     </>
                   ) : (
-                    'Gerar Metas'
+                    'Gerar Meta de Vendas'
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={marginDialogOpen} onOpenChange={setMarginDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="h-10" variant="outline">
+                <PlusIcon className="mr-2 h-4 w-4" />
+                Gerar Meta de Margem
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Gerar Meta de Margem</DialogTitle>
+                <DialogDescription>
+                  Preencha os dados para gerar a meta de margem do mês. Se já existirem metas para o período, a margem será atualizada.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-3 text-sm text-blue-900 dark:text-blue-200">
+                  <p className="font-medium">ℹ️ Atenção:</p>
+                  <p className="mt-1">Ao gerar meta de margem para um período já cadastrado, a margem das metas existentes será substituída pelo novo valor.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="form-margin-mes">Mês</Label>
+                    <Select value={formMes.toString()} onValueChange={(v) => setFormMes(parseInt(v))}>
+                      <SelectTrigger id="form-margin-mes">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                          <SelectItem key={m} value={m.toString()}>
+                            {format(new Date(2024, m - 1, 1), 'MMMM', { locale: ptBR })}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="form-margin-ano">Ano</Label>
+                    <Select value={formAno.toString()} onValueChange={(v) => setFormAno(parseInt(v))}>
+                      <SelectTrigger id="form-margin-ano">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 2 + i).map((y) => (
+                          <SelectItem key={y} value={y.toString()}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="form-margin-filial">Filial</Label>
+                  <Select value={formFilialId} onValueChange={setFormFilialId}>
+                    <SelectTrigger id="form-margin-filial">
+                      <SelectValue placeholder="Selecione a filial" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.value} value={branch.value}>
+                          {branch.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="form-margin-meta">Meta Margem (%)</Label>
+                  <Input
+                    id="form-margin-meta"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="Ex: 28"
+                    value={formMetaMargemPercentual}
+                    onChange={(e) => setFormMetaMargemPercentual(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Usado para acompanhar a margem bruta alvo do período.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleGenerateMarginMeta}
+                  disabled={isGeneratingMarginMeta}
+                  className="w-full"
+                >
+                  {isGeneratingMarginMeta ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Gerando...
+                    </>
+                  ) : (
+                    'Gerar Meta de Margem'
                   )}
                 </Button>
               </div>
@@ -1287,17 +1702,50 @@ export default function MetaMensalPage() {
                 <TableHeader className="[&_tr]:bg-muted/50">
                   <TableRow>
                     <TableHead className="w-[120px] pl-4">Filial</TableHead>
-                    <TableHead>Valor Meta Mês</TableHead>
-                    <TableHead>Valor Realizado Mês</TableHead>
-                    <TableHead>% Atingido Mês</TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor Meta
+                      <br />
+                      Mês
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor Realizado
+                      <br />
+                      Mês
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      % Atingido
+                      <br />
+                      Mês
+                    </TableHead>
                     {isCurrentSelectedMonth ? (
                       <>
-                        <TableHead>Valor Meta Acumulada</TableHead>
-                        <TableHead>% Atingido Acumulado</TableHead>
+                        <TableHead className="whitespace-normal leading-tight">
+                          Valor Meta
+                          <br />
+                          Acumulada
+                        </TableHead>
+                        <TableHead className="whitespace-normal leading-tight">
+                          % Atingido
+                          <br />
+                          Acumulado
+                        </TableHead>
                       </>
                     ) : null}
-                    <TableHead>Lucro Bruto</TableHead>
-                    <TableHead>Margem Bruta</TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Lucro
+                      <br />
+                      Bruto
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Meta
+                      <br />
+                      Margem
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Margem
+                      <br />
+                      Realizada
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1343,6 +1791,13 @@ export default function MetaMensalPage() {
                         </>
                       ) : null}
                       <TableCell>{formatCurrency(row.lucro_bruto)}</TableCell>
+                      <TableCell>
+                        {renderMetaMargemStatus(
+                          row.meta_margem_percentual,
+                          row.margem_bruta,
+                          true
+                        )}
+                      </TableCell>
                       <TableCell>{formatPlainPercentage(row.margem_bruta)}</TableCell>
                     </TableRow>
                   ))}
@@ -1384,6 +1839,13 @@ export default function MetaMensalPage() {
                       </>
                     ) : null}
                     <TableCell>{formatCurrency(summaryTotals.lucroBruto)}</TableCell>
+                    <TableCell>
+                      {renderMetaMargemStatus(
+                        summaryTotals.mediaMetaMargem,
+                        summaryTotals.margemBruta,
+                        true
+                      )}
+                    </TableCell>
                     <TableCell>{formatPlainPercentage(summaryTotals.margemBruta)}</TableCell>
                   </TableRow>
                 </TableBody>
@@ -1435,7 +1897,7 @@ export default function MetaMensalPage() {
               <p className="text-muted-foreground text-center">
                 Nenhuma meta cadastrada para este período.
                 <br />
-                Clique em &quot;Cadastrar Meta&quot; para criar.
+                Clique em &quot;Gerar Meta de Vendas&quot; para criar.
               </p>
             </div>
           ) : filiaisSelecionadas.length !== 1 ? (
@@ -1446,14 +1908,51 @@ export default function MetaMensalPage() {
                   <TableRow>
                     <TableHead className="w-5"></TableHead>
                     <TableHead>Data</TableHead>
-                    <TableHead className="w-[110px]">Dia da Semana</TableHead>
-                    <TableHead>Valor Referência</TableHead>
-                    <TableHead>% Meta</TableHead>
-                    <TableHead>Valor Meta</TableHead>
-                    <TableHead>Valor Realizado</TableHead>
-                    <TableHead>% Atingido</TableHead>
-                    <TableHead>Lucro Bruto</TableHead>
-                    <TableHead>Margem Bruta</TableHead>
+                    <TableHead className="w-[110px] whitespace-normal leading-tight">
+                      Dia da
+                      <br />
+                      Semana
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor
+                      <br />
+                      Referência
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      %
+                      <br />
+                      Meta
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor
+                      <br />
+                      Meta
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor
+                      <br />
+                      Realizado
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      %
+                      <br />
+                      Atingido
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Lucro
+                      <br />
+                      Bruto
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Meta
+                      <br />
+                      Margem
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Margem
+                      <br />
+                      Realizada
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1462,6 +1961,7 @@ export default function MetaMensalPage() {
                     const percentualAtingidoDia = group.total_meta > 0
                       ? (group.total_realizado / group.total_meta) * 100
                       : 0
+                    const margemRealizadaDia = getMargemRealizada(group.total_realizado, group.total_lucro)
                     
                     // Verificar se deve mostrar diferença (não mostrar se for dia futuro com realizado zero)
                     const isDateFuture = isTodayOrFuture(dateKey)
@@ -1528,6 +2028,13 @@ export default function MetaMensalPage() {
                             )}
                           </TableCell>
                           <TableCell>
+                            {renderMetaMargemStatus(
+                              group.media_meta_margem_percentual,
+                              margemRealizadaDia,
+                              showDifference
+                            )}
+                          </TableCell>
+                          <TableCell>
                             {showDifference ? (
                               `${group.margem_bruta.toFixed(2)}%`
                             ) : (
@@ -1541,6 +2048,7 @@ export default function MetaMensalPage() {
                           const percentualAtingidoMeta = meta.valor_meta > 0
                             ? (meta.valor_realizado / meta.valor_meta) * 100
                             : 0
+                          const margemRealizadaMeta = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
                           const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                           const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                           const showMetaDifference = shouldShowDifference(meta)
@@ -1643,9 +2151,16 @@ export default function MetaMensalPage() {
                                 )}
                               </TableCell>
                               <TableCell className="text-sm">
+                                {renderMetaMargemStatus(
+                                  meta.meta_margem_percentual,
+                                  margemRealizadaMeta,
+                                  showMetaDifference
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
                                 {showMetaDifference ? (
                                   (() => {
-                                    const margem = meta.valor_realizado > 0 ? ((meta.lucro_realizado || 0) / meta.valor_realizado) * 100 : 0
+                                    const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
                                     return `${margem.toFixed(2)}%`
                                   })()
                                 ) : (
@@ -1668,15 +2183,56 @@ export default function MetaMensalPage() {
                 <TableHeader className="[&_tr]:bg-muted/50">
                   <TableRow>
                     <TableHead>Data</TableHead>
-                    <TableHead className="w-[110px]">Dia da Semana</TableHead>
-                    <TableHead>Data Ref.</TableHead>
-                    <TableHead>Valor Referência</TableHead>
-                    <TableHead>% Meta</TableHead>
-                    <TableHead>Valor Meta</TableHead>
-                    <TableHead>Valor Realizado</TableHead>
-                    <TableHead>% Atingido</TableHead>
-                    <TableHead>Lucro Bruto</TableHead>
-                    <TableHead>Margem Bruta</TableHead>
+                    <TableHead className="w-[110px] whitespace-normal leading-tight">
+                      Dia da
+                      <br />
+                      Semana
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Data
+                      <br />
+                      Ref.
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor
+                      <br />
+                      Referência
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      %
+                      <br />
+                      Meta
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor
+                      <br />
+                      Meta
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Valor
+                      <br />
+                      Realizado
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      %
+                      <br />
+                      Atingido
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Lucro
+                      <br />
+                      Bruto
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Meta
+                      <br />
+                      Margem
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Margem
+                      <br />
+                      Realizada
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1684,6 +2240,7 @@ export default function MetaMensalPage() {
                       const percentualAtingidoMeta = meta.valor_meta > 0
                         ? (meta.valor_realizado / meta.valor_meta) * 100
                         : 0
+                      const margemRealizadaMeta = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
                       const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                       const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                       const showDiff = shouldShowDifference(meta)
@@ -1782,9 +2339,16 @@ export default function MetaMensalPage() {
                             )}
                           </TableCell>
                           <TableCell>
+                            {renderMetaMargemStatus(
+                              meta.meta_margem_percentual,
+                              margemRealizadaMeta,
+                              showDiff
+                            )}
+                          </TableCell>
+                          <TableCell>
                             {showDiff ? (
                               (() => {
-                                const margem = meta.valor_realizado > 0 ? ((meta.lucro_realizado || 0) / meta.valor_realizado) * 100 : 0
+                                const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
                                 return `${margem.toFixed(2)}%`
                               })()
                             ) : (
