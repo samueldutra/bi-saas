@@ -3,14 +3,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowUpIcon, ArrowDownIcon, PlusIcon, ChevronDown, ChevronRight, Loader2, RefreshCw, Target, TrendingUp } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { PlusIcon, ChevronDown, ChevronRight, Loader2, RefreshCw, Target, TrendingUp, CircleArrowDown, CircleArrowUp, FileDown, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { format, parseISO } from 'date-fns'
@@ -48,6 +50,17 @@ interface MetasReport {
   margem_bruta: number
 }
 
+interface MetaSummaryRow {
+  filial_id: number
+  valor_meta: number
+  valor_meta_acumulada_d1: number
+  valor_realizado: number
+  percentual_atingido: number
+  percentual_atingido_acumulado_d1: number
+  lucro_bruto: number
+  margem_bruta: number
+}
+
 interface GroupedByDate {
   [date: string]: {
     data: string
@@ -70,6 +83,26 @@ interface LoadReportOptions {
   forceRefreshRealized?: boolean
 }
 
+const summaryFilialBadgeClasses = [
+  'bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:border-violet-400/30',
+  'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-500/15 dark:text-blue-200 dark:border-blue-400/30',
+  'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-400/30',
+  'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-500/15 dark:text-orange-200 dark:border-orange-400/30',
+  'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-400/30',
+]
+
+const weekdayBadgeClasses: Record<string, string> = {
+  Domingo: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-500/15 dark:text-red-200 dark:border-red-400/30',
+  Segunda: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-500/15 dark:text-blue-200 dark:border-blue-400/30',
+  Terca: 'bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:border-violet-400/30',
+  Terça: 'bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:border-violet-400/30',
+  Quarta: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-400/30',
+  Quinta: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-400/30',
+  Sexta: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-500/15 dark:text-orange-200 dark:border-orange-400/30',
+  Sabado: 'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-500/15 dark:text-cyan-200 dark:border-cyan-400/30',
+  Sábado: 'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-500/15 dark:text-cyan-200 dark:border-cyan-400/30',
+}
+
 export default function MetaMensalPage() {
   const { currentTenant, userProfile } = useTenantContext()
   const { branchOptions: branches, isLoading: isLoadingBranches } = useBranchesOptions({
@@ -84,6 +117,7 @@ export default function MetaMensalPage() {
   const [filiaisSelecionadas, setFiliaisSelecionadas] = useState<FilialOption[]>([])
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<MetasReport | null>(null)
+  const [summaryRows, setSummaryRows] = useState<MetaSummaryRow[]>([])
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({})
 
   // Estados do formulário de criação
@@ -99,6 +133,8 @@ export default function MetaMensalPage() {
   const [editingCell, setEditingCell] = useState<{ id: number; field: 'percentual' | 'valor' } | null>(null)
   const [editingValue, setEditingValue] = useState<string>('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [isExportingSummaryPdf, setIsExportingSummaryPdf] = useState(false)
+  const [isExportingDailyPdf, setIsExportingDailyPdf] = useState(false)
 
   // Estado para botão atualizar valores
   const [isUpdatingValues, setIsUpdatingValues] = useState(false)
@@ -231,9 +267,14 @@ export default function MetaMensalPage() {
         params.append('filial_id', filialIds)
       }
 
-      const response = await fetch(`/api/metas/report?${params}`, {
-        signal: abortController.signal
-      })
+      const [response, summaryResponse] = await Promise.all([
+        fetch(`/api/metas/report?${params}`, {
+          signal: abortController.signal
+        }),
+        fetch(`/api/metas/summary?${params}`, {
+          signal: abortController.signal
+        })
+      ])
 
       if (!response.ok) {
         let errorMessage = 'Erro ao carregar relatório'
@@ -248,9 +289,25 @@ export default function MetaMensalPage() {
         throw new Error(errorMessage)
       }
 
-      const data = await response.json()
+      if (!summaryResponse.ok) {
+        let errorMessage = 'Erro ao carregar resumo'
+        try {
+          const errorData = await summaryResponse.json()
+          errorMessage = errorData.error || errorMessage
+        } catch {
+          const errorText = await summaryResponse.text()
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+
+      const [data, summaryData] = await Promise.all([
+        response.json(),
+        summaryResponse.json()
+      ])
       if (latestLoadRequestIdRef.current === requestId) {
         setReport(data)
+        setSummaryRows(summaryData.resumo || [])
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -269,6 +326,7 @@ export default function MetaMensalPage() {
           percentual_atingido: 0,
           margem_bruta: 0
         })
+        setSummaryRows([])
       }
     } finally {
       if (latestLoadRequestIdRef.current === requestId) {
@@ -361,9 +419,9 @@ export default function MetaMensalPage() {
     }).format(value)
   }
 
-  const formatPercentage = (value: number | null) => {
+  const formatPlainPercentage = (value: number | null) => {
     if (value === null || value === undefined || isNaN(value)) return '0.00%'
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+    return `${value.toFixed(2)}%`
   }
 
   // Verificar se a data é hoje ou futuro
@@ -384,16 +442,6 @@ export default function MetaMensalPage() {
     return true
   }
 
-  const filialLabel = useMemo(() => {
-    if (filiaisSelecionadas.length === 0) {
-      return 'Todas as Filiais'
-    }
-    if (filiaisSelecionadas.length === 1) {
-      return filiaisSelecionadas[0].label
-    }
-    return `${filiaisSelecionadas.length} Filiais`
-  }, [filiaisSelecionadas])
-
   const branchNamesById = useMemo(() => {
     return new Map(
       branches.map((branch) => [branch.value, branch.label])
@@ -402,6 +450,14 @@ export default function MetaMensalPage() {
 
   const getFilialName = (filial_id: number) => {
     return branchNamesById.get(filial_id.toString()) ?? `Filial ${filial_id}`
+  }
+
+  const getSummaryFilialBadgeClass = (filialId: number) => {
+    return summaryFilialBadgeClasses[Math.abs(filialId) % summaryFilialBadgeClasses.length]
+  }
+
+  const getWeekdayBadgeClass = (weekday: string) => {
+    return weekdayBadgeClasses[weekday] ?? 'bg-muted text-foreground border-border'
   }
 
   const toggleDateExpanded = (date: string) => {
@@ -482,44 +538,35 @@ export default function MetaMensalPage() {
     })
   }, [filteredMetas])
 
-  const d1Progress = useMemo(() => {
-    const hoje = new Date()
-    const periodoSelecionado = new Date(ano, mes - 1, 1)
-    const periodoAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+  const selectedMonthYearLabel = useMemo(() => {
+    return format(new Date(ano, mes - 1, 1), 'MMMM/yyyy', { locale: ptBR })
+  }, [ano, mes])
 
-    let cutoffDayExclusive: number
+  const isCurrentSelectedMonth = useMemo(() => {
+    const today = new Date()
+    return today.getFullYear() === ano && today.getMonth() + 1 === mes
+  }, [ano, mes])
 
-    if (periodoSelecionado.getTime() < periodoAtual.getTime()) {
-      cutoffDayExclusive = Number.POSITIVE_INFINITY
-    } else if (periodoSelecionado.getTime() > periodoAtual.getTime()) {
-      cutoffDayExclusive = 1
-    } else {
-      cutoffDayExclusive = hoje.getDate()
-    }
+  const visibleSummaryRows = useMemo(() => {
+    return summaryRows.filter((row) => row.valor_meta > 0)
+  }, [summaryRows])
 
-    if (cutoffDayExclusive <= 1) {
-      return {
-        percentual: 0,
-        strokeDasharray: '0 351.86',
-        colorClass: 'text-primary'
-      }
-    }
-
-    const metasAteOntem = filteredMetas.filter((meta) => {
-      const [, , day] = meta.data.split('-').map(Number)
-      return day < cutoffDayExclusive
-    })
-
-    const totalRealizadoD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_realizado || 0), 0)
-    const totalMetaD1 = metasAteOntem.reduce((sum, meta) => sum + (meta.valor_meta || 0), 0)
-    const percentual = totalMetaD1 > 0 ? (totalRealizadoD1 / totalMetaD1) * 100 : 0
+  const summaryTotals = useMemo(() => {
+    const valorMeta = visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta, 0)
+    const valorRealizado = visibleSummaryRows.reduce((sum, row) => sum + row.valor_realizado, 0)
+    const valorMetaAcumuladaD1 = visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta_acumulada_d1, 0)
+    const lucroBruto = visibleSummaryRows.reduce((sum, row) => sum + row.lucro_bruto, 0)
 
     return {
-      percentual,
-      strokeDasharray: `${((percentual / 100) * 351.86).toFixed(2)} 351.86`,
-      colorClass: percentual >= 100 ? 'text-green-500' : 'text-primary'
+      valorMeta,
+      valorRealizado,
+      percentualAtingido: valorMeta > 0 ? (valorRealizado / valorMeta) * 100 : 0,
+      valorMetaAcumuladaD1,
+      percentualAtingidoAcumuladoD1: valorMetaAcumuladaD1 > 0 ? (valorRealizado / valorMetaAcumuladaD1) * 100 : 0,
+      lucroBruto,
+      margemBruta: valorRealizado > 0 ? (lucroBruto / valorRealizado) * 100 : 0,
     }
-  }, [filteredMetas, mes, ano])
+  }, [visibleSummaryRows])
 
   // Funções de edição inline
   const startEditing = (metaId: number, field: 'percentual' | 'valor', currentValue: number) => {
@@ -667,13 +714,239 @@ export default function MetaMensalPage() {
     }
   }
 
+  const handleExportSummaryPdf = async () => {
+    if (visibleSummaryRows.length === 0) return
+
+    try {
+      setIsExportingSummaryPdf(true)
+
+      const jsPDF = (await import('jspdf')).default
+      const autoTable = (await import('jspdf-autotable')).default
+
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      })
+
+      const head = [[
+        'Filial',
+        'Valor Meta Mês',
+        'Valor Realizado Mês',
+        '% Atingido Mês',
+        ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
+        'Lucro Bruto',
+        'Margem Bruta',
+      ]]
+
+      const body = [
+        ...visibleSummaryRows.map((row) => ([
+          getFilialName(row.filial_id),
+          formatCurrency(row.valor_meta),
+          formatCurrency(row.valor_realizado),
+          formatPlainPercentage(row.percentual_atingido),
+          ...(isCurrentSelectedMonth ? [
+            formatCurrency(row.valor_meta_acumulada_d1),
+            formatPlainPercentage(row.percentual_atingido_acumulado_d1),
+          ] : []),
+          formatCurrency(row.lucro_bruto),
+          formatPlainPercentage(row.margem_bruta),
+        ])),
+        [
+          'Todas',
+          formatCurrency(summaryTotals.valorMeta),
+          formatCurrency(summaryTotals.valorRealizado),
+          formatPlainPercentage(summaryTotals.percentualAtingido),
+          ...(isCurrentSelectedMonth ? [
+            formatCurrency(summaryTotals.valorMetaAcumuladaD1),
+            formatPlainPercentage(summaryTotals.percentualAtingidoAcumuladoD1),
+          ] : []),
+          formatCurrency(summaryTotals.lucroBruto),
+          formatPlainPercentage(summaryTotals.margemBruta),
+        ]
+      ]
+
+      doc.setFontSize(16)
+      doc.text(`Resumo Meta mensal: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`, 14, 16)
+      doc.setFontSize(10)
+      doc.text('Resumo mensal da Meta', 14, 22)
+
+      autoTable(doc as never, {
+        startY: 28,
+        head,
+        body,
+        styles: {
+          fontSize: 9,
+          cellPadding: 2.5,
+        },
+        headStyles: {
+          fillColor: [241, 245, 249],
+          textColor: [15, 23, 42],
+        },
+        footStyles: {
+          fillColor: [226, 232, 240],
+          textColor: [15, 23, 42],
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        didParseCell: (data: any) => {
+          if (data.row.index === body.length - 1 && data.row.section === 'body') {
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.fillColor = [248, 250, 252]
+          }
+        },
+      })
+
+      doc.save(`resumo-meta-mensal-${mes.toString().padStart(2, '0')}-${ano}.pdf`)
+    } catch (error) {
+      console.error('Error exporting summary PDF:', error)
+      toast.error('Erro ao exportar PDF', {
+        description: 'Não foi possível gerar o PDF do resumo.'
+      })
+    } finally {
+      setIsExportingSummaryPdf(false)
+    }
+  }
+
+  const handleExportDailyPdf = async () => {
+    if (filteredMetas.length === 0) return
+
+    try {
+      setIsExportingDailyPdf(true)
+
+      const jsPDF = (await import('jspdf')).default
+      const autoTable = (await import('jspdf-autotable')).default
+
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      })
+
+      const head = filiaisSelecionadas.length !== 1
+        ? [[
+            'Data',
+            'Dia da Semana',
+            'Valor Referência',
+            '% Meta',
+            'Valor Meta',
+            'Valor Realizado',
+            '% Atingido',
+            'Lucro Bruto',
+            'Margem Bruta',
+          ]]
+        : [[
+            'Data',
+            'Dia da Semana',
+            'Data Ref.',
+            'Valor Referência',
+            '% Meta',
+            'Valor Meta',
+            'Valor Realizado',
+            '% Atingido',
+            'Lucro Bruto',
+            'Margem Bruta',
+          ]]
+
+      const body =
+        filiaisSelecionadas.length !== 1
+          ? groupedEntries.map(([, group]) => {
+              const percentualAtingidoDia = group.total_meta > 0
+                ? (group.total_realizado / group.total_meta) * 100
+                : 0
+
+              return [
+                format(parseISO(group.data), 'dd/MM/yyyy'),
+                group.metas[0]?.dia_semana || '-',
+                formatCurrency(group.total_valor_referencia),
+                formatPlainPercentage(group.media_meta_percentual),
+                formatCurrency(group.total_meta),
+                formatCurrency(group.total_realizado),
+                formatPlainPercentage(percentualAtingidoDia),
+                formatCurrency(group.total_lucro),
+                formatPlainPercentage(group.margem_bruta),
+              ]
+            })
+          : filteredMetas.map((meta) => {
+              const percentualAtingidoMeta = meta.valor_meta > 0
+                ? (meta.valor_realizado / meta.valor_meta) * 100
+                : 0
+
+              const margem = meta.valor_realizado > 0
+                ? ((meta.lucro_realizado || 0) / meta.valor_realizado) * 100
+                : 0
+
+              return [
+                format(parseISO(meta.data), 'dd/MM/yyyy'),
+                meta.dia_semana,
+                meta.data_referencia ? format(parseISO(meta.data_referencia), 'dd/MM/yyyy') : '-',
+                formatCurrency(meta.valor_referencia),
+                formatPlainPercentage(meta.meta_percentual),
+                formatCurrency(meta.valor_meta),
+                formatCurrency(meta.valor_realizado),
+                formatPlainPercentage(percentualAtingidoMeta),
+                formatCurrency(meta.lucro_realizado || 0),
+                formatPlainPercentage(margem),
+              ]
+            })
+
+      doc.setFontSize(16)
+      doc.text(`Resumo de Metas por Dia: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`, 14, 16)
+      doc.setFontSize(10)
+      doc.text('Acompanhamento detalhado por dia', 14, 22)
+
+      autoTable(doc as never, {
+        startY: 28,
+        head,
+        body,
+        styles: {
+          fontSize: 9,
+          cellPadding: 2.5,
+        },
+        headStyles: {
+          fillColor: [241, 245, 249],
+          textColor: [15, 23, 42],
+        },
+      })
+
+      doc.save(`metas-diarias-${mes.toString().padStart(2, '0')}-${ano}.pdf`)
+    } catch (error) {
+      console.error('Error exporting daily PDF:', error)
+      toast.error('Erro ao exportar PDF', {
+        description: 'Não foi possível gerar o PDF da tabela de metas diárias.'
+      })
+    } finally {
+      setIsExportingDailyPdf(false)
+    }
+  }
+
+  const CardInfoTooltip = ({
+    title,
+    description,
+  }: {
+    title: string
+    description: string
+  }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full">
+          <Info className="h-4 w-4 text-muted-foreground" />
+          <span className="sr-only">{title}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <p className="font-medium">{title}</p>
+        <p className="text-muted-foreground">{description}</p>
+      </TooltipContent>
+    </Tooltip>
+  )
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <PageHeader
           section="Metas"
-          title="Meta Mensal"
+          title="Meta de Vendas Geral"
           description="Acompanhamento e gestão de metas de vendas por filial"
           icon={TrendingUp}
         />
@@ -707,7 +980,7 @@ export default function MetaMensalPage() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Gerar Meta Mensal</DialogTitle>
+                <DialogTitle>Gerar Meta de Vendas Geral</DialogTitle>
                 <DialogDescription>
                   Preencha os dados para gerar as metas do mês. Se já existirem metas para o período, elas serão substituídas.
                 </DialogDescription>
@@ -824,221 +1097,319 @@ export default function MetaMensalPage() {
 
       {/* Cards resumo */}
       {loading ? (
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader className="relative">
-              <div className="space-y-2">
-                <Skeleton className="h-6 w-48" />
-                <Skeleton className="h-4 w-32" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-48" />
-                <Skeleton className="h-4 w-36" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Card key={index} className="@container/card bg-white shadow-xs dark:bg-card">
+              <CardHeader className="space-y-0.5 p-4 pb-3">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-8 w-32" />
+              </CardHeader>
+              <CardFooter className="flex-col items-start gap-1.5 px-4 pb-4 pt-0 text-[12px]">
                 <Skeleton className="h-4 w-24" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <div className="space-y-2">
-                <Skeleton className="h-6 w-40" />
-                <Skeleton className="h-4 w-48" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-8">
-                <div className="flex flex-col items-center">
-                  <Skeleton className="h-32 w-32 rounded-full" />
-                  <Skeleton className="h-4 w-24 mt-4" />
-                </div>
-                <div className="flex flex-col items-center">
-                  <Skeleton className="h-32 w-32 rounded-full" />
-                  <Skeleton className="h-4 w-24 mt-4" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+                <Skeleton className="h-4 w-20" />
+              </CardFooter>
+            </Card>
+          ))}
         </div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-3">
-          <Card>
-            <CardHeader className="relative">
-              <div className="absolute top-6 right-6">
-                <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                  {filialLabel}
-                </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
+            <CardHeader className="space-y-0.5 p-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Valor Meta Mês</CardDescription>
+                <CardInfoTooltip
+                  title="Meta consolidada do período"
+                  description="Soma mensal das metas geradas"
+                />
               </div>
-              <CardTitle>Vendas do Período</CardTitle>
-              <CardDescription>
-                {format(new Date(ano, mes - 1, 1), 'MMMM yyyy', { locale: ptBR })}
-              </CardDescription>
+              <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
+                {formatCurrency(summaryTotals.valorMeta)}
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="text-3xl font-bold">{formatCurrency(report?.total_realizado || 0)}</div>
-                <div className="text-sm text-muted-foreground">
-                  Meta: {formatCurrency(report?.total_meta || 0)}
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  {(report?.percentual_atingido || 0) >= 100 ? (
-                    <>
-                      <ArrowUpIcon className="h-4 w-4 text-green-500" />
-                      <span className="text-green-500 font-medium">
-                        {formatPercentage((report?.percentual_atingido || 0) - 100)}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <ArrowDownIcon className="h-4 w-4 text-red-500" />
-                      <span className="text-red-500 font-medium">
-                        {formatPercentage((report?.percentual_atingido || 0) - 100)}
-                      </span>
-                    </>
-                  )}
+          </Card>
+
+          <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
+            <CardHeader className="space-y-0.5 p-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">
+                  Valor Realizado Mês
+                </CardDescription>
+                <CardInfoTooltip
+                  title="Realizado consolidado"
+                  description={isCurrentSelectedMonth ? 'Atualizado até ontem (D-1)' : 'Considerando o mês completo'}
+                />
+              </div>
+              <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
+                {formatCurrency(summaryTotals.valorRealizado)}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center px-4 pb-4 pt-0">
+              <div className="relative h-20 w-20 shrink-0">
+                <svg className="h-20 w-20 -rotate-90 transform">
+                  <circle
+                    className="text-muted"
+                    strokeWidth="8"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r="32"
+                    cx="40"
+                    cy="40"
+                  />
+                  <circle
+                    className={summaryTotals.percentualAtingido >= 100 ? 'text-green-500' : 'text-primary'}
+                    strokeWidth="8"
+                    strokeDasharray={`${((summaryTotals.percentualAtingido || 0) / 100) * 201.06} 201.06`}
+                    strokeLinecap="round"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r="32"
+                    cx="40"
+                    cy="40"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-[clamp(13px,1.05vw,19px)] font-semibold leading-tight tabular-nums">{summaryTotals.percentualAtingido.toFixed(1)}%</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-        <Card>
-          <CardHeader className="relative">
-            <div className="absolute top-6 right-6">
-              <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                {filialLabel}
+          <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
+            <CardHeader className="space-y-0.5 p-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">
+                  Valor Meta Acumulada
+                </CardDescription>
+                <CardInfoTooltip
+                  title="Meta acumulada do corte"
+                  description={isCurrentSelectedMonth ? 'Soma da meta até D-1' : 'Soma de todo o mês carregado'}
+                />
               </div>
-            </div>
-            <CardTitle>Progresso da Meta</CardTitle>
-            <CardDescription>Comparativo mensal e até o dia anterior</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-8">
-              {/* Gráfico Mês Completo */}
-              <div className="flex flex-col items-center">
-                <div className="relative h-32 w-32">
-                  <svg className="h-32 w-32 -rotate-90 transform">
-                    <circle
-                      className="text-muted"
-                      strokeWidth="10"
-                      stroke="currentColor"
-                      fill="transparent"
-                      r="56"
-                      cx="64"
-                      cy="64"
-                    />
-                    <circle
-                      className={`${(report?.percentual_atingido || 0) >= 100 ? 'text-green-500' : 'text-primary'}`}
-                      strokeWidth="10"
-                      strokeDasharray={`${((report?.percentual_atingido || 0) / 100) * 351.86} 351.86`}
-                      strokeLinecap="round"
-                      stroke="currentColor"
-                      fill="transparent"
-                      r="56"
-                      cx="64"
-                      cy="64"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-2xl font-bold">
-                      {(report?.percentual_atingido || 0).toFixed(1)}%
-                    </span>
-                  </div>
+              <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
+                {formatCurrency(summaryTotals.valorMetaAcumuladaD1)}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center px-4 pb-4 pt-0">
+              <div className="relative h-20 w-20 shrink-0">
+                <svg className="h-20 w-20 -rotate-90 transform">
+                  <circle
+                    className="text-muted"
+                    strokeWidth="8"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r="32"
+                    cx="40"
+                    cy="40"
+                  />
+                  <circle
+                    className={summaryTotals.percentualAtingidoAcumuladoD1 >= 100 ? 'text-green-500' : 'text-primary'}
+                    strokeWidth="8"
+                    strokeDasharray={`${((summaryTotals.percentualAtingidoAcumuladoD1 || 0) / 100) * 201.06} 201.06`}
+                    strokeLinecap="round"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r="32"
+                    cx="40"
+                    cy="40"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-[clamp(13px,1.05vw,19px)] font-semibold leading-tight tabular-nums">{summaryTotals.percentualAtingidoAcumuladoD1.toFixed(1)}%</span>
                 </div>
-                <p className="text-sm font-medium text-muted-foreground mt-4">Mês Completo</p>
               </div>
+            </CardContent>
+          </Card>
 
-              {/* Gráfico D-1 */}
-              <div className="flex flex-col items-center">
-                <div className="relative h-32 w-32">
-                  <svg className="h-32 w-32 -rotate-90 transform">
-                    <circle
-                      className="text-muted"
-                      strokeWidth="10"
-                      stroke="currentColor"
-                      fill="transparent"
-                      r="56"
-                      cx="64"
-                      cy="64"
-                    />
-                    <circle
-                      className={d1Progress.colorClass}
-                      strokeWidth="10"
-                      strokeDasharray={d1Progress.strokeDasharray}
-                      strokeLinecap="round"
-                      stroke="currentColor"
-                      fill="transparent"
-                      r="56"
-                      cx="64"
-                      cy="64"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-2xl font-bold">
-                      {d1Progress.percentual.toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-                <p className="text-sm font-medium text-muted-foreground mt-4">Até Ontem (D-1)</p>
+          <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
+            <CardHeader className="space-y-0.5 p-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Lucro Bruto</CardDescription>
+                <CardInfoTooltip
+                  title="Lucro consolidado do período"
+                  description="Soma do lucro bruto realizado"
+                />
               </div>
-            </div>
-          </CardContent>
-        </Card>
+              <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
+                {formatCurrency(summaryTotals.lucroBruto)}
+              </CardTitle>
+            </CardHeader>
+          </Card>
 
-        {/* Card Lucro e Margem */}
-        <Card>
-          <CardHeader className="relative">
-            <div className="absolute top-6 right-6">
-              <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                {filialLabel}
+          <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
+            <CardHeader className="space-y-0.5 p-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Margem Bruta</CardDescription>
+                <CardInfoTooltip
+                  title="Margem consolidada"
+                  description="Lucro bruto sobre o realizado"
+                />
               </div>
-            </div>
-            <CardTitle>Lucro e Margem</CardTitle>
-            <CardDescription>
-              {format(new Date(ano, mes - 1, 1), 'MMMM yyyy', { locale: ptBR })}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Lucro Bruto */}
-              <div>
-                <p className="text-sm text-muted-foreground">Lucro Bruto</p>
-                <p className="text-2xl font-bold">
-                  {formatCurrency(report?.total_lucro || 0)}
-                </p>
-              </div>
-
-              {/* Margem Bruta */}
-              <div>
-                <p className="text-sm text-muted-foreground">Margem Bruta</p>
-                <p className="text-2xl font-bold">
-                  {(report?.margem_bruta || 0).toFixed(2)}%
-                </p>
-              </div>
-
-              {/* Custo Total */}
-              <div>
-                <p className="text-sm text-muted-foreground">Custo Total</p>
-                <p className="text-lg font-medium text-muted-foreground">
-                  {formatCurrency(report?.total_custo || 0)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
+                {formatPlainPercentage(summaryTotals.margemBruta)}
+              </CardTitle>
+            </CardHeader>
+          </Card>
         </div>
       )}
 
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0">
+          <div className="space-y-1">
+            <CardTitle>{`Resumo Meta mensal: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`}</CardTitle>
+            <CardDescription>Resumo mensal da Meta</CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportSummaryPdf}
+            disabled={loading || isExportingSummaryPdf || visibleSummaryRows.length === 0}
+            className="gap-2"
+          >
+            <FileDown className="h-4 w-4" />
+            {isExportingSummaryPdf ? 'Exportando...' : 'Exportar PDF'}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-full" />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : visibleSummaryRows.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              Nenhum resumo disponível para o período selecionado.
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader className="[&_tr]:bg-muted/50">
+                  <TableRow>
+                    <TableHead className="w-[120px] pl-4">Filial</TableHead>
+                    <TableHead>Valor Meta Mês</TableHead>
+                    <TableHead>Valor Realizado Mês</TableHead>
+                    <TableHead>% Atingido Mês</TableHead>
+                    {isCurrentSelectedMonth ? (
+                      <>
+                        <TableHead>Valor Meta Acumulada</TableHead>
+                        <TableHead>% Atingido Acumulado</TableHead>
+                      </>
+                    ) : null}
+                    <TableHead>Lucro Bruto</TableHead>
+                    <TableHead>Margem Bruta</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleSummaryRows.map((row) => (
+                    <TableRow key={row.filial_id}>
+                      <TableCell className="w-[120px] pl-4">
+                        <Badge
+                          variant="outline"
+                          className={getSummaryFilialBadgeClass(row.filial_id)}
+                        >
+                          {getFilialName(row.filial_id)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatCurrency(row.valor_meta)}</TableCell>
+                      <TableCell>{formatCurrency(row.valor_realizado)}</TableCell>
+                      <TableCell>
+                        {isCurrentSelectedMonth ? (
+                          formatPlainPercentage(row.percentual_atingido)
+                        ) : (
+                          <span className="inline-flex items-center gap-2">
+                            {row.percentual_atingido >= 100 ? (
+                              <CircleArrowUp className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <CircleArrowDown className="h-4 w-4 text-red-600" />
+                            )}
+                            {formatPlainPercentage(row.percentual_atingido)}
+                          </span>
+                        )}
+                      </TableCell>
+                      {isCurrentSelectedMonth ? (
+                        <>
+                          <TableCell>{formatCurrency(row.valor_meta_acumulada_d1)}</TableCell>
+                          <TableCell>
+                            <span className="inline-flex items-center gap-2">
+                              {row.percentual_atingido_acumulado_d1 >= 100 ? (
+                                <CircleArrowUp className="h-4 w-4 text-green-600" />
+                              ) : (
+                                <CircleArrowDown className="h-4 w-4 text-red-600" />
+                              )}
+                              {formatPlainPercentage(row.percentual_atingido_acumulado_d1)}
+                            </span>
+                          </TableCell>
+                        </>
+                      ) : null}
+                      <TableCell>{formatCurrency(row.lucro_bruto)}</TableCell>
+                      <TableCell>{formatPlainPercentage(row.margem_bruta)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-muted/40 font-medium">
+                    <TableCell className="w-[120px] pl-4">
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                        Todas
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatCurrency(summaryTotals.valorMeta)}</TableCell>
+                    <TableCell>{formatCurrency(summaryTotals.valorRealizado)}</TableCell>
+                    <TableCell>
+                      {isCurrentSelectedMonth ? (
+                        formatPlainPercentage(summaryTotals.percentualAtingido)
+                      ) : (
+                        <span className="inline-flex items-center gap-2">
+                          {summaryTotals.percentualAtingido >= 100 ? (
+                            <CircleArrowUp className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <CircleArrowDown className="h-4 w-4 text-red-600" />
+                          )}
+                          {formatPlainPercentage(summaryTotals.percentualAtingido)}
+                        </span>
+                      )}
+                    </TableCell>
+                    {isCurrentSelectedMonth ? (
+                      <>
+                        <TableCell>{formatCurrency(summaryTotals.valorMetaAcumuladaD1)}</TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-2">
+                            {summaryTotals.percentualAtingidoAcumuladoD1 >= 100 ? (
+                              <CircleArrowUp className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <CircleArrowDown className="h-4 w-4 text-red-600" />
+                            )}
+                            {formatPlainPercentage(summaryTotals.percentualAtingidoAcumuladoD1)}
+                          </span>
+                        </TableCell>
+                      </>
+                    ) : null}
+                    <TableCell>{formatCurrency(summaryTotals.lucroBruto)}</TableCell>
+                    <TableCell>{formatPlainPercentage(summaryTotals.margemBruta)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Tabela de metas */}
       <Card>
-        <CardHeader className="relative">
-          <div className="absolute top-6 right-6">
-            <div className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-              {filialLabel}
-            </div>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0">
+          <div className="space-y-1">
+            <CardTitle>{`Resumo de Metas por Dia: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`}</CardTitle>
+            <CardDescription>Acompanhamento detalhado por dia</CardDescription>
           </div>
-          <CardTitle>Metas Diárias</CardTitle>
-          <CardDescription>Acompanhamento detalhado por dia</CardDescription>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportDailyPdf}
+            disabled={loading || isExportingDailyPdf || filteredMetas.length === 0}
+            className="gap-2"
+          >
+            <FileDown className="h-4 w-4" />
+            {isExportingDailyPdf ? 'Exportando...' : 'Exportar PDF'}
+          </Button>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -1071,26 +1442,26 @@ export default function MetaMensalPage() {
             // Visualização agrupada por data quando múltiplas ou nenhuma filial está selecionada
             <div className="rounded-md border">
               <Table>
-                <TableHeader>
+                <TableHeader className="[&_tr]:bg-muted/50">
                   <TableRow>
-                    <TableHead className="w-10"></TableHead>
+                    <TableHead className="w-5"></TableHead>
                     <TableHead>Data</TableHead>
-                    <TableHead>Dia da Semana</TableHead>
-                    <TableHead className="text-right">Venda Ref.</TableHead>
-                    <TableHead className="text-right">Meta %</TableHead>
-                    <TableHead className="text-right">Valor Meta</TableHead>
-                    <TableHead className="text-right">Realizado</TableHead>
-                    <TableHead className="text-right">Diferença</TableHead>
-                    <TableHead className="text-right">Dif. %</TableHead>
-                    <TableHead className="text-right">Lucro B.</TableHead>
-                    <TableHead className="text-right">Margem B.%</TableHead>
+                    <TableHead className="w-[110px]">Dia da Semana</TableHead>
+                    <TableHead>Valor Referência</TableHead>
+                    <TableHead>% Meta</TableHead>
+                    <TableHead>Valor Meta</TableHead>
+                    <TableHead>Valor Realizado</TableHead>
+                    <TableHead>% Atingido</TableHead>
+                    <TableHead>Lucro Bruto</TableHead>
+                    <TableHead>Margem Bruta</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {groupedEntries.map(([dateKey, group]) => {
                     const isExpanded = expandedDates[dateKey] === true // Fechado por padrão
-                    const diferencaValor = group.total_diferenca || 0
-                    const diferencaPerc = group.diferenca_percentual || 0
+                    const percentualAtingidoDia = group.total_meta > 0
+                      ? (group.total_realizado / group.total_meta) * 100
+                      : 0
                     
                     // Verificar se deve mostrar diferença (não mostrar se for dia futuro com realizado zero)
                     const isDateFuture = isTodayOrFuture(dateKey)
@@ -1101,7 +1472,7 @@ export default function MetaMensalPage() {
                       <React.Fragment key={dateKey}>
                         {/* Linha agregada principal */}
                         <TableRow 
-                          className="bg-muted/50 hover:bg-muted/70 cursor-pointer font-medium"
+                          className="bg-muted/40 hover:bg-muted/50 cursor-pointer"
                           onClick={() => toggleDateExpanded(dateKey)}
                         >
                           <TableCell>
@@ -1111,50 +1482,52 @@ export default function MetaMensalPage() {
                               <ChevronRight className="h-4 w-4" />
                             )}
                           </TableCell>
-                          <TableCell className="font-semibold">
+                          <TableCell>
                             {format(parseISO(group.data), 'dd/MM/yyyy')}
                           </TableCell>
-                          <TableCell className="font-semibold">
-                            {group.metas[0]?.dia_semana || '-'}
+                          <TableCell className="w-[110px]">
+                            {group.metas[0]?.dia_semana ? (
+                              <Badge variant="outline" className={getWeekdayBadgeClass(group.metas[0].dia_semana)}>
+                                {group.metas[0].dia_semana}
+                              </Badge>
+                            ) : (
+                              '-'
+                            )}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell>
                             {formatCurrency(group.total_valor_referencia)}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell>
                             {group.media_meta_percentual.toFixed(2)}%
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell>
                             {formatCurrency(group.total_meta)}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell>
                             {formatCurrency(group.total_realizado)}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell>
                             {showDifference ? (
-                              <span className={diferencaValor === 0 ? '' : diferencaValor > 0 ? 'text-green-500' : 'text-red-500'}>
-                                {formatCurrency(diferencaValor)}
+                              <span className="inline-flex items-center gap-2">
+                                {percentualAtingidoDia >= 100 ? (
+                                  <CircleArrowUp className="h-4 w-4 text-green-600" />
+                                ) : (
+                                  <CircleArrowDown className="h-4 w-4 text-red-600" />
+                                )}
+                                {formatPlainPercentage(percentualAtingidoDia)}
                               </span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {showDifference ? (
-                              <span className={diferencaPerc === 0 ? '' : diferencaPerc > 0 ? 'text-green-500' : 'text-red-500'}>
-                                {formatPercentage(diferencaPerc)}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell>
                             {showDifference ? (
                               formatCurrency(group.total_lucro)
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell>
                             {showDifference ? (
                               `${group.margem_bruta.toFixed(2)}%`
                             ) : (
@@ -1165,8 +1538,9 @@ export default function MetaMensalPage() {
 
                         {/* Linhas detalhadas por filial */}
                         {isExpanded && group.metas.map((meta) => {
-                          const metaDiferencaValor = meta.diferenca || 0
-                          const metaDiferencaPerc = meta.diferenca_percentual || 0
+                          const percentualAtingidoMeta = meta.valor_meta > 0
+                            ? (meta.valor_realizado / meta.valor_meta) * 100
+                            : 0
                           const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                           const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                           const showMetaDifference = shouldShowDifference(meta)
@@ -1177,19 +1551,24 @@ export default function MetaMensalPage() {
                               className="bg-background/50"
                             >
                               <TableCell></TableCell>
-                              <TableCell className="pl-8 text-sm">
-                                <span className="font-medium">{getFilialName(meta.filial_id)}</span>
+                              <TableCell className="pl-4 text-sm">
+                                <Badge
+                                  variant="outline"
+                                  className={getSummaryFilialBadgeClass(meta.filial_id)}
+                                >
+                                  {getFilialName(meta.filial_id)}
+                                </Badge>
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
                                 Ref: {meta.data_referencia ? format(parseISO(meta.data_referencia), 'dd/MM/yyyy') : '-'}
                               </TableCell>
-                              <TableCell className="text-right text-sm">
+                              <TableCell className="text-sm">
                                 {formatCurrency(meta.valor_referencia)}
                               </TableCell>
                               
                               {/* Meta % - Editável */}
                               <TableCell
-                                className="text-right text-sm cursor-pointer hover:bg-muted/50 transition-colors group"
+                                className="text-sm cursor-pointer hover:bg-muted/50 transition-colors group"
                                 onDoubleClick={() => startEditing(meta.id, 'percentual', meta.meta_percentual)}
                                 title="Duplo clique para editar"
                               >
@@ -1203,7 +1582,7 @@ export default function MetaMensalPage() {
                                     onBlur={saveEdit}
                                     autoFocus
                                     disabled={savingEdit}
-                                    className="h-8 text-right"
+                                    className="h-8 text-left"
                                   />
                                 ) : (
                                   <span className="inline-flex items-center gap-1">
@@ -1215,7 +1594,7 @@ export default function MetaMensalPage() {
 
                               {/* Valor Meta - Editável */}
                               <TableCell
-                                className="text-right text-sm cursor-pointer hover:bg-muted/50 transition-colors group"
+                                className="text-sm cursor-pointer hover:bg-muted/50 transition-colors group"
                                 onDoubleClick={() => startEditing(meta.id, 'valor', meta.valor_meta)}
                                 title="Duplo clique para editar"
                               >
@@ -1229,7 +1608,7 @@ export default function MetaMensalPage() {
                                     onBlur={saveEdit}
                                     autoFocus
                                     disabled={savingEdit}
-                                    className="h-8 text-right"
+                                    className="h-8 text-left"
                                   />
                                 ) : (
                                   <span className="inline-flex items-center gap-1">
@@ -1239,35 +1618,31 @@ export default function MetaMensalPage() {
                                 )}
                               </TableCell>
                               
-                              <TableCell className="text-right text-sm">
+                              <TableCell className="text-sm">
                                 {formatCurrency(meta.valor_realizado)}
                               </TableCell>
-                              <TableCell className="text-right text-sm">
+                              <TableCell className="text-sm">
                                 {showMetaDifference ? (
-                                  <span className={metaDiferencaValor === 0 ? '' : metaDiferencaValor > 0 ? 'text-green-500' : 'text-red-500'}>
-                                    {formatCurrency(metaDiferencaValor)}
+                                  <span className="inline-flex items-center gap-2">
+                                    {percentualAtingidoMeta >= 100 ? (
+                                      <CircleArrowUp className="h-4 w-4 text-green-600" />
+                                    ) : (
+                                      <CircleArrowDown className="h-4 w-4 text-red-600" />
+                                    )}
+                                    {formatPlainPercentage(percentualAtingidoMeta)}
                                   </span>
                                 ) : (
                                   <span className="text-muted-foreground">-</span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-right text-sm">
-                                {showMetaDifference ? (
-                                  <span className={metaDiferencaPerc === 0 ? '' : metaDiferencaPerc > 0 ? 'text-green-500' : 'text-red-500'}>
-                                    {formatPercentage(metaDiferencaPerc)}
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right text-sm">
+                              <TableCell className="text-sm">
                                 {showMetaDifference ? (
                                   formatCurrency(meta.lucro_realizado || 0)
                                 ) : (
                                   <span className="text-muted-foreground">-</span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-right text-sm">
+                              <TableCell className="text-sm">
                                 {showMetaDifference ? (
                                   (() => {
                                     const margem = meta.valor_realizado > 0 ? ((meta.lucro_realizado || 0) / meta.valor_realizado) * 100 : 0
@@ -1290,25 +1665,25 @@ export default function MetaMensalPage() {
             // Visualização normal para filial específica
             <div className="rounded-md border">
               <Table>
-                <TableHeader>
+                <TableHeader className="[&_tr]:bg-muted/50">
                   <TableRow>
                     <TableHead>Data</TableHead>
-                    <TableHead>Dia da Semana</TableHead>
+                    <TableHead className="w-[110px]">Dia da Semana</TableHead>
                     <TableHead>Data Ref.</TableHead>
-                    <TableHead className="text-right">Venda Ref.</TableHead>
-                    <TableHead className="text-right">Meta %</TableHead>
-                    <TableHead className="text-right">Valor Meta</TableHead>
-                    <TableHead className="text-right">Realizado</TableHead>
-                    <TableHead className="text-right">Diferença</TableHead>
-                    <TableHead className="text-right">Dif. %</TableHead>
-                    <TableHead className="text-right">Lucro B.</TableHead>
-                    <TableHead className="text-right">Margem B.%</TableHead>
+                    <TableHead>Valor Referência</TableHead>
+                    <TableHead>% Meta</TableHead>
+                    <TableHead>Valor Meta</TableHead>
+                    <TableHead>Valor Realizado</TableHead>
+                    <TableHead>% Atingido</TableHead>
+                    <TableHead>Lucro Bruto</TableHead>
+                    <TableHead>Margem Bruta</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredMetas.map((meta) => {
-                      const diferencaValor = meta.diferenca || 0
-                      const diferencaPerc = meta.diferenca_percentual || 0
+                      const percentualAtingidoMeta = meta.valor_meta > 0
+                        ? (meta.valor_realizado / meta.valor_meta) * 100
+                        : 0
                       const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                       const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                       const showDiff = shouldShowDifference(meta)
@@ -1318,17 +1693,21 @@ export default function MetaMensalPage() {
                           <TableCell>
                             {format(parseISO(meta.data), 'dd/MM/yyyy')}
                           </TableCell>
-                          <TableCell>{meta.dia_semana}</TableCell>
+                          <TableCell className="w-[110px]">
+                            <Badge variant="outline" className={getWeekdayBadgeClass(meta.dia_semana)}>
+                              {meta.dia_semana}
+                            </Badge>
+                          </TableCell>
                           <TableCell>
                             {meta.data_referencia ? format(parseISO(meta.data_referencia), 'dd/MM/yyyy') : '-'}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell>
                             {formatCurrency(meta.valor_referencia)}
                           </TableCell>
                           
                           {/* Meta % - Editável */}
                           <TableCell
-                            className="text-right cursor-pointer hover:bg-muted/50 transition-colors group"
+                            className="cursor-pointer hover:bg-muted/50 transition-colors group"
                             onDoubleClick={() => startEditing(meta.id, 'percentual', meta.meta_percentual)}
                             title="Duplo clique para editar"
                           >
@@ -1342,7 +1721,7 @@ export default function MetaMensalPage() {
                                 onBlur={saveEdit}
                                 autoFocus
                                 disabled={savingEdit}
-                                className="h-9 text-right"
+                                className="h-9 text-left"
                               />
                             ) : (
                               <span className="inline-flex items-center gap-1">
@@ -1354,7 +1733,7 @@ export default function MetaMensalPage() {
 
                           {/* Valor Meta - Editável */}
                           <TableCell
-                            className="text-right cursor-pointer hover:bg-muted/50 transition-colors group"
+                            className="cursor-pointer hover:bg-muted/50 transition-colors group"
                             onDoubleClick={() => startEditing(meta.id, 'valor', meta.valor_meta)}
                             title="Duplo clique para editar"
                           >
@@ -1368,7 +1747,7 @@ export default function MetaMensalPage() {
                                 onBlur={saveEdit}
                                 autoFocus
                                 disabled={savingEdit}
-                                className="h-9 text-right"
+                                className="h-9 text-left"
                               />
                             ) : (
                               <span className="inline-flex items-center gap-1">
@@ -1378,35 +1757,31 @@ export default function MetaMensalPage() {
                             )}
                           </TableCell>
                           
-                          <TableCell className="text-right font-medium">
+                          <TableCell>
                             {formatCurrency(meta.valor_realizado)}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell>
                             {showDiff ? (
-                              <span className={diferencaValor === 0 ? '' : diferencaValor > 0 ? 'text-green-500' : 'text-red-500'}>
-                                {formatCurrency(diferencaValor)}
+                              <span className="inline-flex items-center gap-2">
+                                {percentualAtingidoMeta >= 100 ? (
+                                  <CircleArrowUp className="h-4 w-4 text-green-600" />
+                                ) : (
+                                  <CircleArrowDown className="h-4 w-4 text-red-600" />
+                                )}
+                                {formatPlainPercentage(percentualAtingidoMeta)}
                               </span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right">
-                            {showDiff ? (
-                              <span className={diferencaPerc === 0 ? '' : diferencaPerc > 0 ? 'text-green-500' : 'text-red-500'}>
-                                {formatPercentage(diferencaPerc)}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell>
                             {showDiff ? (
                               formatCurrency(meta.lucro_realizado || 0)
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell>
                             {showDiff ? (
                               (() => {
                                 const margem = meta.valor_realizado > 0 ? ((meta.lucro_realizado || 0) / meta.valor_realizado) * 100 : 0

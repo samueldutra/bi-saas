@@ -120,7 +120,7 @@ const vendasNavigation: NavigationItem[] = [
 
 const metasNavigation: NavigationItem[] = [
   {
-    name: 'Meta Mensal',
+    name: 'Meta de Vendas Geral',
     href: '/metas/mensal',
     icon: TrendingUp,
     moduleId: 'metas_mensal',

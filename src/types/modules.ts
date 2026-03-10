@@ -66,7 +66,7 @@ export const SYSTEM_MODULES: ModuleConfig[] = [
   },
   {
     id: 'metas_mensal',
-    label: 'Metas > Meta Mensal',
+    label: 'Metas > Meta de Vendas Geral',
     description: 'Gestão de metas mensais por filial',
     order: 5,
     category: 'metas',

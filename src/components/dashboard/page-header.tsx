@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { House, type LucideIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -16,6 +17,7 @@ interface PageHeaderProps {
   title: string
   description?: string
   icon?: LucideIcon
+  titleClassName?: string
 }
 
 export function PageHeader({
@@ -23,6 +25,7 @@ export function PageHeader({
   title,
   description,
   icon: Icon,
+  titleClassName,
 }: PageHeaderProps) {
   return (
     <div className="space-y-2">
@@ -47,7 +50,7 @@ export function PageHeader({
         </BreadcrumbList>
       </Breadcrumb>
       <div className="space-y-1">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className={cn('flex items-center gap-2 text-2xl font-semibold tracking-tight', titleClassName)}>
           {Icon ? <Icon className="h-6 w-6" /> : null}
           {title}
         </h1>
