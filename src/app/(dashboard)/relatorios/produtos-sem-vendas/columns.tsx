@@ -16,6 +16,10 @@ export interface ProdutoSemVenda {
   filial_id: number
   produto_id: number
   descricao: string
+  departamento_id: number | null
+  departamento_nome: string | null
+  setor_id: number | null
+  setor_nome: string | null
   estoque_atual: number
   data_ultima_venda: string | null
   data_ultima_entrada: string | null
@@ -26,42 +30,34 @@ export interface ProdutoSemVenda {
   total_count?: number
 }
 
+function formatDateOnly(value: string | null) {
+  if (!value) return null
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`
+  }
+
+  return format(new Date(value), 'dd/MM/yyyy')
+}
+
 export const createColumns = (): ColumnDef<ProdutoSemVenda>[] => [
-  {
-    accessorKey: "filial_id",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="h-8 px-2 justify-center w-full"
-        >
-          Filial
-          <ArrowUpDown className="ml-[2px] h-4 w-4" />
-        </Button>
-      )
-    },
-    cell: ({ row }) => {
-      return (
-        <div className="font-medium text-center">
-          {row.getValue("filial_id")}
-        </div>
-      )
-    },
-  },
   {
     accessorKey: "produto_id",
     header: ({ column }) => {
       return (
-        <Button
-          variant="ghost"
+        <button
+          type="button"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="h-8 px-2 -ml-3 justify-start"
+          className="inline-flex h-8 items-center justify-start gap-[2px] pl-0 pr-0 text-sm font-medium"
         >
           Código
-          <ArrowUpDown className="ml-[2px] h-4 w-4" />
-        </Button>
+          <ArrowUpDown className="h-4 w-4" />
+        </button>
       )
+    },
+    cell: ({ row }) => {
+      return <div>{row.getValue("produto_id")}</div>
     },
   },
   {
@@ -143,7 +139,7 @@ export const createColumns = (): ColumnDef<ProdutoSemVenda>[] => [
     cell: ({ row }) => {
       const data = row.getValue("data_ultima_venda") as string | null
       return data ? (
-        format(new Date(data), 'dd/MM/yyyy')
+        formatDateOnly(data)
       ) : (
         <span className="text-muted-foreground">-</span>
       )
@@ -166,7 +162,7 @@ export const createColumns = (): ColumnDef<ProdutoSemVenda>[] => [
     cell: ({ row }) => {
       const data = row.getValue("data_ultima_entrada") as string | null
       return data ? (
-        format(new Date(data), 'dd/MM/yyyy')
+        formatDateOnly(data)
       ) : (
         <span className="text-muted-foreground">-</span>
       )

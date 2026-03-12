@@ -10,14 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
 import { DepartmentFilterPopover, SectorFilterPopover } from '@/components/filters'
-import { ChartCandlestick, FileDown, Loader2, FileText } from 'lucide-react'
-import { DataTable } from '@/components/ui/data-table'
-import { createColumns, ProdutoSemVenda } from './columns'
+import { ArrowUpDown, ChartCandlestick, FileDown, Loader2, FileText } from 'lucide-react'
+import type { ProdutoSemVenda } from './columns'
 import { logModuleAccess } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 // Tipos para jspdf-autotable
 declare module 'jspdf' {
@@ -37,6 +38,32 @@ interface ApiResponse {
     offset: number
     hasMore: boolean
   }
+  error?: string
+  message?: string
+  details?: string | null
+  hint?: string | null
+}
+
+type SortKey =
+  | 'produto_id'
+  | 'descricao'
+  | 'dias_sem_venda'
+  | 'estoque_atual'
+  | 'data_ultima_venda'
+  | 'data_ultima_entrada'
+  | 'preco_custo'
+  | 'curva_abcd'
+  | 'curva_lucro'
+
+function formatDateOnly(value: string | null) {
+  if (!value) return '-'
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`
+  }
+
+  return format(new Date(value), 'dd/MM/yyyy')
 }
 
 // Opções de curvas
@@ -55,27 +82,107 @@ export default function ProdutosSemVendasPage() {
   const [filtroTipo, setFiltroTipo] = useState<string>('all')
   const [departamentosSelecionados, setDepartamentosSelecionados] = useState<number[]>([])
   const [setoresSelecionados, setSetoresSelecionados] = useState<number[]>([])
+  const [produtoBuscaInput, setProdutoBuscaInput] = useState('')
 
   // Estados de dados
   const [produtos, setProdutos] = useState<ProdutoSemVenda[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(100)
-  const [departamentos, setDepartamentos] = useState<Array<{ id: number; departamento_id: number; descricao: string }>>([])
+  const [departamentos, setDepartamentos] = useState<Array<{
+    id: number
+    departamento_id: number
+    descricao: string
+    pai_level_2_id: number | null
+    pai_level_3_id: number | null
+    pai_level_4_id: number | null
+    pai_level_5_id: number | null
+    pai_level_6_id: number | null
+  }>>([])
   const [setores, setSetores] = useState<Array<{ id: number; nome: string; departamento_nivel: number; departamento_ids: number[]; ativo: boolean }>>([])
   const [produtosSelecionados, setProdutosSelecionados] = useState<number[]>([])
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [defaultFilialSet, setDefaultFilialSet] = useState(false)
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({
+    key: 'dias_sem_venda',
+    direction: 'desc',
+  })
+
+  const setorConflitos = useMemo(() => {
+    const deptToSetores = new Map<number, string[]>()
+
+    const resolveDeptIdsNivel1 = (setor: typeof setores[number]) => {
+      if (setor.departamento_nivel === 1) {
+        return setor.departamento_ids || []
+      }
+
+      return departamentos
+        .filter((departamento) => {
+          if (setor.departamento_nivel === 2) {
+            return departamento.pai_level_2_id !== null && setor.departamento_ids.includes(departamento.pai_level_2_id)
+          }
+          if (setor.departamento_nivel === 3) {
+            return departamento.pai_level_3_id !== null && setor.departamento_ids.includes(departamento.pai_level_3_id)
+          }
+          if (setor.departamento_nivel === 4) {
+            return departamento.pai_level_4_id !== null && setor.departamento_ids.includes(departamento.pai_level_4_id)
+          }
+          if (setor.departamento_nivel === 5) {
+            return departamento.pai_level_5_id !== null && setor.departamento_ids.includes(departamento.pai_level_5_id)
+          }
+          if (setor.departamento_nivel === 6) {
+            return departamento.pai_level_6_id !== null && setor.departamento_ids.includes(departamento.pai_level_6_id)
+          }
+          return false
+        })
+        .map((departamento) => departamento.departamento_id)
+    }
+
+    setores
+      .filter((setor) => setor.ativo)
+      .forEach((setor) => {
+        resolveDeptIdsNivel1(setor).forEach((departamentoId) => {
+          const nomes = deptToSetores.get(departamentoId) || []
+          nomes.push(setor.nome)
+          deptToSetores.set(departamentoId, nomes)
+        })
+      })
+
+    return Array.from(deptToSetores.entries())
+      .filter(([, nomes]) => nomes.length > 1)
+      .map(([departamentoId, nomes]) => ({
+        departamentoId,
+        setores: nomes
+      }))
+  }, [departamentos, setores])
+
+  const conflitosNosSetoresSelecionados = useMemo(() => {
+    if (setoresSelecionados.length === 0) return []
+
+    const nomesSelecionados = new Set(
+      setores
+        .filter((setor) => setoresSelecionados.includes(setor.id))
+        .map((setor) => setor.nome)
+    )
+
+    return setorConflitos.filter((conflito) =>
+      conflito.setores.some((nomeSetor) => nomesSelecionados.has(nomeSetor))
+    )
+  }, [setorConflitos, setores, setoresSelecionados])
+
+  // Resetar seleção padrão ao trocar tenant
+  useEffect(() => {
+    setSelectedBranch('')
+    setDefaultFilialSet(false)
+  }, [currentTenant?.id])
 
   // Auto-selecionar primeira filial quando opções estiverem disponíveis
   useEffect(() => {
     if (branches.length > 0 && !defaultFilialSet) {
-      const sortedFiliais = [...branches].sort((a, b) => {
-        const idA = parseInt(a.value)
-        const idB = parseInt(b.value)
-        return idA - idB
-      })
+      const sortedFiliais = [...branches].sort((a, b) =>
+        a.value.localeCompare(b.value, 'pt-BR', { numeric: true })
+      )
       const defaultBranch = sortedFiliais[0]
       console.log('✅ [Auto-select] Selecionando primeira filial:', defaultBranch)
       setSelectedBranch(defaultBranch.value)
@@ -85,11 +192,11 @@ export default function ProdutosSemVendasPage() {
 
   // Auto-load: Executar busca quando filtros estiverem prontos (APENAS PRIMEIRA VEZ)
   useEffect(() => {
-    if (currentTenant?.supabase_schema && selectedBranch && !loading && defaultFilialSet) {
+    if (currentTenant?.supabase_schema && selectedBranch && !loading) {
       console.log('✅ [Auto-load] Executando primeira busca automaticamente')
       fetchData(1)
     }
-  }, [currentTenant, selectedBranch, defaultFilialSet]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentTenant, selectedBranch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carregar departamentos e setores
   useEffect(() => {
@@ -102,7 +209,7 @@ export default function ProdutosSemVendasPage() {
       const { data: deptData } = await supabase
         .schema(currentTenant.supabase_schema as 'public')
         .from('departments_level_1')
-        .select('id, departamento_id, descricao')
+        .select('id, departamento_id, descricao, pai_level_2_id, pai_level_3_id, pai_level_4_id, pai_level_5_id, pai_level_6_id')
         .order('descricao')
 
       if (deptData) {
@@ -128,12 +235,28 @@ export default function ProdutosSemVendasPage() {
   // Buscar dados
   const fetchData = async (page: number = 1) => {
     if (!currentTenant?.supabase_schema) return
+    if (!selectedBranch || selectedBranch === 'all') {
+      alert('Selecione uma filial específica para gerar o relatório.')
+      return
+    }
+    if (filtroTipo === 'departamento' && departamentosSelecionados.length === 0) {
+      alert('Selecione ao menos um departamento.')
+      return
+    }
+    if (filtroTipo === 'setor' && setoresSelecionados.length === 0) {
+      alert('Selecione ao menos um setor.')
+      return
+    }
+    if (filtroTipo === 'produto' && !produtoBuscaInput.trim()) {
+      alert('Informe um código ou descrição de produto.')
+      return
+    }
 
     setLoading(true)
     setCurrentPage(page)
     
     try {
-      const filiaisParam = selectedBranch || 'all'
+      const filiaisParam = selectedBranch
 
       let departamentoIds = null
       if (filtroTipo === 'departamento' && departamentosSelecionados.length > 0) {
@@ -144,6 +267,9 @@ export default function ProdutosSemVendasPage() {
 
       const produtoIds = filtroTipo === 'produto' && produtosSelecionados.length > 0
         ? produtosSelecionados.join(',')
+        : null
+      const produtoBusca = filtroTipo === 'produto' && produtoBuscaInput.trim()
+        ? produtoBuscaInput.trim()
         : null
 
       const offset = (page - 1) * pageSize
@@ -162,6 +288,7 @@ export default function ProdutosSemVendasPage() {
 
       if (departamentoIds) params.append('departamento_ids', departamentoIds)
       if (produtoIds) params.append('produto_ids', produtoIds)
+      if (produtoBusca) params.append('produto_busca', produtoBusca)
 
       const response = await fetch(`/api/relatorios/produtos-sem-vendas?${params}`)
       const result: ApiResponse = await response.json()
@@ -175,7 +302,7 @@ export default function ProdutosSemVendasPage() {
           statusText: response.statusText,
           error: result
         })
-        alert(`Erro ao buscar produtos: ${'message' in result ? result.message : 'error' in result ? result.error : 'Erro desconhecido'}`)
+        alert(`Erro ao buscar produtos: ${result.message || result.error || 'Erro desconhecido'}`)
       }
     } catch (error) {
       console.error('Erro ao buscar produtos:', error)
@@ -188,11 +315,27 @@ export default function ProdutosSemVendasPage() {
   // Exportar para PDF (busca TODOS os dados)
   const exportToPDF = async () => {
     if (!currentTenant?.supabase_schema) return
+    if (!selectedBranch || selectedBranch === 'all') {
+      alert('Selecione uma filial específica para exportar o relatório.')
+      return
+    }
+    if (filtroTipo === 'departamento' && departamentosSelecionados.length === 0) {
+      alert('Selecione ao menos um departamento para exportar.')
+      return
+    }
+    if (filtroTipo === 'setor' && setoresSelecionados.length === 0) {
+      alert('Selecione ao menos um setor para exportar.')
+      return
+    }
+    if (filtroTipo === 'produto' && !produtoBuscaInput.trim()) {
+      alert('Informe um código ou descrição de produto para exportar.')
+      return
+    }
     
     setExporting(true)
     try {
       // Buscar TODOS os dados para exportação
-      const filiaisParam = selectedBranch || 'all'
+      const filiaisParam = selectedBranch
 
       let departamentoIds = null
       if (filtroTipo === 'departamento' && departamentosSelecionados.length > 0) {
@@ -203,6 +346,9 @@ export default function ProdutosSemVendasPage() {
 
       const produtoIds = filtroTipo === 'produto' && produtosSelecionados.length > 0
         ? produtosSelecionados.join(',')
+        : null
+      const produtoBusca = filtroTipo === 'produto' && produtoBuscaInput.trim()
+        ? produtoBuscaInput.trim()
         : null
 
       const params = new URLSearchParams({
@@ -219,6 +365,7 @@ export default function ProdutosSemVendasPage() {
 
       if (departamentoIds) params.append('departamento_ids', departamentoIds)
       if (produtoIds) params.append('produto_ids', produtoIds)
+      if (produtoBusca) params.append('produto_busca', produtoBusca)
 
       const response = await fetch(`/api/relatorios/produtos-sem-vendas?${params}`)
       const result: ApiResponse = await response.json()
@@ -253,10 +400,12 @@ export default function ProdutosSemVendasPage() {
         p.filial_id,
         p.produto_id,
         p.descricao,
+        p.departamento_nome || '-',
+        p.setor_nome || '-',
         p.dias_sem_venda,
         p.estoque_atual.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-        p.data_ultima_venda ? format(new Date(p.data_ultima_venda), 'dd/MM/yyyy') : '-',
-        p.data_ultima_entrada ? format(new Date(p.data_ultima_entrada), 'dd/MM/yyyy') : '-',
+        formatDateOnly(p.data_ultima_venda),
+        formatDateOnly(p.data_ultima_entrada),
         `R$ ${p.preco_custo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         p.curva_abcd || '-',
         p.curva_lucro || '-'
@@ -265,7 +414,7 @@ export default function ProdutosSemVendasPage() {
       autoTable(doc, {
         startY: 32,
         head: [[
-          'Filial', 'Código', 'Descrição', 'Dias',
+          'Filial', 'Código', 'Descrição', 'Departamento', 'Setor', 'Dias',
           'Estoque', 'Últ. Venda', 'Últ. Entrada', 'Custo',
           'Curva V.', 'Curva L.'
         ]],
@@ -285,9 +434,65 @@ export default function ProdutosSemVendasPage() {
     }
   }
 
-  // Helper para obter nome da filial
-  // Criar colunas com useMemo para evitar recriação desnecessária
-  const columns = useMemo(() => createColumns(), [])
+  const handleSort = (key: SortKey) => {
+    setSortConfig((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }))
+  }
+
+  const sortedProdutos = useMemo(() => {
+    const directionFactor = sortConfig.direction === 'asc' ? 1 : -1
+
+    return [...produtos].sort((a, b) => {
+      const getComparableValue = (produto: ProdutoSemVenda) => {
+        const value = produto[sortConfig.key]
+        if (value === null || value === undefined) return ''
+        return value
+      }
+
+      const valueA = getComparableValue(a)
+      const valueB = getComparableValue(b)
+
+      if (typeof valueA === 'number' && typeof valueB === 'number') {
+        return (valueA - valueB) * directionFactor
+      }
+
+      if (sortConfig.key === 'data_ultima_venda' || sortConfig.key === 'data_ultima_entrada') {
+        const timeA = valueA ? new Date(valueA as string).getTime() : 0
+        const timeB = valueB ? new Date(valueB as string).getTime() : 0
+        return (timeA - timeB) * directionFactor
+      }
+
+      return String(valueA).localeCompare(String(valueB), 'pt-BR', { numeric: true }) * directionFactor
+    })
+  }, [produtos, sortConfig])
+
+  const renderSortHeader = (label: string, key: SortKey, className?: string) => (
+    <button
+      type="button"
+      onClick={() => handleSort(key)}
+      className={className ?? 'inline-flex items-center gap-1 text-sm font-medium'}
+    >
+      {label}
+      <ArrowUpDown className="h-4 w-4" />
+    </button>
+  )
+
+  const selectedBranchLabel = branches.find((branch) => branch.value === selectedBranch)?.label
+  const selectedFilterLabel = useMemo(() => {
+    if (filtroTipo === 'departamento' && departamentosSelecionados.length === 1) {
+      return departamentos.find(
+        (departamento) => departamento.departamento_id === departamentosSelecionados[0]
+      )?.descricao || null
+    }
+
+    if (filtroTipo === 'setor' && setoresSelecionados.length === 1) {
+      return setores.find((setor) => setor.id === setoresSelecionados[0])?.nome || null
+    }
+
+    return null
+  }, [departamentos, departamentosSelecionados, filtroTipo, setores, setoresSelecionados])
 
   // Log de acesso
   useEffect(() => {
@@ -379,6 +584,7 @@ export default function ProdutosSemVendasPage() {
                   setDepartamentosSelecionados([])
                   setSetoresSelecionados([])
                   setProdutosSelecionados([])
+                  setProdutoBuscaInput('')
                 }}>
                   <SelectTrigger id="filtro-tipo" className="h-10 w-full py-1 xl:w-[220px]">
                     <SelectValue placeholder="Todos os produtos" />
@@ -425,16 +631,41 @@ export default function ProdutosSemVendasPage() {
                   />
                 )}
                 {filtroTipo === 'setor' && (
-                  <SectorFilterPopover
-                    setores={setores}
-                    selectedIds={setoresSelecionados}
-                    onChange={setSetoresSelecionados}
-                  />
+                  <div className="space-y-2">
+                    <SectorFilterPopover
+                      setores={setores}
+                      selectedIds={setoresSelecionados}
+                      onChange={setSetoresSelecionados}
+                    />
+                    {conflitosNosSetoresSelecionados.length > 0 && (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        Atenção: há departamentos compartilhados entre setores selecionados.
+                        Isso pode misturar produtos entre setores. Exemplo: depto(s){' '}
+                        {conflitosNosSetoresSelecionados
+                          .slice(0, 5)
+                          .map((c) => c.departamentoId)
+                          .join(', ')}
+                        .
+                      </div>
+                    )}
+                  </div>
                 )}
                 {filtroTipo === 'produto' && (
-                  <div className="text-sm text-muted-foreground pt-2">
-                    Use a busca abaixo para filtrar produtos
-                  </div>
+                  <Input
+                    placeholder="Código exato ou parte da descrição"
+                    value={produtoBuscaInput}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      setProdutoBuscaInput(value)
+                      const ids = value
+                        .split(',')
+                        .map((item) => item.trim())
+                        .filter((item) => /^\d+$/.test(item))
+                        .map((item) => Number(item))
+                      setProdutosSelecionados(Array.from(new Set(ids)))
+                    }}
+                    className="h-10"
+                  />
                 )}
               </div>
             </div>
@@ -454,10 +685,19 @@ export default function ProdutosSemVendasPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Produtos sem vendas</CardTitle>
-                <CardDescription>
-                  Mostrando {produtos.length} de {totalCount} produto{totalCount !== 1 ? 's' : ''} (página {currentPage} de {Math.ceil(totalCount / pageSize)})
-                </CardDescription>
+                <CardTitle className="flex flex-wrap items-center gap-2">
+                  <span>Relatório de Produtos sem vendas</span>
+                  {selectedBranchLabel && (
+                    <Badge variant="secondary" className="font-normal">
+                      {selectedBranchLabel}
+                    </Badge>
+                  )}
+                  {selectedFilterLabel && (
+                    <Badge variant="outline" className="font-normal">
+                      {selectedFilterLabel}
+                    </Badge>
+                  )}
+                </CardTitle>
               </div>
               <Button
                 variant="outline"
@@ -479,19 +719,120 @@ export default function ProdutosSemVendasPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <DataTable 
-              columns={columns} 
-              data={produtos}
-              pageSize={100}
-              showPagination={false}
-            />
+            <div className="relative overflow-hidden rounded-md border px-[5px]">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-[#E4DFFF] dark:bg-[#2D2B55]" />
+              <Table className="text-xs">
+                <TableHeader className="relative z-10 bg-[#E4DFFF] dark:bg-[#2D2B55]">
+                  <TableRow>
+                    <TableHead className="pl-[5px] pr-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Código', 'produto_id', 'inline-flex items-center gap-1 text-sm font-medium')}
+                    </TableHead>
+                    <TableHead className="px-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Descrição', 'descricao')}
+                    </TableHead>
+                    <TableHead className="px-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Dias', 'dias_sem_venda')}
+                    </TableHead>
+                    <TableHead className="px-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Estoque', 'estoque_atual')}
+                    </TableHead>
+                    <TableHead className="px-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Últ. Venda', 'data_ultima_venda')}
+                    </TableHead>
+                    <TableHead className="px-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Últ. Entrada', 'data_ultima_entrada')}
+                    </TableHead>
+                    <TableHead className="px-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Custo', 'preco_custo')}
+                    </TableHead>
+                    <TableHead className="px-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Curva V.', 'curva_abcd')}
+                    </TableHead>
+                    <TableHead className="pl-[5px] pr-[5px] text-[#4A4080] dark:text-[#E2E2F5]">
+                      {renderSortHeader('Curva L.', 'curva_lucro')}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedProdutos.length > 0 ? (
+                    sortedProdutos.map((produto) => (
+                      <TableRow key={`${produto.filial_id}-${produto.produto_id}`}>
+                        <TableCell className="pl-[5px] pr-[5px]">
+                          {produto.produto_id}
+                        </TableCell>
+                        <TableCell className="max-w-[300px] truncate px-[5px]" title={produto.descricao}>
+                          {produto.descricao}
+                        </TableCell>
+                        <TableCell className="px-[5px]">
+                          <Badge variant={produto.dias_sem_venda > 90 ? 'destructive' : 'secondary'}>
+                            {produto.dias_sem_venda}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-[5px]">
+                          {produto.estoque_atual.toLocaleString('pt-BR', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </TableCell>
+                        <TableCell className="px-[5px]">
+                          {produto.data_ultima_venda
+                            ? formatDateOnly(produto.data_ultima_venda)
+                            : <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                        <TableCell className="px-[5px]">
+                          {produto.data_ultima_entrada
+                            ? formatDateOnly(produto.data_ultima_entrada)
+                            : <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                        <TableCell className="px-[5px]">
+                          R$ {produto.preco_custo.toLocaleString('pt-BR', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </TableCell>
+                        <TableCell className="px-[5px]">
+                          {produto.curva_abcd ? (
+                            <Badge
+                              variant={
+                                produto.curva_abcd === 'A'
+                                  ? 'default'
+                                  : produto.curva_abcd === 'B'
+                                    ? 'secondary'
+                                    : 'outline'
+                              }
+                            >
+                              {produto.curva_abcd}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="pl-[5px] pr-[5px]">
+                          {produto.curva_lucro ? (
+                            <Badge variant="outline">{produto.curva_lucro}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={9} className="h-24 text-center">
+                        Nenhum resultado encontrado.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
             
             {/* Paginação Server-Side */}
-            {totalCount > pageSize && (
-              <div className="flex items-center justify-between pt-4">
-                <div className="text-sm text-muted-foreground">
-                  Mostrando {((currentPage - 1) * pageSize) + 1} a {Math.min(currentPage * pageSize, totalCount)} de {totalCount} produtos
-                </div>
+            <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <CardDescription>
+                Mostrando {produtos.length} de {totalCount} produto{totalCount !== 1 ? 's' : ''} (página {currentPage} de {Math.max(1, Math.ceil(totalCount / pageSize))})
+              </CardDescription>
+              {totalCount > pageSize && (
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
@@ -513,8 +854,8 @@ export default function ProdutosSemVendasPage() {
                     Próxima
                   </Button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : null}

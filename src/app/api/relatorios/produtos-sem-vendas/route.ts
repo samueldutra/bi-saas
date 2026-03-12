@@ -23,12 +23,23 @@ export async function GET(request: NextRequest) {
     const filtroTipo = searchParams.get('filtro_tipo') || 'all'
     const departamentoIds = searchParams.get('departamento_ids') || null
     const produtoIds = searchParams.get('produto_ids') || null
+    const produtoBusca = searchParams.get('produto_busca') || null
     const limit = parseInt(searchParams.get('limit') || '500')
     const offset = parseInt(searchParams.get('offset') || '0')
 
     if (!schema) {
       return NextResponse.json(
         { error: 'Parâmetro obrigatório: schema' },
+        { status: 400 }
+      )
+    }
+
+    if (!filiais || filiais === 'all') {
+      return NextResponse.json(
+        {
+          error: 'Parâmetro inválido: filiais',
+          message: 'Selecione uma filial específica para gerar este relatório.'
+        },
         { status: 400 }
       )
     }
@@ -43,6 +54,7 @@ export async function GET(request: NextRequest) {
       filtroTipo,
       departamentoIds,
       produtoIds,
+      produtoBusca,
       limit,
       offset
     })
@@ -57,6 +69,7 @@ export async function GET(request: NextRequest) {
       p_filtro_tipo: filtroTipo,
       p_departamento_ids: departamentoIds,
       p_produto_ids: produtoIds,
+      p_produto_busca: produtoBusca,
       p_limit: limit,
       p_offset: offset
     } as never)
