@@ -49,6 +49,73 @@ config/secrets/
 *.tsbuildinfo
 next-env.d.ts
 
+# editor / IDE
+.vscode/
+.idea/
+.zed/
+
+# AI / local tooling
+.mcp.json
+.agent/
+.agents/
+.claude/
+.cline/
+.codebuddy/
+.codex/
+.commandcode/
+.continue/
+.crush/
+.cursor/
+.factory/
+.gemini/
+.goose/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.opencode/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.windsurf/
+.zencoder/
+.github/skills/
+.github/claude-instructions.md
+.github/gemini-instructions.md
+
+# temporary files and local backups
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+*.bak
+
+# local caches
+.cache/
+.turbo/
+.eslintcache
+.stylelintcache
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# local operational notes / exports
+scripts/sql/etl-vendas.sql
+
 # arquivos de desenvolvimento e debug
 .archive/
 **/evidencias/
