@@ -23,9 +23,11 @@ interface Produto {
 interface DepartamentoNivel1 {
   nome: string
   nivel: number
+  quantidade_vendida: number
   valor_vendido: number
   lucro_total: number
   percentual_lucro: number
+  quantidade_vendida_ano_anterior: number
   valor_vendido_ano_anterior: number
   lucro_total_ano_anterior: number
   percentual_lucro_ano_anterior: number
@@ -35,9 +37,11 @@ interface DepartamentoNivel1 {
 interface DepartamentoNivel2 {
   nome: string
   nivel: number
+  quantidade_vendida: number
   valor_vendido: number
   lucro_total: number
   percentual_lucro: number
+  quantidade_vendida_ano_anterior: number
   valor_vendido_ano_anterior: number
   lucro_total_ano_anterior: number
   percentual_lucro_ano_anterior: number
@@ -47,9 +51,11 @@ interface DepartamentoNivel2 {
 interface DepartamentoNivel3 {
   nome: string
   nivel: number
+  quantidade_vendida: number
   valor_vendido: number
   lucro_total: number
   percentual_lucro: number
+  quantidade_vendida_ano_anterior: number
   valor_vendido_ano_anterior: number
   lucro_total_ano_anterior: number
   percentual_lucro_ano_anterior: number
@@ -430,9 +436,11 @@ export async function GET(request: Request) {
       .map((dept3) => ({
         dept3_id: hashCode(dept3.nome),
         dept_nivel3: dept3.nome,
+        total_qtde: dept3.quantidade_vendida,
         total_vendas: dept3.valor_vendido,
         total_lucro: dept3.lucro_total,
         margem: dept3.percentual_lucro,
+        total_qtde_ano_anterior: dept3.quantidade_vendida_ano_anterior,
         total_vendas_ano_anterior: dept3.valor_vendido_ano_anterior,
         total_lucro_ano_anterior: dept3.lucro_total_ano_anterior,
         margem_ano_anterior: dept3.percentual_lucro_ano_anterior,
@@ -441,9 +449,11 @@ export async function GET(request: Request) {
           .map((dept2) => ({
             dept2_id: hashCode(dept2.nome),
             dept_nivel2: dept2.nome,
+            total_qtde: dept2.quantidade_vendida,
             total_vendas: dept2.valor_vendido,
             total_lucro: dept2.lucro_total,
             margem: dept2.percentual_lucro,
+            total_qtde_ano_anterior: dept2.quantidade_vendida_ano_anterior,
             total_vendas_ano_anterior: dept2.valor_vendido_ano_anterior,
             total_lucro_ano_anterior: dept2.lucro_total_ano_anterior,
             margem_ano_anterior: dept2.percentual_lucro_ano_anterior,
@@ -452,9 +462,11 @@ export async function GET(request: Request) {
               .map((dept1) => ({
                 dept1_id: hashCode(dept1.nome),
                 dept_nivel1: dept1.nome,
+                total_qtde: dept1.quantidade_vendida,
                 total_vendas: dept1.valor_vendido,
                 total_lucro: dept1.lucro_total,
                 margem: dept1.percentual_lucro,
+                total_qtde_ano_anterior: dept1.quantidade_vendida_ano_anterior,
                 total_vendas_ano_anterior: dept1.valor_vendido_ano_anterior,
                 total_lucro_ano_anterior: dept1.lucro_total_ano_anterior,
                 margem_ano_anterior: dept1.percentual_lucro_ano_anterior,
@@ -520,6 +532,19 @@ function buildRowKey(
   return `${dept3}||${dept2}||${dept1}||${produtoCodigo}||${filialId}`
 }
 
+function parseNumericValue(value: string | number | undefined | null): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0
+  }
+
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  return 0
+}
+
 // Organize data hierarchically from flat data
 function organizeHierarchyFlat(data: RowData[], prevYearMap?: PrevYearMap | null): Hierarquia {
   const hierarquia: Hierarquia = {}
@@ -535,14 +560,16 @@ function organizeHierarchyFlat(data: RowData[], prevYearMap?: PrevYearMap | null
       hierarquia[dept3] = {
         nome: dept3,
         nivel: 3,
+        quantidade_vendida: 0,
         valor_vendido: 0,
         lucro_total: 0,
-      percentual_lucro: 0,
-      valor_vendido_ano_anterior: 0,
-      lucro_total_ano_anterior: 0,
-      percentual_lucro_ano_anterior: 0,
-      filhos: {}
-    }
+        percentual_lucro: 0,
+        quantidade_vendida_ano_anterior: 0,
+        valor_vendido_ano_anterior: 0,
+        lucro_total_ano_anterior: 0,
+        percentual_lucro_ano_anterior: 0,
+        filhos: {}
+      }
     }
 
     // Initialize nivel 2
@@ -550,9 +577,11 @@ function organizeHierarchyFlat(data: RowData[], prevYearMap?: PrevYearMap | null
       hierarquia[dept3].filhos[dept2] = {
         nome: dept2,
         nivel: 2,
+        quantidade_vendida: 0,
         valor_vendido: 0,
         lucro_total: 0,
         percentual_lucro: 0,
+        quantidade_vendida_ano_anterior: 0,
         valor_vendido_ano_anterior: 0,
         lucro_total_ano_anterior: 0,
         percentual_lucro_ano_anterior: 0,
@@ -565,9 +594,11 @@ function organizeHierarchyFlat(data: RowData[], prevYearMap?: PrevYearMap | null
       hierarquia[dept3].filhos[dept2].filhos[dept1] = {
         nome: dept1,
         nivel: 1,
+        quantidade_vendida: 0,
         valor_vendido: 0,
         lucro_total: 0,
         percentual_lucro: 0,
+        quantidade_vendida_ano_anterior: 0,
         valor_vendido_ano_anterior: 0,
         lucro_total_ano_anterior: 0,
         percentual_lucro_ano_anterior: 0,
@@ -579,20 +610,20 @@ function organizeHierarchyFlat(data: RowData[], prevYearMap?: PrevYearMap | null
     const rowKey = buildRowKey(dept3, dept2, dept1, row.produto_codigo, row.filial_id)
     const prevFromMap = prevYearMap?.get(rowKey)
     const prev = prevFromMap ?? {
-      qtde: typeof row.qtde_ano_anterior === 'string' ? parseFloat(row.qtde_ano_anterior || '0') : (row.qtde_ano_anterior || 0),
-      valor_vendas: typeof row.valor_vendas_ano_anterior === 'string' ? parseFloat(row.valor_vendas_ano_anterior || '0') : (row.valor_vendas_ano_anterior || 0),
-      valor_lucro: typeof row.valor_lucro_ano_anterior === 'string' ? parseFloat(row.valor_lucro_ano_anterior || '0') : (row.valor_lucro_ano_anterior || 0),
-      percentual_lucro: typeof row.percentual_lucro_ano_anterior === 'string' ? parseFloat(row.percentual_lucro_ano_anterior || '0') : (row.percentual_lucro_ano_anterior || 0),
+      qtde: parseNumericValue(row.qtde_ano_anterior),
+      valor_vendas: parseNumericValue(row.valor_vendas_ano_anterior),
+      valor_lucro: parseNumericValue(row.valor_lucro_ano_anterior),
+      percentual_lucro: parseNumericValue(row.percentual_lucro_ano_anterior),
     }
     const produto = {
       codigo: row.produto_codigo,
       nome: row.produto_descricao,
       filial_id: row.filial_id,
-      quantidade_vendida: typeof row.qtde === 'string' ? parseFloat(row.qtde || '0') : (row.qtde || 0),
+      quantidade_vendida: parseNumericValue(row.qtde),
       quantidade_vendida_ano_anterior: prev?.qtde ?? 0,
-      valor_vendido: typeof row.valor_vendas === 'string' ? parseFloat(row.valor_vendas || '0') : (row.valor_vendas || 0),
-      lucro_total: typeof row.valor_lucro === 'string' ? parseFloat(row.valor_lucro || '0') : (row.valor_lucro || 0),
-      percentual_lucro: typeof row.percentual_lucro === 'string' ? parseFloat(row.percentual_lucro || '0') : (row.percentual_lucro || 0),
+      valor_vendido: parseNumericValue(row.valor_vendas),
+      lucro_total: parseNumericValue(row.valor_lucro),
+      percentual_lucro: parseNumericValue(row.percentual_lucro),
       valor_vendido_ano_anterior: prev?.valor_vendas ?? 0,
       lucro_total_ano_anterior: prev?.valor_lucro ?? 0,
       percentual_lucro_ano_anterior: prev?.percentual_lucro ?? 0,
@@ -602,20 +633,26 @@ function organizeHierarchyFlat(data: RowData[], prevYearMap?: PrevYearMap | null
     hierarquia[dept3].filhos[dept2].filhos[dept1].produtos.push(produto)
 
     // Accumulate values for nivel 1
+    hierarquia[dept3].filhos[dept2].filhos[dept1].quantidade_vendida += produto.quantidade_vendida
     hierarquia[dept3].filhos[dept2].filhos[dept1].valor_vendido += produto.valor_vendido
     hierarquia[dept3].filhos[dept2].filhos[dept1].lucro_total += produto.lucro_total
+    hierarquia[dept3].filhos[dept2].filhos[dept1].quantidade_vendida_ano_anterior += produto.quantidade_vendida_ano_anterior
     hierarquia[dept3].filhos[dept2].filhos[dept1].valor_vendido_ano_anterior += produto.valor_vendido_ano_anterior
     hierarquia[dept3].filhos[dept2].filhos[dept1].lucro_total_ano_anterior += produto.lucro_total_ano_anterior
 
     // Accumulate values for nivel 2
+    hierarquia[dept3].filhos[dept2].quantidade_vendida += produto.quantidade_vendida
     hierarquia[dept3].filhos[dept2].valor_vendido += produto.valor_vendido
     hierarquia[dept3].filhos[dept2].lucro_total += produto.lucro_total
+    hierarquia[dept3].filhos[dept2].quantidade_vendida_ano_anterior += produto.quantidade_vendida_ano_anterior
     hierarquia[dept3].filhos[dept2].valor_vendido_ano_anterior += produto.valor_vendido_ano_anterior
     hierarquia[dept3].filhos[dept2].lucro_total_ano_anterior += produto.lucro_total_ano_anterior
 
     // Accumulate values for nivel 3
+    hierarquia[dept3].quantidade_vendida += produto.quantidade_vendida
     hierarquia[dept3].valor_vendido += produto.valor_vendido
     hierarquia[dept3].lucro_total += produto.lucro_total
+    hierarquia[dept3].quantidade_vendida_ano_anterior += produto.quantidade_vendida_ano_anterior
     hierarquia[dept3].valor_vendido_ano_anterior += produto.valor_vendido_ano_anterior
     hierarquia[dept3].lucro_total_ano_anterior += produto.lucro_total_ano_anterior
   }

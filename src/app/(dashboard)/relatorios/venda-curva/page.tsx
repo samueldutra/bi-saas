@@ -141,6 +141,10 @@ interface SetorFiltro {
   ativo: boolean
 }
 
+const normalizeNumber = (value: number | null | undefined) => (
+  typeof value === 'number' && Number.isFinite(value) ? value : 0
+)
+
 // Componente memoizado para renderização de produtos
 const ProdutoTable = memo(function ProdutoTable({
   produtos,
@@ -153,28 +157,35 @@ const ProdutoTable = memo(function ProdutoTable({
   compararAnoAnterior: boolean
   compareLabel: string
 }) {
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value)
+    }).format(normalizeNumber(value))
   }
 
-  const formatPercent = (value: number) => `${value.toFixed(2)}%`
+  const formatPercent = (value: number | null | undefined) => `${normalizeNumber(value).toFixed(2)}%`
+  const formatQuantity = (value: number | null | undefined) => normalizeNumber(value).toFixed(2)
 
-  const formatDeltaPercent = (current: number, previous: number) => {
-    if (previous === 0) {
+  const formatDeltaPercent = (current: number | null | undefined, previous: number | null | undefined) => {
+    const currentValue = normalizeNumber(current)
+    const previousValue = normalizeNumber(previous)
+
+    if (previousValue === 0) {
       return '(-)'
     }
-    const delta = ((current - previous) / previous) * 100
+    const delta = ((currentValue - previousValue) / previousValue) * 100
     const rounded = Math.round(delta)
     const sign = rounded > 0 ? '+' : ''
     return `${sign}${rounded}%`
   }
 
-  const getDeltaClass = (current: number, previous: number) => {
-    if (previous === 0) return 'text-muted-foreground'
-    const delta = ((current - previous) / previous) * 100
+  const getDeltaClass = (current: number | null | undefined, previous: number | null | undefined) => {
+    const currentValue = normalizeNumber(current)
+    const previousValue = normalizeNumber(previous)
+
+    if (previousValue === 0) return 'text-muted-foreground'
+    const delta = ((currentValue - previousValue) / previousValue) * 100
     if (delta > 0) return 'text-green-600'
     if (delta < 0) return 'text-red-600'
     return 'text-muted-foreground'
@@ -220,7 +231,7 @@ const ProdutoTable = memo(function ProdutoTable({
                   <span>{produto.qtde}</span>
                   {compararAnoAnterior && (
                     <span className="text-[10px] text-muted-foreground">
-                      {compareLabel} <span className="font-semibold text-black dark:text-white">{(produto.qtde_ano_anterior || 0).toFixed(2)}</span> (
+                      {compareLabel} <span className="font-semibold text-black dark:text-white">{formatQuantity(produto.qtde_ano_anterior)}</span> (
                       <span className={getDeltaClass(produto.qtde, produto.qtde_ano_anterior || 0)}>
                         {formatDeltaPercent(produto.qtde, produto.qtde_ano_anterior || 0)}
                       </span>
@@ -798,12 +809,12 @@ export default function VendaCurvaPage() {
         const indent = options.indent ? options.indent : 0
         const textY = currentY + options.rowHeight / 2 + 1
         doc.text(options.label, tableStartX + 2 + indent, textY)
-        const qtdeMain = options.qtde.toFixed(2)
+        const qtdeMain = formatQuantity(options.qtde)
         const vendasMain = formatCurrency(options.vendas)
         const lucroMain = formatCurrency(options.lucro)
-        const margemMain = `${options.margem.toFixed(2)}%`
+        const margemMain = formatPercent(options.margem)
         const qtdeCompare = options.qtdeAnterior !== undefined
-          ? `${compareLabel} ${options.qtdeAnterior.toFixed(2)} ${options.qtdeDelta ? `(${options.qtdeDelta})` : ''}`
+          ? `${compareLabel} ${formatQuantity(options.qtdeAnterior)} ${options.qtdeDelta ? `(${options.qtdeDelta})` : ''}`
           : null
         const vendasCompare = options.vendasAnterior !== undefined
           ? `${compareLabel} ${formatCurrency(options.vendasAnterior)} ${options.vendasDelta ? `(${options.vendasDelta})` : ''}`
@@ -812,7 +823,7 @@ export default function VendaCurvaPage() {
           ? `${compareLabel} ${formatCurrency(options.lucroAnterior)} ${options.lucroDelta ? `(${options.lucroDelta})` : ''}`
           : null
         const margemCompare = options.margemAnterior !== undefined
-          ? `${compareLabel} ${options.margemAnterior.toFixed(2)}% ${options.margemDelta ? `(${options.margemDelta})` : ''}`
+          ? `${compareLabel} ${formatPercent(options.margemAnterior)} ${options.margemDelta ? `(${options.margemDelta})` : ''}`
           : null
 
         if (qtdeCompare || vendasCompare || lucroCompare || margemCompare) {
@@ -911,11 +922,11 @@ export default function VendaCurvaPage() {
               tableRows.push([
                 produto.codigo.toString(),
                 produto.descricao.substring(0, 40),
-                produto.qtde.toFixed(2),
+                formatQuantity(produto.qtde),
                 formatCurrency(produto.valor_vendas),
                 produto.curva_venda,
                 formatCurrency(produto.valor_lucro),
-                produto.percentual_lucro.toFixed(2) + '%',
+                formatPercent(produto.percentual_lucro),
                 produto.curva_lucro,
                 produto.filial_id.toString()
               ])
@@ -930,7 +941,7 @@ export default function VendaCurvaPage() {
                   { content: '', styles: compareRowBaseStyles },
                   { content: '', styles: compareRowBaseStyles },
                   {
-                    content: `${compareLabel} ${(produto.qtde_ano_anterior || 0).toFixed(2)} (${qtdeDelta})`,
+                    content: `${compareLabel} ${formatQuantity(produto.qtde_ano_anterior)} (${qtdeDelta})`,
                     styles: { ...compareRowBaseStyles, textColor: mapPdfColor(getDeltaClass(produto.qtde, produto.qtde_ano_anterior || 0)) }
                   },
                   {
@@ -943,7 +954,7 @@ export default function VendaCurvaPage() {
                     styles: { ...compareRowBaseStyles, textColor: mapPdfColor(getDeltaClass(produto.valor_lucro, produto.valor_lucro_ano_anterior || 0)) }
                   },
                   {
-                    content: `${compareLabel} ${(produto.percentual_lucro_ano_anterior || 0).toFixed(2)}% (${margemDelta})`,
+                    content: `${compareLabel} ${formatPercent(produto.percentual_lucro_ano_anterior)} (${margemDelta})`,
                     styles: { ...compareRowBaseStyles, textColor: mapPdfColor(getDeltaClass(produto.percentual_lucro, produto.percentual_lucro_ano_anterior || 0)) }
                   },
                   { content: '', styles: compareRowBaseStyles },
@@ -1016,29 +1027,35 @@ export default function VendaCurvaPage() {
 
 
   // Funções auxiliares
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value)
+    }).format(normalizeNumber(value))
   }
 
-  const formatPercent = (value: number) => `${value.toFixed(2)}%`
-  const formatQuantity = (value: number) => value.toFixed(2)
+  const formatPercent = (value: number | null | undefined) => `${normalizeNumber(value).toFixed(2)}%`
+  const formatQuantity = (value: number | null | undefined) => normalizeNumber(value).toFixed(2)
 
-  const formatDeltaPercent = (current: number, previous: number) => {
-    if (previous === 0) {
+  const formatDeltaPercent = (current: number | null | undefined, previous: number | null | undefined) => {
+    const currentValue = normalizeNumber(current)
+    const previousValue = normalizeNumber(previous)
+
+    if (previousValue === 0) {
       return '(-)'
     }
-    const delta = ((current - previous) / previous) * 100
+    const delta = ((currentValue - previousValue) / previousValue) * 100
     const rounded = Math.round(delta)
     const sign = rounded > 0 ? '+' : ''
     return `${sign}${rounded}%`
   }
 
-  const getDeltaClass = (current: number, previous: number) => {
-    if (previous === 0) return 'text-muted-foreground'
-    const delta = ((current - previous) / previous) * 100
+  const getDeltaClass = (current: number | null | undefined, previous: number | null | undefined) => {
+    const currentValue = normalizeNumber(current)
+    const previousValue = normalizeNumber(previous)
+
+    if (previousValue === 0) return 'text-muted-foreground'
+    const delta = ((currentValue - previousValue) / previousValue) * 100
     if (delta > 0) return 'text-green-600'
     if (delta < 0) return 'text-red-600'
     return 'text-muted-foreground'
