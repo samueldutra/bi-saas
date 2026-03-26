@@ -35,6 +35,8 @@ interface MetaAuthorizationRecord {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const { createDirectClient } = await import('@/lib/supabase/admin')
+    const directSupabase = createDirectClient()
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -88,7 +90,7 @@ export async function POST(request: NextRequest) {
 
       const { schema, metaId, valorMeta, metaPercentual } = validation.data
 
-      const { data: metaRecord, error: metaLookupError } = await supabase
+      const { data: metaRecord, error: metaLookupError } = await directSupabase
         .schema(schema as 'public')
         .from('metas_mensais')
         .select('id, filial_id')
@@ -130,8 +132,7 @@ export async function POST(request: NextRequest) {
       })
 
       // Atualizar meta específica usando RPC
-      // @ts-expect-error - Function will exist after migration is applied
-      const { data, error } = await supabase.rpc('update_meta_mensal', {
+      const { data, error } = await directSupabase.rpc('update_meta_mensal', {
         p_schema: schema,
         p_meta_id: metaId,
         p_valor_meta: valorMeta,

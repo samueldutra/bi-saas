@@ -143,6 +143,7 @@ const weekdayBadgeClasses: Record<string, string> = {
 
 export default function MetaMensalPage() {
   const { currentTenant, userProfile } = useTenantContext()
+  const [isClientReady, setIsClientReady] = useState(false)
   const { branchOptions: branches, isLoading: isLoadingBranches } = useBranchesOptions({
     tenantId: currentTenant?.id,
     enabled: !!currentTenant,
@@ -183,6 +184,10 @@ export default function MetaMensalPage() {
   const lastUpdatedPeriodKeyRef = useRef('')
   const latestLoadRequestIdRef = useRef(0)
   const reportAbortControllerRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    setIsClientReady(true)
+  }, [])
 
   // Log audit on mount
   useEffect(() => {
@@ -1238,6 +1243,29 @@ export default function MetaMensalPage() {
       </TooltipContent>
     </Tooltip>
   )
+
+  if (!isClientReady) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-96 max-w-full" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-40" />
+            <Skeleton className="h-10 w-48" />
+            <Skeleton className="h-10 w-44" />
+          </div>
+        </div>
+
+        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-[420px] w-full" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
