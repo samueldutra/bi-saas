@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 
+type RpcError = {
+  code?: string
+  details?: string | null
+  hint?: string | null
+  message?: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -86,29 +93,34 @@ export async function POST(request: NextRequest) {
       ? 'generate_metas_setor_com_faturamento'
       : 'generate_metas_setor'
 
-    // Usar a função COMPLETA que tem os parâmetros de meta_percentual e data_referencia
-    // Assinatura: p_schema, p_setor_id, p_filial_id, p_mes, p_ano, p_meta_percentual, p_data_referencia_inicial
-    // @ts-expect-error RPC function type not generated yet
-    let { data, error }: { data: unknown; error: unknown } = await supabase.rpc(rpcName, {
+    const { createDirectClient } = await import('@/lib/supabase/admin')
+    const directSupabase = createDirectClient()
+
+    // Enviamos explicitamente p_meta_margem_percentual para desambiguar a sobrecarga
+    // exposta pelo PostgREST para generate_metas_setor.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let { data, error }: { data: unknown; error: RpcError | null } = await (directSupabase as any).rpc(rpcName, {
       p_schema: schema,
       p_setor_id: parseInt(setor_id),
       p_filial_id: finalFilialId,  // bigint singular (não array!)
       p_mes: parseInt(mes),
       p_ano: parseInt(ano),
       p_meta_percentual: parseFloat(meta_percentual),
+      p_meta_margem_percentual: null,
       p_data_referencia_inicial: data_referencia,
     })
 
     if (error && useFaturamentoMetas) {
       console.warn('[API/METAS/SETOR/GENERATE] RPC com faturamento falhou, fallback legado:', error)
-      // @ts-expect-error RPC function type not generated yet
-      const fallback = await supabase.rpc('generate_metas_setor', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fallback = await (directSupabase as any).rpc('generate_metas_setor', {
         p_schema: schema,
         p_setor_id: parseInt(setor_id),
         p_filial_id: finalFilialId,
         p_mes: parseInt(mes),
         p_ano: parseInt(ano),
         p_meta_percentual: parseFloat(meta_percentual),
+        p_meta_margem_percentual: null,
         p_data_referencia_inicial: data_referencia,
       })
       data = fallback.data
@@ -117,7 +129,15 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('[API/METAS/SETOR/GENERATE] Error:', error)
-      return NextResponse.json({ error: String(error) }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: error.message ?? 'Erro ao gerar metas do setor',
+          code: error.code ?? null,
+          hint: error.hint ?? null,
+          details: error.details ?? null,
+        },
+        { status: 500 }
+      )
     }
 
     console.log('[API/METAS/SETOR/GENERATE] Success:', data)
