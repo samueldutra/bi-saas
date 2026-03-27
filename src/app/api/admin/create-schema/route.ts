@@ -1,5 +1,17 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
+
+const createSchemaRequestSchema = z.object({
+  schemaName: z.string()
+    .trim()
+    .min(1, 'schemaName é obrigatório')
+    .regex(
+      /^[a-z][a-z0-9_]*$/,
+      'Nome do schema inválido. Use apenas letras minúsculas, números e underscore, começando com letra.'
+    ),
+})
 
 /**
  * POST /api/admin/create-schema
@@ -18,6 +30,7 @@ import { NextResponse } from 'next/server'
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
+    const admin = createAdminClient()
 
     // 1. Verificar autenticação
     const {
@@ -58,26 +71,15 @@ export async function POST(request: Request) {
     }
 
     // 3. Obter parâmetros
-    const body = await request.json()
-    const { schemaName } = body
-
-    if (!schemaName) {
+    const validation = createSchemaRequestSchema.safeParse(await request.json())
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'schemaName é obrigatório' },
+        { error: 'Dados inválidos', details: validation.error.flatten() },
         { status: 400 }
       )
     }
 
-    // 4. Validar nome do schema (apenas letras minúsculas, números e underscore)
-    if (!/^[a-z][a-z0-9_]*$/.test(schemaName)) {
-      return NextResponse.json(
-        {
-          error:
-            'Nome do schema inválido. Use apenas letras minúsculas, números e underscore, começando com letra.',
-        },
-        { status: 400 }
-      )
-    }
+    const { schemaName } = validation.data
 
     // 5. Verificar se o nome não é um schema reservado
     const reservedSchemas = [
@@ -106,7 +108,7 @@ export async function POST(request: Request) {
 
     // 6. Chamar RPC para criar schema (sempre clona de okilao)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any).rpc(
+    const { data, error } = await (admin as any).rpc(
       'clone_schema_for_tenant',
       {
         p_target_schema: schemaName,

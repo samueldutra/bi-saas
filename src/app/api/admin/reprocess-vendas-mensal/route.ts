@@ -1,13 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { createDirectClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
+import { isValidSchema, validateSchemaAccess } from '@/lib/security/validate-schema'
+import { z } from 'zod'
 
-type ReprocessPayload = {
-  schema: string
-  ano: number
-  mes: number
-  filiais: number[]
-}
+const reprocessSchema = z.object({
+  schema: z.string().min(1, 'schema é obrigatório').refine(isValidSchema, 'schema inválido'),
+  ano: z.number().int().min(2000, 'ano inválido').max(2100, 'ano inválido'),
+  mes: z.number().int().min(1, 'mes inválido').max(12, 'mes inválido'),
+  filiais: z.array(z.coerce.number().int().positive()).min(1, 'filiais é obrigatório'),
+})
 
 export async function POST(request: Request) {
   try {
@@ -23,7 +25,7 @@ export async function POST(request: Request) {
 
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, tenant_id')
       .eq('id', user.id)
       .single()
 
@@ -42,26 +44,64 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = (await request.json()) as Partial<ReprocessPayload>
-    const schema = body.schema?.trim()
-    const ano = body.ano
-    const mes = body.mes
-    const filiais = body.filiais?.map((f) => Number(f)).filter(Boolean) ?? []
+    const validation = reprocessSchema.safeParse(await request.json())
 
-    if (!schema) {
-      return NextResponse.json({ error: 'schema é obrigatório' }, { status: 400 })
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Parâmetros inválidos', details: validation.error.flatten() },
+        { status: 400 }
+      )
     }
-    if (!ano || ano < 2000 || ano > 2100) {
-      return NextResponse.json({ error: 'ano inválido' }, { status: 400 })
-    }
-    if (!mes || mes < 1 || mes > 12) {
-      return NextResponse.json({ error: 'mes inválido' }, { status: 400 })
-    }
-    if (filiais.length === 0) {
-      return NextResponse.json({ error: 'filiais é obrigatório' }, { status: 400 })
+
+    const { schema, ano, mes, filiais } = validation.data
+
+    const hasSchemaAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasSchemaAccess) {
+      return NextResponse.json(
+        { error: 'Sem permissão para acessar este schema' },
+        { status: 403 }
+      )
     }
 
     const admin = createDirectClient()
+    const { data: tenant } = await admin
+      .from('tenants')
+      .select('id')
+      .eq('supabase_schema', schema)
+      .eq('is_active', true)
+      .maybeSingle() as { data: { id: string } | null }
+
+    if (!tenant) {
+      return NextResponse.json(
+        { error: 'Schema não encontrado' },
+        { status: 404 }
+      )
+    }
+
+    const filialCodes = filiais.map((filial) => String(filial))
+    const { data: allowedBranches, error: branchesError } = await admin
+      .from('branches')
+      .select('branch_code')
+      .eq('tenant_id', tenant.id)
+      .in('branch_code', filialCodes) as { data: { branch_code: string }[] | null; error: Error | null }
+
+    if (branchesError) {
+      return NextResponse.json(
+        { error: 'Erro ao validar filiais do tenant' },
+        { status: 500 }
+      )
+    }
+
+    const allowedCodes = new Set((allowedBranches || []).map((branch) => branch.branch_code))
+    const invalidFiliais = filiais.filter((filial) => !allowedCodes.has(String(filial)))
+
+    if (invalidFiliais.length > 0) {
+      return NextResponse.json(
+        { error: `Filiais inválidas para o schema informado: ${invalidFiliais.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
     const results: Array<{ filial: number; rows: number; error?: string }> = []
 
     for (const filial of filiais) {

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // FORÇAR ROTA DINÂMICA - NÃO CACHEAR
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,11 @@ export async function GET(req: Request) {
       data_fim: requestedDataFim,
       filter_type: requestedFilterType,
     } = validation.data;
+
+    const hasAccess = await validateSchemaAccess(supabase, user, requestedSchema)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     // Get user's authorized branches
     const authorizedBranches = await getUserAuthorizedBranchCodes(supabase, user.id)

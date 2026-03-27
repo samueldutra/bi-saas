@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // Types
 interface Produto {
@@ -96,6 +97,11 @@ export async function GET(request: Request) {
     const schema = searchParams.get('schema')
     if (!schema) {
       return NextResponse.json({ error: 'Schema não informado' }, { status: 400 })
+    }
+
+    const hasAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Get parameters

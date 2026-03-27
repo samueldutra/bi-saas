@@ -1,17 +1,50 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { safeErrorResponse } from '@/lib/api/error-handler'
+import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { isValidSchema, validateSchemaAccess } from '@/lib/security/validate-schema'
+import { z } from 'zod'
+
+const updateSetorSchema = z.object({
+  schema: z.string().min(1).refine(isValidSchema, 'Schema inválido'),
+  setor_id: z.union([z.string(), z.number()]),
+  filial_id: z.union([z.string(), z.number()]),
+  data: z.string().min(1),
+  meta_percentual: z.number(),
+  valor_meta: z.number(),
+})
 
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-    const body = await request.json()
-    const { schema, setor_id, filial_id, data, meta_percentual, valor_meta } = body
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!schema || !setor_id || !filial_id || !data || meta_percentual === undefined || valor_meta === undefined) {
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
+    const validation = updateSetorSchema.safeParse(await request.json())
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Parâmetros inválidos' },
+        { error: 'Parâmetros inválidos', details: validation.error.flatten() },
         { status: 400 }
+      )
+    }
+
+    const { schema, setor_id, filial_id, data, meta_percentual, valor_meta } = validation.data
+
+    const hasAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const authorizedBranches = await getUserAuthorizedBranchCodes(supabase, user.id)
+    if (authorizedBranches !== null && !authorizedBranches.includes(String(filial_id))) {
+      return NextResponse.json(
+        { error: 'Usuário não possui acesso à filial solicitada' },
+        { status: 403 }
       )
     }
 

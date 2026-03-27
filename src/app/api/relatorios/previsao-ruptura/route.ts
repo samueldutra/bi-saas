@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 // Interfaces
 interface Produto {
@@ -78,10 +80,34 @@ export async function GET(req: Request) {
       page_size,
     } = validation.data
 
+    const hasAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const authorizedBranches = await getUserAuthorizedBranchCodes(supabase, user.id)
+
     // Converter parâmetros
-    const filialIdsArray = filial_ids
-      ? filial_ids.split(',').map((id) => parseInt(id.trim(), 10))
+    let filialIdsArray = filial_ids
+      ? filial_ids.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id))
       : null
+
+    if (authorizedBranches !== null) {
+      const allowedIds = new Set(authorizedBranches.map((id) => parseInt(id, 10)).filter((id) => !isNaN(id)))
+
+      if (filialIdsArray === null) {
+        filialIdsArray = Array.from(allowedIds)
+      } else {
+        filialIdsArray = filialIdsArray.filter((id) => allowedIds.has(id))
+      }
+
+      if (filialIdsArray.length === 0) {
+        return NextResponse.json(
+          { error: 'Usuário não possui acesso às filiais solicitadas' },
+          { status: 403 }
+        )
+      }
+    }
 
     const departamentoIdsArray = departamento_ids
       ? departamento_ids.split(',').map((id) => parseInt(id.trim(), 10))

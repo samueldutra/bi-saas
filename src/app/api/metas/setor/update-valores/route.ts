@@ -2,21 +2,61 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { safeErrorResponse } from '@/lib/api/error-handler'
 import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
+import { isValidSchema, validateSchemaAccess } from '@/lib/security/validate-schema'
+import { z } from 'zod'
+
+const updateValoresSchema = z.object({
+  schema: z.string().min(1, 'Schema é obrigatório').refine(isValidSchema, 'Schema inválido'),
+  mes: z.coerce.number().int().min(1, 'Mês inválido').max(12, 'Mês inválido'),
+  ano: z.coerce.number().int().min(2000, 'Ano inválido').max(2100, 'Ano inválido'),
+})
 
 export async function POST(req: NextRequest) {
   try {
-    const { schema, mes, ano } = await req.json()
+    const supabase = await createClient()
 
-    console.log('[API/METAS/SETOR/UPDATE] Request params:', { schema, mes, ano })
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!schema || !mes || !ano) {
+    if (!user) {
+      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single() as { data: { role: string } | null }
+
+    if (!profile || !['superadmin', 'admin'].includes(profile.role)) {
       return NextResponse.json(
-        { error: 'Schema, mês e ano são obrigatórios' },
+        { error: 'Apenas admins podem atualizar valores realizados' },
+        { status: 403 }
+      )
+    }
+
+    const validation = updateValoresSchema.safeParse(await req.json())
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Schema, mês e ano são obrigatórios', details: validation.error.flatten() },
         { status: 400 }
       )
     }
 
-    const supabase = await createClient()
+    const { schema, mes, ano } = validation.data
+
+    console.log('[API/METAS/SETOR/UPDATE] Request params:', { schema, mes, ano })
+
+    const hasSchemaAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasSchemaAccess) {
+      return NextResponse.json(
+        { error: 'Sem permissão para acessar este schema' },
+        { status: 403 }
+      )
+    }
+
     const useFaturamentoMetas = await isFaturamentoMetasEnabled(schema)
     const rpcName = useFaturamentoMetas
       ? 'atualizar_valores_realizados_todos_setores_com_faturamento'

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
+import { validateSchemaAccess } from '@/lib/security/validate-schema'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -34,6 +36,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const hasAccess = await validateSchemaAccess(supabase, user, schema)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     if (!filiais || filiais === 'all') {
       return NextResponse.json(
         {
@@ -44,9 +51,26 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const authorizedBranches = await getUserAuthorizedBranchCodes(supabase, user.id)
+    let finalFiliais = filiais
+
+    if (authorizedBranches !== null) {
+      const requestedFiliais = filiais.split(',').map((id) => id.trim()).filter(Boolean)
+      const allowedFiliais = requestedFiliais.filter((id) => authorizedBranches.includes(id))
+
+      if (allowedFiliais.length === 0) {
+        return NextResponse.json(
+          { error: 'Usuário não possui acesso às filiais solicitadas' },
+          { status: 403 }
+        )
+      }
+
+      finalFiliais = allowedFiliais.join(',')
+    }
+
     console.log('[API/PRODUTOS-SEM-VENDAS] Params:', {
       schema,
-      filiais,
+      filiais: finalFiliais,
       diasSemVendasMin,
       diasSemVendasMax,
       dataReferencia,
@@ -61,7 +85,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase.rpc('get_produtos_sem_vendas', {
       p_schema: schema,
-      p_filiais: filiais,
+      p_filiais: finalFiliais,
       p_dias_sem_vendas_min: diasSemVendasMin,
       p_dias_sem_vendas_max: diasSemVendasMax,
       p_data_referencia: dataReferencia,
