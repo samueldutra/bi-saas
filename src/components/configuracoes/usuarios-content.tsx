@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,13 +15,29 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { UserPlus, Users, Shield, Pencil, Trash2, Building2 } from 'lucide-react'
+import { Building2, Link2, Pencil, Shield, Trash2, Unlink2, UserPlus, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Database } from '@/types/database.types'
-import type { UserProfile as UP } from '@/types'
+import { LinkUsersDialog } from '@/components/configuracoes/link-users-dialog'
 
-type UserProfile = UP & {
-  tenants?: Database['public']['Tables']['tenants']['Row'] | null
+type TenantSummary = {
+  id: string
+  name: string
+  slug: string
+}
+
+type UserProfile = {
+  id: string
+  tenant_id: string | null
+  full_name: string
+  avatar_url: string | null
+  role: 'superadmin' | 'admin' | 'user' | 'viewer'
+  can_switch_tenants: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  access_type: 'primary' | 'linked' | 'superadmin'
+  linked_at: string | null
+  primary_tenant: TenantSummary | null
 }
 
 interface UsuariosContentProps {
@@ -34,95 +49,64 @@ interface UsuariosContentProps {
 export function UsuariosContent({ currentUserRole, currentUserTenantId, selectedTenantId }: UsuariosContentProps) {
   const [users, setUsers] = useState<UserProfile[]>([])
   const [loading, setLoading] = useState(true)
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [dialogMode, setDialogMode] = useState<'delete' | 'unlink'>('delete')
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [userEmail, setUserEmail] = useState<string>('')
   const [selectedTenantName, setSelectedTenantName] = useState<string>('')
 
-  useEffect(() => {
-    const loadUsers = async () => {
-      const supabase = createClient()
+  const effectiveTenantId = selectedTenantId || currentUserTenantId
 
-      // Carregar nome do tenant selecionado (se superadmin)
-      if (currentUserRole === 'superadmin' && selectedTenantId) {
-        const { data: tenant } = await supabase
-          .from('tenants')
-          .select('name')
-          .eq('id', selectedTenantId)
-          .single() as { data: { name: string } | null }
-        
-        setSelectedTenantName(tenant?.name || '')
-      }
-
-      let usersQuery = supabase
-        .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      // Admin: apenas usuários do tenant selecionado (ou tenant atual) e exclui superadmins
-      const adminTenantId = currentUserRole === 'admin'
-        ? (selectedTenantId || currentUserTenantId)
-        : null
-
-      if (currentUserRole === 'admin' && adminTenantId) {
-        usersQuery = usersQuery
-          .eq('tenant_id', adminTenantId)
-          .neq('role', 'superadmin')
-      }
-      
-      // SuperAdmin: filtra por tenant selecionado
-      // - Todos os superadmins (sem filtro de tenant)
-      // - Admins e users do tenant selecionado
-      if (currentUserRole === 'superadmin' && selectedTenantId) {
-        // Não podemos fazer OR direto no Supabase de forma simples
-        // Solução: buscar todos e filtrar no client-side
-        // OU fazer duas queries e combinar
-        
-        // Vamos buscar todos e filtrar no client (mais simples)
-        // A query não terá filtro aqui, filtraremos após
-      }
-
-      const { data: userProfiles } = (await usersQuery) as { data: UP[] | null }
-
-      // Filtro adicional para SuperAdmin com tenant selecionado
-      let filteredProfiles = userProfiles || []
-      if (currentUserRole === 'superadmin' && selectedTenantId) {
-        filteredProfiles = userProfiles?.filter(profile => {
-          // Incluir todos os superadmins
-          if (profile.role === 'superadmin') return true
-          // Incluir admins e users do tenant selecionado
-          return profile.tenant_id === selectedTenantId
-        }) || []
-      }
-
-      // Buscar todos os tenants únicos dos usuários
-      const tenantIds = [...new Set(filteredProfiles?.map(u => u.tenant_id).filter(Boolean) as string[])]
-
-      const tenantsMap = new Map()
-      if (tenantIds.length > 0) {
-        const { data: tenants } = (await supabase
-          .from('tenants')
-          .select('id, name, slug')
-          .in('id', tenantIds)) as { data: { id: string; name: string; slug: string }[] | null }
-
-        tenants?.forEach(tenant => {
-          tenantsMap.set(tenant.id, tenant)
-        })
-      }
-
-      // Combinar users com tenants
-      const usersWithTenants: UserProfile[] = filteredProfiles?.map(profile => ({
-        ...profile,
-        tenants: profile.tenant_id ? tenantsMap.get(profile.tenant_id) : null
-      })) || []
-
-      setUsers(usersWithTenants)
+  const loadUsers = useCallback(async () => {
+    if (!effectiveTenantId) {
+      setUsers([])
+      setSelectedTenantName('')
       setLoading(false)
+      return
     }
 
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/users/by-tenant?tenantId=${effectiveTenantId}`)
+      const result = await response.json()
+
+      if (!response.ok) {
+        toast.error(result.error || 'Erro ao carregar usuários')
+        setUsers([])
+        setSelectedTenantName('')
+        return
+      }
+
+      setUsers(result.data || [])
+      setSelectedTenantName(result.tenant?.name || '')
+    } catch (error) {
+      console.error('Erro ao carregar usuários:', error)
+      toast.error('Erro inesperado ao carregar usuários')
+      setUsers([])
+      setSelectedTenantName('')
+    } finally {
+      setLoading(false)
+    }
+  }, [effectiveTenantId])
+
+  useEffect(() => {
     loadUsers()
-  }, [currentUserRole, currentUserTenantId, selectedTenantId])
+  }, [loadUsers])
+
+  useEffect(() => {
+    const handleOpenLinkDialog = () => {
+      if (currentUserRole === 'superadmin' && effectiveTenantId) {
+        setLinkDialogOpen(true)
+      }
+    }
+
+    window.addEventListener('openLinkUserDialog', handleOpenLinkDialog)
+    return () => {
+      window.removeEventListener('openLinkUserDialog', handleOpenLinkDialog)
+    }
+  }, [currentUserRole, effectiveTenantId])
 
   // Calculate stats
   const totalUsers = users?.length || 0
@@ -153,98 +137,74 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
     )
   }
 
-  const handleDeleteClick = async (user: UserProfile) => {
+  const handleDeleteClick = async (user: UserProfile, mode: 'delete' | 'unlink') => {
     setUserToDelete(user)
+    setDialogMode(mode)
 
-    // Buscar o email do usuário
-    try {
-      const response = await fetch(`/api/users/get-email?userId=${user.id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setUserEmail(data.email || 'Email não encontrado')
-      } else {
+    if (mode === 'delete') {
+      try {
+        const response = await fetch(`/api/users/get-email?userId=${user.id}`)
+        if (response.ok) {
+          const data = await response.json()
+          setUserEmail(data.email || 'Email não encontrado')
+        } else {
+          setUserEmail('Email não encontrado')
+        }
+      } catch (error) {
+        console.error('Error fetching user email:', error)
         setUserEmail('Email não encontrado')
       }
-    } catch (error) {
-      console.error('Error fetching user email:', error)
-      setUserEmail('Email não encontrado')
+    } else {
+      setUserEmail('')
     }
 
     setDeleteDialogOpen(true)
   }
 
   const handleConfirmDelete = async () => {
-    if (!userToDelete) return
+    if (!userToDelete || !effectiveTenantId) return
 
     setIsDeleting(true)
 
     try {
-      const response = await fetch(`/api/users/delete?userId=${userToDelete.id}`, {
-        method: 'DELETE',
-      })
+      const response = dialogMode === 'delete'
+        ? await fetch(`/api/users/delete?userId=${userToDelete.id}`, {
+          method: 'DELETE',
+        })
+        : await fetch(
+          `/api/users/tenant-access?userId=${userToDelete.id}&tenantId=${effectiveTenantId}`,
+          {
+            method: 'DELETE',
+          }
+        )
 
       const data = await response.json()
 
       if (response.ok) {
-        toast.success('Usuário excluído com sucesso')
+        toast.success(
+          dialogMode === 'delete'
+            ? 'Usuário excluído com sucesso'
+            : 'Usuário desvinculado do tenant com sucesso'
+        )
         setDeleteDialogOpen(false)
         setUserToDelete(null)
         setUserEmail('')
-
-        // Recarregar lista de usuários
-        const supabase = createClient()
-        let usersQuery = supabase
-          .from('user_profiles')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        const adminTenantId = currentUserRole === 'admin'
-          ? (selectedTenantId || currentUserTenantId)
-          : null
-
-        if (currentUserRole === 'admin' && adminTenantId) {
-          usersQuery = usersQuery
-            .eq('tenant_id', adminTenantId)
-            .neq('role', 'superadmin')
-        }
-
-        const { data: userProfiles } = (await usersQuery) as { data: UP[] | null }
-
-        // Filtro adicional para SuperAdmin com tenant selecionado
-        let filteredProfiles = userProfiles || []
-        if (currentUserRole === 'superadmin' && selectedTenantId) {
-          filteredProfiles = userProfiles?.filter(profile => {
-            if (profile.role === 'superadmin') return true
-            return profile.tenant_id === selectedTenantId
-          }) || []
-        }
-
-        const tenantIds = [...new Set(filteredProfiles?.map(u => u.tenant_id).filter(Boolean) as string[])]
-        const tenantsMap = new Map()
-
-        if (tenantIds.length > 0) {
-          const { data: tenants } = (await supabase
-            .from('tenants')
-            .select('id, name, slug')
-            .in('id', tenantIds)) as { data: { id: string; name: string; slug: string }[] | null }
-
-          tenants?.forEach(tenant => {
-            tenantsMap.set(tenant.id, tenant)
-          })
-        }
-
-        const usersWithTenants: UserProfile[] = filteredProfiles?.map(profile => ({
-          ...profile,
-          tenants: profile.tenant_id ? tenantsMap.get(profile.tenant_id) : null
-        })) || []
-
-        setUsers(usersWithTenants)
+        await loadUsers()
       } else {
-        toast.error(data.error || 'Erro ao excluir usuário')
+        toast.error(
+          data.error ||
+          (dialogMode === 'delete'
+            ? 'Erro ao excluir usuário'
+            : 'Erro ao desvincular usuário do tenant')
+        )
       }
     } catch (error) {
-      console.error('Erro ao excluir usuário:', error)
-      toast.error('Erro inesperado ao excluir usuário')
+      console.error('Erro ao executar ação no usuário:', error)
+      toast.error(
+        dialogMode === 'delete'
+          ? 'Erro inesperado ao excluir usuário'
+          : 'Erro inesperado ao desvincular usuário'
+      )
     } finally {
       setIsDeleting(false)
     }
@@ -254,6 +214,27 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
     setDeleteDialogOpen(false)
     setUserToDelete(null)
     setUserEmail('')
+  }
+
+  const getAccessBadge = (user: UserProfile) => {
+    if (user.access_type === 'linked') {
+      return (
+        <Badge variant="outline" className="gap-1 text-xs border-primary/40 text-primary">
+          <Link2 className="h-2.5 w-2.5" />
+          Vinculado
+        </Badge>
+      )
+    }
+
+    if (user.access_type === 'primary') {
+      return (
+        <Badge variant="outline" className="text-xs">
+          Principal
+        </Badge>
+      )
+    }
+
+    return null
   }
 
   if (loading) {
@@ -332,13 +313,17 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
           <CardDescription className="text-xs">
             {currentUserRole === 'superadmin' && selectedTenantId && selectedTenantName ? (
               <>
-                Todos os <strong>Superadmins</strong> + Admins e Usuários de <strong>{selectedTenantName}</strong>
+                Todos os <strong>Superadmins</strong> + usuários com acesso a <strong>{selectedTenantName}</strong>
               </>
             ) : currentUserRole === 'superadmin' ? (
               'Todos os usuários do sistema'
             ) : (
-              'Usuários da sua empresa (superadmins não são exibidos)'
+              'Usuários com acesso à sua empresa (superadmins não são exibidos)'
             )}
+          </CardDescription>
+          <CardDescription className="text-xs">
+            Usuários com badge <strong>Vinculado</strong> têm empresa principal em outro tenant. Para role `user`,
+            os módulos autorizados continuam globais por usuário.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -357,6 +342,7 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-sm">{user.full_name}</h3>
                         {getRoleBadge(user.role)}
+                        {getAccessBadge(user)}
                         {!user.is_active && (
                           <Badge variant="outline" className="gap-1 border-destructive/50 text-destructive text-xs">
                             <div className="h-1.5 w-1.5 rounded-full bg-destructive" />
@@ -365,38 +351,57 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
                         )}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs">
-                        {user.tenants && (
+                        {user.primary_tenant && (
                           <span className="flex items-center gap-1 text-muted-foreground">
                             <Building2 className="h-3 w-3" />
-                            <span className="font-medium">Empresa:</span> {user.tenants.name}
+                            <span className="font-medium">Empresa principal:</span> {user.primary_tenant.name}
                           </span>
                         )}
-                        {!user.tenants && user.role === 'superadmin' && (
+                        {!user.primary_tenant && user.role === 'superadmin' && (
                           <Badge variant="secondary" className="gap-1 text-xs">
                             <Shield className="h-2.5 w-2.5" />
                             Todas as empresas
                           </Badge>
                         )}
-                        {!user.tenants && user.role !== 'superadmin' && (
+                        {user.access_type === 'linked' && selectedTenantName && (
+                          <span className="text-primary text-[10px]">
+                            Acesso adicional em {selectedTenantName}
+                          </span>
+                        )}
+                        {!user.primary_tenant && user.role !== 'superadmin' && (
                           <span className="text-muted-foreground text-[10px]">Sem empresa</span>
                         )}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/usuarios/${user.id}/editar`}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive hover:border-destructive"
-                      onClick={() => handleDeleteClick(user)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {(currentUserRole === 'superadmin' || user.access_type !== 'linked') && (
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/usuarios/${user.id}/editar?tenantId=${effectiveTenantId}`}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    )}
+
+                    {user.access_type === 'linked' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-amber-700 hover:text-amber-700 hover:border-amber-500"
+                        onClick={() => handleDeleteClick(user, 'unlink')}
+                      >
+                        <Unlink2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:border-destructive"
+                        onClick={() => handleDeleteClick(user, 'delete')}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))
@@ -419,26 +424,54 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
         </CardContent>
       </Card>
 
+      <LinkUsersDialog
+        open={linkDialogOpen}
+        onOpenChange={setLinkDialogOpen}
+        tenantId={effectiveTenantId}
+        tenantName={selectedTenantName}
+        onLinked={loadUsers}
+      />
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+            <AlertDialogTitle>
+              {dialogMode === 'delete' ? 'Confirmar Exclusão' : 'Confirmar Desvinculação'}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
-                <div>Tem certeza que deseja excluir este usuário?</div>
+                <div>
+                  {dialogMode === 'delete'
+                    ? 'Tem certeza que deseja excluir este usuário?'
+                    : 'Tem certeza que deseja remover o acesso deste usuário ao tenant atual?'}
+                </div>
                 <div className="bg-muted p-3 rounded-lg mt-2">
                   <div className="font-medium text-foreground">{userToDelete?.full_name}</div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {userEmail || 'Carregando email...'}
+                  {dialogMode === 'delete' ? (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {userEmail || 'Carregando email...'}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      Empresa principal: {userToDelete?.primary_tenant?.name || 'Sem empresa'}
+                    </div>
+                  )}
+                </div>
+                {dialogMode === 'delete' ? (
+                  <>
+                    <div className="text-destructive font-medium mt-3">
+                      ⚠️ Esta ação não pode ser desfeita!
+                    </div>
+                    <div className="text-sm">
+                      O usuário será permanentemente removido do sistema e não poderá mais fazer login.
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm">
+                    O usuário continuará existindo no sistema, mas perderá o acesso ao tenant selecionado.
                   </div>
-                </div>
-                <div className="text-destructive font-medium mt-3">
-                  ⚠️ Esta ação não pode ser desfeita!
-                </div>
-                <div className="text-sm">
-                  O usuário será permanentemente removido do sistema e não poderá mais fazer login.
-                </div>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -449,9 +482,19 @@ export function UsuariosContent({ currentUserRole, currentUserTenantId, selected
             <AlertDialogAction
               onClick={handleConfirmDelete}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={
+                dialogMode === 'delete'
+                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                  : 'bg-amber-600 text-white hover:bg-amber-700'
+              }
             >
-              {isDeleting ? 'Excluindo...' : 'Excluir Usuário'}
+              {isDeleting
+                ? dialogMode === 'delete'
+                  ? 'Excluindo...'
+                  : 'Desvinculando...'
+                : dialogMode === 'delete'
+                  ? 'Excluir Usuário'
+                  : 'Desvincular Usuário'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

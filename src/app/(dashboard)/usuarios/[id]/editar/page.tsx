@@ -7,8 +7,15 @@ import { hasTenantAccess } from '@/lib/security/tenant-access'
 
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
 
-export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditUserPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ tenantId?: string }>
+}) {
   const { id } = await params
+  const { tenantId: requestedTenantId } = await searchParams
   const supabase = await createClient()
 
   // Check if user is authenticated
@@ -52,6 +59,8 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  const contextTenantId = requestedTenantId || currentProfile.tenant_id || userToEdit.tenant_id
+
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div>
@@ -73,6 +82,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
             user={userToEdit}
             currentUserRole={currentProfile.role}
             currentUserTenantId={currentProfile.tenant_id}
+            currentContextTenantId={contextTenantId}
           />
         </CardContent>
       </Card>

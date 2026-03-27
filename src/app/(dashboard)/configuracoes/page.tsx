@@ -129,12 +129,27 @@ export default function ConfiguracoesPage() {
 
       <div className="flex items-center justify-end">
         {activeSection === 'usuarios' && isAdminOrAbove && (
-          <Button asChild size="sm">
-            <Link href="/usuarios/novo">
-              <UserPlus className="mr-2 h-4 w-4" />
-              Novo Usuário
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const event = new CustomEvent('openLinkUserDialog')
+                  window.dispatchEvent(event)
+                }}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Vincular Usuários
+              </Button>
+            )}
+            <Button asChild size="sm">
+              <Link href="/usuarios/novo">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Novo Usuário
+              </Link>
+            </Button>
+          </div>
         )}
         {activeSection === 'setores' && isAdminOrAbove && (
           <Button onClick={() => {

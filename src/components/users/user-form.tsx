@@ -21,14 +21,27 @@ interface UserFormProps {
   user?: UserProfile
   currentUserRole: string
   currentUserTenantId: string | null
+  currentContextTenantId?: string | null
 }
 
-export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFormProps) {
+type TenantScope = {
+  id: string
+  name: string
+  isCurrent?: boolean
+}
+
+export function UserForm({
+  user,
+  currentUserRole,
+  currentUserTenantId,
+  currentContextTenantId,
+}: UserFormProps) {
   const router = useRouter()
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [tenants, setTenants] = useState<Tenant[]>([])
+  const [branchTenantScopes, setBranchTenantScopes] = useState<TenantScope[]>([])
 
   // Form fields
   const [email, setEmail] = useState('')
@@ -39,6 +52,7 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
   const [tenantId, setTenantId] = useState(user?.tenant_id || currentUserTenantId || '')
   const [isActive, setIsActive] = useState(user?.is_active ?? true)
   const [authorizedBranches, setAuthorizedBranches] = useState<string[]>([])
+  const [hiddenAuthorizedBranches, setHiddenAuthorizedBranches] = useState<string[]>([])
   const [loadingBranches, setLoadingBranches] = useState(false)
   // Inicia vazio em ambos os casos - criação e edição
   // Se for edição, carrega do banco via useEffect
@@ -47,6 +61,7 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
 
   // Quando role é superadmin, tenant_id deve ser null
   const shouldShowTenantField = role !== 'superadmin'
+  const branchContextTenantId = currentContextTenantId || currentUserTenantId || tenantId || null
 
   // Load tenants based on current user role
   useEffect(() => {
@@ -111,10 +126,32 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
             .eq('user_id', user.id) as { data: { branch_id: string }[] | null; error: Error | null }
 
           if (!error && data) {
-            setAuthorizedBranches(data.map(item => item.branch_id))
+            const allBranchIds = data.map((item) => item.branch_id)
+
+            if (currentUserRole === 'superadmin' || !branchContextTenantId) {
+              setAuthorizedBranches(allBranchIds)
+              setHiddenAuthorizedBranches([])
+              return
+            }
+
+            const visibleResponse = await fetch(`/api/branches?tenant_id=${branchContextTenantId}`)
+            if (!visibleResponse.ok) {
+              throw new Error('Erro ao carregar filiais visíveis do tenant atual')
+            }
+
+            const visibleResult = await visibleResponse.json() as {
+              branches: Array<{ id: string }>
+            }
+
+            const visibleBranchIds = new Set((visibleResult.branches || []).map((branch) => branch.id))
+
+            setAuthorizedBranches(allBranchIds.filter((branchId) => visibleBranchIds.has(branchId)))
+            setHiddenAuthorizedBranches(allBranchIds.filter((branchId) => !visibleBranchIds.has(branchId)))
           }
         } catch (error) {
           console.error('Error loading authorized branches:', error)
+          setAuthorizedBranches([])
+          setHiddenAuthorizedBranches([])
         } finally {
           setLoadingBranches(false)
         }
@@ -122,7 +159,7 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
     }
 
     loadAuthorizedBranches()
-  }, [user, supabase])
+  }, [branchContextTenantId, currentUserRole, user, supabase])
 
   // Load authorized modules when editing
   useEffect(() => {
@@ -151,6 +188,98 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
 
     loadAuthorizedModules()
   }, [user])
+
+  useEffect(() => {
+    async function loadBranchTenantScopes() {
+      if (!user) {
+        if (tenantId) {
+          const currentTenant = tenants.find((tenant) => tenant.id === tenantId)
+          setBranchTenantScopes(
+            currentTenant
+              ? [{ id: currentTenant.id, name: currentTenant.name, isCurrent: true }]
+              : []
+          )
+        } else {
+          setBranchTenantScopes([])
+        }
+        return
+      }
+
+      if (currentUserRole !== 'superadmin') {
+        const currentTenant = tenants.find((tenant) => tenant.id === branchContextTenantId)
+        setBranchTenantScopes(
+          currentTenant
+            ? [{ id: currentTenant.id, name: currentTenant.name, isCurrent: true }]
+            : []
+        )
+        return
+      }
+
+      const tenantMap = new Map<string, TenantScope>()
+
+      if (user.tenant_id) {
+        const primaryTenant = tenants.find((tenant) => tenant.id === user.tenant_id)
+        if (primaryTenant) {
+          tenantMap.set(primaryTenant.id, {
+            id: primaryTenant.id,
+            name: primaryTenant.name,
+          })
+        }
+      }
+
+      try {
+        const response = await fetch(`/api/users/tenant-access?userId=${user.id}`)
+        if (response.ok) {
+          const result = await response.json()
+          const linkedTenants = (result.data || []) as Array<{
+            tenant?: { id: string; name: string }
+            tenant_id: string
+          }>
+
+          linkedTenants.forEach((row) => {
+            if (row.tenant?.id) {
+              tenantMap.set(row.tenant.id, {
+                id: row.tenant.id,
+                name: row.tenant.name,
+              })
+            }
+          })
+        }
+      } catch (fetchError) {
+        console.error('Erro ao carregar tenants aplicados do usuário:', fetchError)
+      }
+
+      const orderedScopes = Array.from(tenantMap.values()).sort((left, right) => {
+        const leftIsCurrent = left.id === currentContextTenantId
+        const rightIsCurrent = right.id === currentContextTenantId
+
+        if (leftIsCurrent && !rightIsCurrent) return -1
+        if (!leftIsCurrent && rightIsCurrent) return 1
+        return left.name.localeCompare(right.name, 'pt-BR')
+      }).map((scope) => ({
+        ...scope,
+        isCurrent: scope.id === currentContextTenantId,
+      }))
+
+      if (
+        currentContextTenantId &&
+        !orderedScopes.some((scope) => scope.id === currentContextTenantId)
+      ) {
+        const currentTenant = tenants.find((tenant) => tenant.id === currentContextTenantId)
+        if (currentTenant) {
+          orderedScopes.unshift({
+            id: currentTenant.id,
+            name: currentTenant.name,
+            isCurrent: true,
+          })
+        }
+      }
+
+      setBranchTenantScopes(orderedScopes)
+    }
+
+    loadBranchTenantScopes()
+  }, [branchContextTenantId, currentContextTenantId, currentUserRole, tenantId, tenants, user])
 
   // Get available roles based on current user role
   const getAvailableRoles = () => {
@@ -303,35 +432,72 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
           return
         }
 
+        const branchesToPersist = currentUserRole === 'superadmin'
+          ? authorizedBranches
+          : Array.from(new Set([...hiddenAuthorizedBranches, ...authorizedBranches]))
+
         // Update authorized branches
-        // First, delete all existing authorized branches
-        const { error: deleteError } = await supabase
-          .from('user_authorized_branches')
-          .delete()
-          .eq('user_id', user.id)
-
-        if (deleteError) {
-          setError('Erro ao atualizar filiais autorizadas')
-          setLoading(false)
-          return
-        }
-
-        // Then, insert new authorized branches (if any)
-        if (authorizedBranches.length > 0) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: insertError } = await (supabase as any)
+        if (currentUserRole === 'superadmin') {
+          const { error: deleteError } = await supabase
             .from('user_authorized_branches')
-            .insert(
-              authorizedBranches.map(branchId => ({
-                user_id: user.id,
-                branch_id: branchId,
-              }))
-            )
+            .delete()
+            .eq('user_id', user.id)
 
-          if (insertError) {
-            setError('Erro ao salvar filiais autorizadas')
+          if (deleteError) {
+            setError('Erro ao atualizar filiais autorizadas')
             setLoading(false)
             return
+          }
+        } else {
+          const visibleResponse = await fetch(`/api/branches?tenant_id=${branchContextTenantId}`)
+          if (!visibleResponse.ok) {
+            setError('Erro ao carregar filiais do tenant atual')
+            setLoading(false)
+            return
+          }
+
+          const visibleResult = await visibleResponse.json() as {
+            branches: Array<{ id: string }>
+          }
+
+          const visibleBranchIds = (visibleResult.branches || []).map((branch) => branch.id)
+
+          if (visibleBranchIds.length > 0) {
+            const { error: deleteError } = await supabase
+              .from('user_authorized_branches')
+              .delete()
+              .eq('user_id', user.id)
+              .in('branch_id', visibleBranchIds)
+
+            if (deleteError) {
+              setError('Erro ao atualizar filiais autorizadas do tenant atual')
+              setLoading(false)
+              return
+            }
+          }
+        }
+
+        if (branchesToPersist.length > 0) {
+          const branchIdsToInsert = currentUserRole === 'superadmin'
+            ? branchesToPersist
+            : authorizedBranches
+
+          if (branchIdsToInsert.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: insertError } = await (supabase as any)
+              .from('user_authorized_branches')
+              .insert(
+                branchIdsToInsert.map((branchId) => ({
+                  user_id: user.id,
+                  branch_id: branchId,
+                }))
+              )
+
+            if (insertError) {
+              setError('Erro ao salvar filiais autorizadas')
+              setLoading(false)
+              return
+            }
           }
         }
 
@@ -471,7 +637,7 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
 
       {shouldShowTenantField && (
         <div className="space-y-2">
-          <Label htmlFor="tenant">Empresa *</Label>
+          <Label htmlFor="tenant">Empresa Principal *</Label>
           <Select value={tenantId} onValueChange={setTenantId} disabled={loading || currentUserRole === 'admin'}>
             <SelectTrigger id="tenant">
               <SelectValue placeholder="Selecione a empresa" />
@@ -486,9 +652,13 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
           </Select>
           {currentUserRole === 'admin' && (
             <p className="text-xs text-muted-foreground">
-              Como admin, você só pode criar usuários na sua empresa
+              Como admin, você só pode criar usuários na sua empresa principal.
             </p>
           )}
+          <p className="text-xs text-muted-foreground">
+            A empresa principal define o vínculo base do usuário no cadastro. Em usuários multi-tenant, ela não limita
+            sozinha os tenants ou filiais adicionais aos quais o usuário pode receber acesso.
+          </p>
         </div>
       )}
 
@@ -539,12 +709,21 @@ export function UserForm({ user, currentUserRole, currentUserTenantId }: UserFor
       </div>
 
       {shouldShowTenantField && tenantId && (
-        <BranchSelector
-          tenantId={tenantId}
-          value={authorizedBranches}
-          onChange={setAuthorizedBranches}
-          disabled={loading || loadingBranches}
-        />
+        <div className="space-y-2">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <strong>Diferença importante:</strong> Empresa Principal é o tenant base do cadastro. Já as Filiais
+            Autorizadas controlam em quais filiais o usuário pode operar considerando o tenant atual e também outros
+            tenants já aplicados a ele.
+          </div>
+
+          <BranchSelector
+            tenantId={tenantId}
+            tenantScopes={branchTenantScopes}
+            value={authorizedBranches}
+            onChange={setAuthorizedBranches}
+            disabled={loading || loadingBranches}
+          />
+        </div>
       )}
 
       {/* Módulos Autorizados */}

@@ -35,10 +35,6 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  turbopack: {
-    root: process.cwd(),
-  },
-
   // Apply security headers to all routes
   async headers() {
     return [
