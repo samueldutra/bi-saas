@@ -14,6 +14,7 @@ export function useTenantParameters(tenantId: string | undefined) {
   const [parameters, setParameters] = useState<Record<string, boolean>>({
     enable_descontos_venda: false,
     enable_faturamento_metas: false,
+    enable_api_filial_vendas: false,
   })
   const [loading, setLoading] = useState(true)
 
@@ -22,6 +23,7 @@ export function useTenantParameters(tenantId: string | undefined) {
     setParameters({
       enable_descontos_venda: false,
       enable_faturamento_metas: false,
+      enable_api_filial_vendas: false,
     })
     setLoading(true)
 
@@ -44,6 +46,7 @@ export function useTenantParameters(tenantId: string | undefined) {
           setParameters({
             enable_descontos_venda: false,
             enable_faturamento_metas: false,
+            enable_api_filial_vendas: false,
           })
           return
         }
@@ -52,6 +55,7 @@ export function useTenantParameters(tenantId: string | undefined) {
         const params: Record<string, boolean> = {
           enable_descontos_venda: false,
           enable_faturamento_metas: false,
+          enable_api_filial_vendas: false,
         }
 
         // Override with actual values from database
@@ -67,6 +71,7 @@ export function useTenantParameters(tenantId: string | undefined) {
         setParameters({
           enable_descontos_venda: false,
           enable_faturamento_metas: false,
+          enable_api_filial_vendas: false,
         })
       } finally {
         setLoading(false)

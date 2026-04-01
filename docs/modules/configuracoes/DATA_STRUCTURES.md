@@ -574,68 +574,36 @@ const departamentoOptions: DepartamentoOption[] = [
 
 ## Tipos de Parâmetros
 
-### `TenantParameters`
+> Fonte oficial e detalhada deste submódulo:
+> [./parametros/DATA_STRUCTURES.md](./parametros/DATA_STRUCTURES.md)
 
-**Descrição**: Parâmetros configuráveis por tenant.
+### `tenant_parameters` vigente
 
-**Definição**:
+O modelo atual não usa uma coluna booleana fixa por tenant. Ele usa estrutura chave/valor:
+
 ```typescript
-export type TenantParameters = {
-  tenant_id: string               // UUID do tenant (PK)
-  enable_descontos_venda: boolean // Habilitar módulo de Descontos
-  created_at: string              // Data de criação (ISO 8601)
-  updated_at: string              // Data de atualização (ISO 8601)
+type TenantParameterRow = {
+  id: string
+  tenant_id: string
+  parameter_key: string
+  parameter_value: boolean
+  created_at: string
+  updated_at: string
 }
 ```
 
-**Exemplo**:
+### Chaves atualmente utilizadas
+
 ```typescript
-const parameters: TenantParameters = {
-  tenant_id: "987f6543-e21a-34b5-c678-123456789abc",
-  enable_descontos_venda: true,
-  created_at: "2025-01-01T00:00:00.000Z",
-  updated_at: "2025-01-12T10:00:00.000Z"
+type TenantParametersState = {
+  enable_descontos_venda: boolean
+  enable_faturamento_metas: boolean
 }
 ```
 
-**Valores Padrão**:
-```typescript
-const DEFAULT_PARAMETERS: Omit<TenantParameters, 'tenant_id' | 'created_at' | 'updated_at'> = {
-  enable_descontos_venda: false
-}
-```
+### Observação
 
-**Uso**: [use-tenant-parameters.ts](../../../src/hooks/use-tenant-parameters.ts)
-
----
-
-### `ParameterConfig`
-
-**Descrição**: Configuração de exibição de um parâmetro.
-
-**Definição**:
-```typescript
-export type ParameterConfig = {
-  key: keyof TenantParameters      // Chave do parâmetro
-  label: string                    // Label exibido
-  description: string              // Descrição do parâmetro
-  type: 'boolean' | 'string' | 'number'  // Tipo do valor
-}
-```
-
-**Exemplo**:
-```typescript
-const parametersConfig: ParameterConfig[] = [
-  {
-    key: 'enable_descontos_venda',
-    label: 'Habilitar Descontos de Venda',
-    description: 'Ativa o módulo de análise de descontos de venda no menu lateral',
-    type: 'boolean'
-  }
-]
-```
-
-**Uso**: Renderização dinâmica de parâmetros
+Detalhamento completo de estrutura, defaults, constraints e consumidores deve ser mantido apenas em `docs/modules/configuracoes/parametros/`.
 
 ---
 

@@ -25,6 +25,7 @@ export function ParametrosContent({ tenantId }: ParametrosContentProps) {
   const [parameters, setParameters] = useState<Record<string, boolean>>({
     enable_descontos_venda: false,
     enable_faturamento_metas: false,
+    enable_api_filial_vendas: false,
   })
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
@@ -197,6 +198,30 @@ export function ParametrosContent({ tenantId }: ParametrosContentProps) {
             checked={parameters.enable_faturamento_metas}
             onCheckedChange={(checked) => updateParameter('enable_faturamento_metas', checked)}
             disabled={updating === 'enable_faturamento_metas'}
+          />
+        </div>
+
+        {/* Uso da API /filial/vendas */}
+        <div className="flex items-center justify-between space-x-4 rounded-lg border p-4">
+          <div className="flex-1 space-y-1">
+            <Label
+              htmlFor="enable_api_filial_vendas"
+              className="text-base font-medium cursor-pointer"
+            >
+              Utiliza API /filial/vendas
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              Quando ativado, o Dashboard 360 passa a usar as RPCs baseadas em
+              `vendas_filiais_snapshot`, que espelha a API `/filial/vendas`, como
+              origem dos dados PDV. Quando desativado, o módulo segue usando as
+              RPCs legadas baseadas em `vendas_diarias_por_filial`.
+            </p>
+          </div>
+          <Switch
+            id="enable_api_filial_vendas"
+            checked={parameters.enable_api_filial_vendas}
+            onCheckedChange={(checked) => updateParameter('enable_api_filial_vendas', checked)}
+            disabled={updating === 'enable_api_filial_vendas'}
           />
         </div>
 

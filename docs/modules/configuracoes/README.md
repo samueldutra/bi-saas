@@ -88,6 +88,7 @@ O módulo de Configurações é o centro de gerenciamento administrativo do BI S
 - 🔗 **Rota Principal**: `/configuracoes`
 - 🔗 **Usuários**: `/usuarios`
 - 🔗 **Empresas**: `/empresas` (superadmin only)
+- 📁 **Parâmetros Oficiais**: [parametros/README.md](./parametros/README.md)
 - 📄 **Regras de Negócio**: [BUSINESS_RULES.md](./BUSINESS_RULES.md)
 - 🗂️ **Estruturas de Dados**: [DATA_STRUCTURES.md](./DATA_STRUCTURES.md)
 - 🔄 **Fluxo de Integração**: [INTEGRATION_FLOW.md](./INTEGRATION_FLOW.md)
@@ -162,8 +163,11 @@ O módulo de Configurações é o centro de gerenciamento administrativo do BI S
 
 **Descrição**: Configuração de parâmetros booleanos que controlam funcionalidades do sistema por tenant.
 
+**Documentação Oficial do Submódulo**: [./parametros/README.md](./parametros/README.md)
+
 **Funcionalidades**:
 - Toggle para habilitar/desabilitar "Descontos de Venda"
+- Toggle para habilitar/desabilitar o uso de faturamento nas rotinas de metas
 - Efeito imediato no menu lateral (adiciona/remove item)
 - Persistência automática
 
@@ -175,6 +179,8 @@ O módulo de Configurações é o centro de gerenciamento administrativo do BI S
 
 **Parâmetros Disponíveis**:
 - `enable_descontos_venda`: Habilita módulo de Descontos de Venda
+- `enable_faturamento_metas`: Habilita RPCs de metas com base em faturamento
+- `enable_api_filial_vendas`: Habilita as RPCs do `Dashboard 360` baseadas no snapshot da API `/filial/vendas`
 
 ---
 

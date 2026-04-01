@@ -531,108 +531,26 @@ Exibe sucesso
 
 ## Fluxo: Parâmetros
 
-**Arquivo**: [src/components/configuracoes/parametros-content.tsx](../../../src/components/configuracoes/parametros-content.tsx)
+> Fonte oficial e detalhada deste submódulo:
+> [./parametros/INTEGRATION_FLOW.md](./parametros/INTEGRATION_FLOW.md)
 
-### 1. Carregamento de Parâmetros
+### Resumo vigente
 
-```typescript
-// Hook customizado
-const { parameters, isLoading, updateParameter } = useTenantParameters()
-
-useEffect(() => {
-  // 1. Hook carrega automaticamente ao montar
-  // Query: SELECT * FROM tenant_parameters WHERE tenant_id = X
-
-  // 2. Se não existir, usa valores padrão
-  if (!parameters) {
-    setDisplayParameters({
-      enable_descontos_venda: false
-    })
-  } else {
-    setDisplayParameters(parameters)
-  }
-}, [parameters])
+```text
+/configuracoes
+  -> ConfiguracoesPage entrega tenantId atual
+  -> ParametrosContent lê public.tenant_parameters
+  -> updateParameter faz SELECT por tenant_id + parameter_key
+  -> se existir: UPDATE por id
+  -> se não existir: INSERT da chave
+  -> página é recarregada para reaplicar navegação
 ```
 
----
+### Consumos relevantes
 
-### 2. Atualização de Parâmetro
-
-```typescript
-// Quando usuário altera o toggle
-const handleToggleParameter = async (
-  key: keyof TenantParameters,
-  value: boolean
-) => {
-  try {
-    setLoading(true)
-    const supabase = createClient()
-
-    // 1. Verificar se registro existe
-    const { data: existing } = await supabase
-      .from('tenant_parameters')
-      .select('*')
-      .eq('tenant_id', currentTenant.id)
-      .single()
-
-    if (existing) {
-      // 2a. Atualizar registro existente
-      const { error } = await supabase
-        .from('tenant_parameters')
-        .update({ [key]: value })
-        .eq('tenant_id', currentTenant.id)
-
-      if (error) throw error
-    } else {
-      // 2b. Criar novo registro
-      const { error } = await supabase
-        .from('tenant_parameters')
-        .insert({
-          tenant_id: currentTenant.id,
-          [key]: value
-        })
-
-      if (error) throw error
-    }
-
-    // 3. Recarregar contexto (para atualizar menu)
-    await reloadUserProfile()
-
-    // 4. Feedback
-    toast.success('Parâmetro atualizado')
-
-  } catch (error) {
-    console.error('Erro:', error)
-    toast.error('Erro ao atualizar parâmetro')
-  } finally {
-    setLoading(false)
-  }
-}
-```
-
-**Sequência**:
-```
-Usuário clica no toggle
-        ↓
-Verifica se tenant_parameters existe
-        ↓
-   [Existe]              [Não existe]
-        ↓                      ↓
-  UPDATE                  INSERT
-tenant_parameters     tenant_parameters
-        ↓                      ↓
-        └──────────┬───────────┘
-                   ↓
-        Recarrega contexto
-                   ↓
-        Menu lateral atualiza
-                   ↓
-        Exibe sucesso
-```
-
-**Impacto**:
-- `enable_descontos_venda = true`: Menu "Descontos de Venda" aparece
-- `enable_descontos_venda = false`: Menu "Descontos de Venda" oculto
+- `enable_descontos_venda` é consumido em sidebar e na página `/descontos-venda`
+- `enable_faturamento_metas` é consumido server-side nas APIs de metas
+- o detalhamento completo deve ser mantido apenas na subpasta `parametros/`
 
 ---
 

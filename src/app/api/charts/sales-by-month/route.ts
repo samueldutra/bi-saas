@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
+import { isApiFilialVendasEnabled } from '@/lib/tenant-parameters-server'
 
 // FORÇAR ROTA DINÂMICA - NÃO CACHEAR
 export const dynamic = 'force-dynamic'
@@ -91,10 +92,17 @@ export async function GET(req: Request) {
     // TEMPORÁRIO: Usar client direto sem cache (igual ao dashboard)
     const { createDirectClient } = await import('@/lib/supabase/admin')
     const directSupabase = createDirectClient()
+    const useApiFilialVendas = await isApiFilialVendasEnabled(requestedSchema)
+    const salesRpcName = useApiFilialVendas
+      ? 'get_sales_by_month_chart_api_filial_vendas'
+      : 'get_sales_by_month_chart'
+    const lucroRpcName = useApiFilialVendas
+      ? 'get_lucro_by_month_chart_api_filial_vendas'
+      : 'get_lucro_by_month_chart'
 
     // Call RPC with filiais parameter for branch filtering - Sales
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: salesData, error: salesError } = await (directSupabase as any).rpc('get_sales_by_month_chart', {
+    const { data: salesData, error: salesError } = await (directSupabase as any).rpc(salesRpcName, {
       schema_name: requestedSchema,
       p_filiais: finalFiliais || 'all',
       p_data_inicio: dataInicio,
@@ -103,7 +111,7 @@ export async function GET(req: Request) {
     });
 
     if (salesError) {
-      console.error('[API/CHARTS/SALES-BY-MONTH] Sales RPC Error:', salesError);
+      console.error('[API/CHARTS/SALES-BY-MONTH] Sales RPC Error:', { salesRpcName, salesError });
       return NextResponse.json({ error: 'Error fetching sales chart data' }, { status: 500 });
     }
 
@@ -125,7 +133,7 @@ export async function GET(req: Request) {
 
     // Call RPC to get lucro (profit) by month
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: lucroData, error: lucroError } = await (directSupabase as any).rpc('get_lucro_by_month_chart', {
+    const { data: lucroData, error: lucroError } = await (directSupabase as any).rpc(lucroRpcName, {
       schema_name: requestedSchema,
       p_filiais: finalFiliais || 'all',
       p_data_inicio: dataInicio,
@@ -134,7 +142,7 @@ export async function GET(req: Request) {
     });
 
     if (lucroError) {
-      console.error('[API/CHARTS/SALES-BY-MONTH] Lucro RPC Error:', lucroError);
+      console.error('[API/CHARTS/SALES-BY-MONTH] Lucro RPC Error:', { lucroRpcName, lucroError });
       console.warn('[API/CHARTS/SALES-BY-MONTH] Continuing without lucro data');
     }
 

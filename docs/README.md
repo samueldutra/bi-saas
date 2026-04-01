@@ -4,6 +4,12 @@ Este diretório contém documentação técnica complementar do projeto BI SaaS.
 
 ## Estrutura
 
+- **modules/** - Documentação oficial por módulo do sistema
+  - Referência técnica
+  - Regras de negócio
+  - Fluxos de integração
+  - RPCs e riscos reais
+
 - **MULTI_TENANT_ACCESS.md** - Funcionamento do multi-tenant e como conceder/remover acessos
   - Regras de RLS e funcoes usadas
   - Fluxos por SQL e API
@@ -26,6 +32,7 @@ Este diretório contém documentação técnica complementar do projeto BI SaaS.
 1. Consulte os arquivos de documentação antes de criar novas queries
 2. Sempre documente novas queries seguindo o padrão estabelecido
 3. Inclua exemplos de uso e respostas esperadas
+4. Para mudanças em módulos já documentados, atualize a documentação oficial em `docs/modules/`
 
 ### Para Integrações N8N
 
@@ -51,5 +58,6 @@ Ao adicionar novas queries para N8N:
 ## Links Relacionados
 
 - [README Principal](../README.md)
+- [Documentação de Módulos](./modules/README.md)
 - [Migrações Supabase](../supabase/migrations/)
 - [Instruções de Deploy](../DEPLOY_CHECKLIST.md)

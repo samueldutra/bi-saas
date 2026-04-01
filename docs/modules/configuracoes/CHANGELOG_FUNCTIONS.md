@@ -280,6 +280,9 @@ Criação da documentação técnica completa do módulo de Configurações segu
 **Descrição**:
 Implementação de sistema que permite admins habilitarem/desabilitarem funcionalidades do sistema através de parâmetros booleanos. O primeiro parâmetro implementado controla a visibilidade do módulo "Descontos de Venda" no menu lateral.
 
+**Nota de manutenção atual**:
+O estado vigente desse submódulo passou a ser documentado oficialmente em [./parametros/README.md](./parametros/README.md). Este registro histórico não deve mais ser usado como fonte principal de comportamento atual.
+
 **Arquivos Criados/Modificados**:
 
 1. **Migration**: `supabase/migrations/XXX_create_tenant_parameters.sql`

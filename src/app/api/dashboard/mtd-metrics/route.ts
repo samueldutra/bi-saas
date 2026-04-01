@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
+import { isApiFilialVendasEnabled } from '@/lib/tenant-parameters-server'
 
 // FORÇAR ROTA DINÂMICA - NÃO CACHEAR
 export const dynamic = 'force-dynamic'
@@ -69,18 +70,23 @@ export async function GET(req: Request) {
       p_filiais_ids: finalFiliais
     };
 
+    const useApiFilialVendas = await isApiFilialVendasEnabled(requestedSchema)
+    const rpcName = useApiFilialVendas
+      ? 'get_dashboard_mtd_metrics_api_filial_vendas'
+      : 'get_dashboard_mtd_metrics'
+
     // DEBUG: Log dos parâmetros enviados
-    console.log('[API/DASHBOARD/MTD] RPC Params:', JSON.stringify(rpcParams, null, 2));
+    console.log('[API/DASHBOARD/MTD] RPC Params:', JSON.stringify({ rpcName, ...rpcParams }, null, 2));
 
     // Usar client direto
     const { createDirectClient } = await import('@/lib/supabase/admin')
     const directSupabase = createDirectClient()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await directSupabase.rpc('get_dashboard_mtd_metrics', rpcParams as any).single();
+    const { data, error } = await directSupabase.rpc(rpcName, rpcParams as any).single();
 
     if (error) {
-      console.error('[API/DASHBOARD/MTD] RPC Error:', error);
+      console.error('[API/DASHBOARD/MTD] RPC Error:', { rpcName, error });
       return NextResponse.json({ error: 'Error fetching MTD metrics' }, { status: 500 });
     }
 

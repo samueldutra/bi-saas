@@ -28,7 +28,13 @@ docs/
 │   │   ├── RPC_FUNCTIONS.md             # Documentação das funções RPC
 │   │   ├── RPC_FUNCTIONS_UPDATED.md     # Adendos e correções (opcional)
 │   │   ├── CHANGELOG_FUNCTIONS.md       # Histórico de alterações
-│   │   └── [outros arquivos específicos]
+│   │   ├── [outros arquivos específicos]
+│   │   └── [submodulo]/
+│   │       ├── README.md
+│   │       ├── BUSINESS_RULES.md
+│   │       ├── DATA_STRUCTURES.md
+│   │       ├── INTEGRATION_FLOW.md
+│   │       └── CHANGELOG_FUNCTIONS.md
 │   └── outro-modulo/
 └── DOCUMENTATION_STANDARDS.md           # Este arquivo
 ```
@@ -101,6 +107,15 @@ docs/
 - Impacto (baixo, médio, alto)
 - Regras de negócio adicionadas/alteradas
 - Exemplos visuais (quando aplicável)
+
+### Regra adicional de manutenção
+
+Quando um módulo já possuir documentação oficial em `docs/modules/{modulo}/`, qualquer alteração funcional, estrutural, de API, de RPC ou de regra de negócio deve atualizar a documentação correspondente no mesmo ciclo de mudança.
+
+Exemplo obrigatório atual:
+
+- `Dashboard 360` -> `docs/modules/dashboard-360/`
+- `Configurações > Parâmetros` -> `docs/modules/configuracoes/parametros/`
 
 ---
 

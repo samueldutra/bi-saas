@@ -20,6 +20,8 @@
 - Use TypeScript/React patterns already present in `src/`; keep components modular and colocated by feature.
 - Follow existing naming: `use-*.ts` for hooks, `*.types.ts` for type files, and kebab-case folders.
 - Run `npm run lint` before PRs; ESLint (Next.js config) is the source of truth.
+- Qualquer alteração no módulo `Dashboard 360` (`/dashboard`, APIs relacionadas, componentes de `src/components/dashboard/` e documentação correlata) deve atualizar a documentação oficial em `docs/modules/dashboard-360/` no mesmo ciclo de mudança.
+- Qualquer alteração no submódulo `Configurações > Parâmetros` (`/configuracoes` na aba `Parâmetros`, `src/components/configuracoes/parametros-content.tsx`, `src/hooks/use-tenant-parameters.ts`, consumidores de `tenant_parameters` e documentação correlata) deve atualizar a documentação oficial em `docs/modules/configuracoes/parametros/` no mesmo ciclo de mudança.
 
 ## Testing Guidelines
 - No automated test runner is configured yet (no `test` script in `package.json`).

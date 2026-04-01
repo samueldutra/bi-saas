@@ -411,62 +411,16 @@ const { error } = await supabaseAdmin.auth.admin.deleteUser(userIdToDelete)
 
 ## Regras de Parâmetros
 
-### RN-PARAM-001: Parâmetros por Tenant
+> Fonte oficial e detalhada deste submódulo:
+> [./parametros/BUSINESS_RULES.md](./parametros/BUSINESS_RULES.md)
 
-**Descrição**: Cada tenant possui seus próprios parâmetros configuráveis.
+### Resumo vigente
 
-**Estrutura**:
-```typescript
-{
-  tenant_id: string,
-  enable_descontos_venda: boolean
-}
-```
-
-**Comportamento**:
-- Se registro não existe, criar com valores padrão
-- Se existe, atualizar valor
-- Efeito imediato no menu lateral
-
-**Implementação**: [parametros-content.tsx:40-60](../../../src/components/configuracoes/parametros-content.tsx#L40-60)
-
----
-
-### RN-PARAM-002: Enable Descontos de Venda
-
-**Descrição**: Parâmetro controla visibilidade do módulo "Descontos de Venda".
-
-**Comportamento**:
-- `true`: Menu "Descontos de Venda" aparece na sidebar
-- `false`: Menu "Descontos de Venda" é ocultado
-
-**Impacto**:
-- Mudança reflete imediatamente após reload do contexto
-- Não afeta dados existentes, apenas visibilidade
-
-**SQL**:
-```sql
--- Criar ou atualizar parâmetro
-INSERT INTO tenant_parameters (tenant_id, enable_descontos_venda)
-VALUES ($1, $2)
-ON CONFLICT (tenant_id)
-DO UPDATE SET enable_descontos_venda = $2;
-```
-
-**Implementação**:
-- [parametros-content.tsx:45](../../../src/components/configuracoes/parametros-content.tsx#L45)
-- [use-tenant-parameters.ts](../../../src/hooks/use-tenant-parameters.ts)
-
----
-
-### RN-PARAM-003: Valores Padrão
-
-**Descrição**: Novos tenants têm valores padrão para todos os parâmetros.
-
-**Padrões**:
-- `enable_descontos_venda`: `false`
-
-**Implementação**: Verificado ao carregar parâmetros, se não existir, usa padrão.
+- parâmetros são armazenados por `tenant_id` e `parameter_key` em `public.tenant_parameters`
+- o padrão efetivo para chaves ausentes é `false`
+- `enable_descontos_venda` controla visibilidade/acesso operacional do módulo de descontos
+- `enable_faturamento_metas` controla a seleção das RPCs de metas com fallback para a versão legada
+- qualquer mudança neste fluxo deve atualizar a pasta `docs/modules/configuracoes/parametros/`
 
 ---
 

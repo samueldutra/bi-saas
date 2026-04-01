@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
+import { isApiFilialVendasEnabled } from '@/lib/tenant-parameters-server'
 
 // FORÇAR ROTA DINÂMICA - NÃO CACHEAR
 export const dynamic = 'force-dynamic'
@@ -71,9 +72,13 @@ export async function GET(request: NextRequest) {
     // TEMPORÁRIO: Usar client direto sem cache (igual ao dashboard)
     const { createDirectClient } = await import('@/lib/supabase/admin')
     const directSupabase = createDirectClient()
+    const useApiFilialVendas = await isApiFilialVendasEnabled(schema)
+    const rpcName = useApiFilialVendas
+      ? 'get_vendas_por_filial_api_filial_vendas'
+      : 'get_vendas_por_filial'
 
     // Chamar função RPC
-    const { data, error } = await directSupabase.rpc('get_vendas_por_filial', {
+    const { data, error } = await directSupabase.rpc(rpcName, {
       p_schema: schema,
       p_data_inicio: dataInicio,
       p_data_fim: dataFim,
@@ -82,7 +87,7 @@ export async function GET(request: NextRequest) {
     } as never)
 
     if (error) {
-      console.error('[API/DASHBOARD/VENDAS-POR-FILIAL] RPC Error:', error)
+      console.error('[API/DASHBOARD/VENDAS-POR-FILIAL] RPC Error:', { rpcName, error })
       return NextResponse.json({ error: 'Error fetching sales data' }, { status: 500 })
     }
 
