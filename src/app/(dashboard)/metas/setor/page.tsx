@@ -85,6 +85,27 @@ interface MetaSetorSummaryRow {
   margem_bruta: number
 }
 
+interface ComprasSetorFilialRow {
+  filial_id: number
+  valor_meta_compras: number | null
+  valor_realizado_compras: number
+}
+
+interface ComprasSetorReportRow {
+  data: string
+  filiais: ComprasSetorFilialRow[]
+}
+
+interface ComprasSetorSummaryRow {
+  filial_id: number
+  valor_meta_compras: number | null
+  valor_realizado_compras: number
+}
+
+interface ComprasSetorByDateMap {
+  [date: string]: Record<number, ComprasSetorFilialRow>
+}
+
 const summaryFilialBadgeClasses = [
   'bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:border-violet-400/30',
   'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-500/15 dark:text-blue-200 dark:border-blue-400/30',
@@ -162,7 +183,10 @@ export default function MetaSetorPage() {
   const [tempFiliaisSelecionadas, setTempFiliaisSelecionadas] = useState<FilialOption[]>([])
   const [metasData, setMetasData] = useState<Record<number, MetaSetor[]>>({})
   const [summaryRows, setSummaryRows] = useState<MetaSetorSummaryRow[]>([])
+  const [comprasByDate, setComprasByDate] = useState<ComprasSetorByDateMap>({})
+  const [comprasSummaryByFilial, setComprasSummaryByFilial] = useState<Record<number, ComprasSetorSummaryRow>>({})
   const [loading, setLoading] = useState(false)
+  const [isLoadingPurchases, setIsLoadingPurchases] = useState(false)
   const [loadingSetores, setLoadingSetores] = useState(true)
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({})
   // const [isUpdatingValues, setIsUpdatingValues] = useState(false) // Não usado na UI
@@ -179,6 +203,8 @@ export default function MetaSetorPage() {
   const isUpdatingRef = useRef(false)
   const lastUpdateKey = useRef<string>('')
   const lastPathname = useRef<string>(pathname)
+  const purchasesAbortControllerRef = useRef<AbortController | null>(null)
+  const latestPurchasesRequestIdRef = useRef(0)
 
   // Dialog para gerar meta
   const [salesDialogOpen, setSalesDialogOpen] = useState(false)
@@ -227,9 +253,112 @@ export default function MetaSetorPage() {
     if (currentTenant) {
       setFiliaisSelecionadas([])
       setTempFiliaisSelecionadas([])
+      setComprasByDate({})
+      setComprasSummaryByFilial({})
+      setIsLoadingPurchases(false)
+      purchasesAbortControllerRef.current?.abort()
+      purchasesAbortControllerRef.current = null
+      latestPurchasesRequestIdRef.current = 0
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTenant?.id])
+
+  const clearPurchasesState = useCallback(() => {
+    purchasesAbortControllerRef.current?.abort()
+    purchasesAbortControllerRef.current = null
+    latestPurchasesRequestIdRef.current = 0
+    setComprasByDate({})
+    setComprasSummaryByFilial({})
+    setIsLoadingPurchases(false)
+  }, [])
+
+  const loadComprasData = useCallback(async (
+    schema: string,
+    setorId: string,
+    mesParam: number,
+    anoParam: number,
+    filiais: FilialOption[]
+  ) => {
+    const filialIds = filiais
+      .map((filial) => filial.value)
+      .join(',')
+
+    const requestId = latestPurchasesRequestIdRef.current + 1
+    latestPurchasesRequestIdRef.current = requestId
+
+    purchasesAbortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    purchasesAbortControllerRef.current = abortController
+
+    setIsLoadingPurchases(true)
+
+    try {
+      const params = new URLSearchParams({
+        schema,
+        setor_id: setorId,
+        mes: mesParam.toString(),
+        ano: anoParam.toString(),
+      })
+
+      if (filialIds) {
+        params.append('filial_id', filialIds)
+      }
+
+      const response = await fetch(`/api/metas/setor/compras?${params}`, {
+        signal: abortController.signal
+      })
+
+      if (!response.ok) {
+        throw new Error('Erro ao carregar compras por setor')
+      }
+
+      const data = await response.json() as {
+        report?: ComprasSetorReportRow[]
+        resumo?: ComprasSetorSummaryRow[]
+      }
+
+      if (latestPurchasesRequestIdRef.current !== requestId) {
+        return
+      }
+
+      const comprasMap: ComprasSetorByDateMap = {}
+      const comprasResumoMap: Record<number, ComprasSetorSummaryRow> = {}
+
+      for (const reportRow of data.report ?? []) {
+        comprasMap[reportRow.data] = {}
+
+        for (const filial of reportRow.filiais ?? []) {
+          comprasMap[reportRow.data][filial.filial_id] = filial
+        }
+      }
+
+      for (const summaryRow of data.resumo ?? []) {
+        comprasResumoMap[summaryRow.filial_id] = summaryRow
+      }
+
+      setComprasByDate(comprasMap)
+      setComprasSummaryByFilial(comprasResumoMap)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return
+      }
+
+      console.error('[METAS_SETOR] Erro ao carregar compras:', error)
+
+      if (latestPurchasesRequestIdRef.current === requestId) {
+        setComprasByDate({})
+        setComprasSummaryByFilial({})
+      }
+    } finally {
+      if (latestPurchasesRequestIdRef.current === requestId) {
+        setIsLoadingPurchases(false)
+      }
+
+      if (purchasesAbortControllerRef.current === abortController) {
+        purchasesAbortControllerRef.current = null
+      }
+    }
+  }, [])
 
   const loadSetores = useCallback(async () => {
     if (!currentTenant) return
@@ -247,6 +376,7 @@ export default function MetaSetorPage() {
       setMetasData({})
       setSummaryRows([])
       setExpandedDates({})
+      clearPurchasesState()
 
       if (data.length > 0) {
         // Selecionar primeiro setor após um delay para garantir que
@@ -261,19 +391,29 @@ export default function MetaSetorPage() {
     } finally {
       setLoadingSetores(false)
     }
-  }, [currentTenant])
+  }, [clearPurchasesState, currentTenant])
 
   const loadMetasPorSetor = useCallback(async () => {
     if (!currentTenant || !selectedSetor || filiaisSelecionadas.length === 0) {
       return
     }
 
+    const tenantSchema = currentTenant.supabase_schema
+    if (!tenantSchema) {
+      return
+    }
+
     setLoading(true)
+    setComprasByDate({})
+    setComprasSummaryByFilial({})
+    setIsLoadingPurchases(false)
+    purchasesAbortControllerRef.current?.abort()
+    purchasesAbortControllerRef.current = null
     try {
 
       // Atualizar valores realizados APENAS se não estiver já atualizando
       // e se for um novo período (evita loop infinito)
-      const updateKey = `${currentTenant.supabase_schema}-${mes}-${ano}`
+      const updateKey = `${tenantSchema}-${mes}-${ano}`
       const shouldUpdate = !isUpdatingRef.current && lastUpdateKey.current !== updateKey
 
       if (shouldUpdate) {
@@ -285,7 +425,7 @@ export default function MetaSetorPage() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              schema: currentTenant.supabase_schema,
+              schema: tenantSchema,
               mes: mes,
               ano: ano
             }),
@@ -303,7 +443,7 @@ export default function MetaSetorPage() {
       }
 
       const params = new URLSearchParams({
-        schema: currentTenant.supabase_schema || '',
+        schema: tenantSchema,
         setor_id: selectedSetor,
         mes: mes.toString(),
         ano: ano.toString(),
@@ -335,6 +475,7 @@ export default function MetaSetorPage() {
           setMetasData({ [parseInt(selectedSetor)]: [] })
           setSummaryRows([])
           setExpandedDates({})
+          clearPurchasesState()
           return
         }
 
@@ -361,6 +502,7 @@ export default function MetaSetorPage() {
         setMetasData({ [parseInt(selectedSetor)]: [] })
         setSummaryRows(summaryData?.resumo || [])
         setExpandedDates({})
+        clearPurchasesState()
         return
       }
 
@@ -373,6 +515,14 @@ export default function MetaSetorPage() {
         newExpanded[meta.data] = false
       })
       setExpandedDates(newExpanded)
+
+      void loadComprasData(
+        tenantSchema,
+        selectedSetor,
+        mes,
+        ano,
+        filiaisSelecionadas
+      )
     } catch (error) {
       console.error('[METAS_SETOR] Error loading metas:', error)
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
@@ -380,7 +530,7 @@ export default function MetaSetorPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentTenant, selectedSetor, mes, ano, filiaisSelecionadas])
+  }, [ano, clearPurchasesState, currentTenant, filiaisSelecionadas, loadComprasData, mes, selectedSetor])
 
   // Carregar setores apenas uma vez quando o tenant está disponível
   useEffect(() => {
@@ -403,6 +553,7 @@ export default function MetaSetorPage() {
       setMetasData({})
       setSummaryRows([])
       setExpandedDates({})
+      clearPurchasesState()
       setFiliaisSelecionadas([])
       setTempFiliaisSelecionadas([])
       setLoading(false)
@@ -414,7 +565,7 @@ export default function MetaSetorPage() {
       // Atualizar ref para nova rota
       lastPathname.current = pathname
     }
-  }, [pathname])
+  }, [clearPurchasesState, pathname])
 
   // Carregar metas ao montar com todas as filiais
   useEffect(() => {
@@ -959,6 +1110,8 @@ export default function MetaSetorPage() {
         'Lucro Bruto',
         'Meta Margem',
         'Margem Bruta',
+        'Meta Compras',
+        'Realizado Compras',
       ]]
 
       const body: string[][] = []
@@ -966,20 +1119,32 @@ export default function MetaSetorPage() {
 
       currentSetorData.forEach((meta) => {
         const totals = meta.filiais.reduce(
-          (acc, f) => ({
-            valor_referencia: acc.valor_referencia + (f.valor_referencia || 0),
-            valor_meta: acc.valor_meta + (f.valor_meta || 0),
-            valor_realizado: acc.valor_realizado + (f.valor_realizado || 0),
-            lucro_realizado: acc.lucro_realizado + (f.lucro_realizado || 0),
-            meta_percentual: acc.meta_percentual + (f.meta_percentual ?? f.percentual_atingido ?? 0),
-            count: acc.count + 1,
-          }),
+          (acc, f) => {
+            const compras = getComprasPorDataEFilial(meta.data, f.filial_id)
+
+            return {
+              valor_referencia: acc.valor_referencia + (f.valor_referencia || 0),
+              valor_meta: acc.valor_meta + (f.valor_meta || 0),
+              valor_realizado: acc.valor_realizado + (f.valor_realizado || 0),
+              lucro_realizado: acc.lucro_realizado + (f.lucro_realizado || 0),
+              meta_percentual: acc.meta_percentual + (f.meta_percentual ?? f.percentual_atingido ?? 0),
+              valor_meta_compras: acc.valor_meta_compras + (compras?.valor_meta_compras ?? 0),
+              valor_realizado_compras: acc.valor_realizado_compras + (compras?.valor_realizado_compras ?? 0),
+              has_meta_compras: acc.has_meta_compras || compras?.valor_meta_compras != null,
+              has_realizado_compras: acc.has_realizado_compras || compras?.valor_realizado_compras != null,
+              count: acc.count + 1,
+            }
+          },
           {
             valor_referencia: 0,
             valor_meta: 0,
             valor_realizado: 0,
             lucro_realizado: 0,
             meta_percentual: 0,
+            valor_meta_compras: 0,
+            valor_realizado_compras: 0,
+            has_meta_compras: false,
+            has_realizado_compras: false,
             count: 0,
           }
         )
@@ -1012,6 +1177,8 @@ export default function MetaSetorPage() {
           showDiff ? formatCurrency(totals.lucro_realizado) : '-',
           renderMetaMargemStatus(mediaMetaMargem),
           showDiff ? `${margem.toFixed(2)}%` : '-',
+          totals.has_meta_compras ? formatCurrency(totals.valor_meta_compras) : '-',
+          totals.has_realizado_compras ? formatCurrency(totals.valor_realizado_compras) : '-',
         ])
         statusMatrix.push([
           null,
@@ -1025,9 +1192,12 @@ export default function MetaSetorPage() {
           null,
           null,
           null,
+          null,
+          null,
         ])
 
         meta.filiais.forEach((filial) => {
+          const compras = getComprasPorDataEFilial(meta.data, filial.filial_id)
           const percentualAtingidoFilial = filial.valor_meta > 0
             ? (filial.valor_realizado / filial.valor_meta) * 100
             : 0
@@ -1053,6 +1223,8 @@ export default function MetaSetorPage() {
             showFilialDiff ? formatCurrency(filial.lucro_realizado || 0) : '-',
             renderMetaMargemStatus(filial.meta_margem_percentual),
             showFilialDiff ? `${margemFilial.toFixed(2)}%` : '-',
+            compras?.valor_meta_compras != null ? formatCurrency(compras.valor_meta_compras) : '-',
+            compras?.valor_realizado_compras != null ? formatCurrency(compras.valor_realizado_compras) : '-',
           ])
           statusMatrix.push([
             null,
@@ -1063,6 +1235,8 @@ export default function MetaSetorPage() {
             null,
             null,
             atingidoFilialDirection,
+            null,
+            null,
             null,
             null,
             null,
@@ -1138,6 +1312,14 @@ export default function MetaSetorPage() {
     setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }))
   }
 
+  const getComprasPorDataEFilial = (date: string, filialId: number) => {
+    return comprasByDate[date]?.[filialId]
+  }
+
+  const getComprasResumoPorFilial = (filialId: number) => {
+    return comprasSummaryByFilial[filialId]
+  }
+
   const currentSetorData = selectedSetor ? metasData[parseInt(selectedSetor)] || [] : []
   const currentSetor = setores.find(s => s.id.toString() === selectedSetor)
   const selectedMonthYearLabel = format(new Date(ano, mes - 1, 1), 'MMMM/yyyy', { locale: ptBR })
@@ -1146,11 +1328,21 @@ export default function MetaSetorPage() {
     return today.getFullYear() === ano && today.getMonth() + 1 === mes
   })()
   const visibleSummaryRows = summaryRows.filter((row) => row.valor_meta > 0)
+  const summaryMetaComprasValues = visibleSummaryRows
+    .map((row) => getComprasResumoPorFilial(row.filial_id)?.valor_meta_compras)
+    .filter((value): value is number => value != null)
+  const summaryRealizadoComprasValues = visibleSummaryRows
+    .map((row) => getComprasResumoPorFilial(row.filial_id)?.valor_realizado_compras)
+    .filter((value): value is number => value != null)
   const summaryTotals = {
     valorMeta: visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta, 0),
     valorRealizado: visibleSummaryRows.reduce((sum, row) => sum + row.valor_realizado, 0),
     valorMetaAcumuladaD1: visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta_acumulada_d1, 0),
     lucroBruto: visibleSummaryRows.reduce((sum, row) => sum + row.lucro_bruto, 0),
+    valorMetaCompras: summaryMetaComprasValues.reduce((sum, value) => sum + value, 0),
+    valorRealizadoCompras: summaryRealizadoComprasValues.reduce((sum, value) => sum + value, 0),
+    hasMetaCompras: summaryMetaComprasValues.length > 0,
+    hasRealizadoCompras: summaryRealizadoComprasValues.length > 0,
   }
   const summaryPercentualAtingido = summaryTotals.valorMeta > 0
     ? (summaryTotals.valorRealizado / summaryTotals.valorMeta) * 100
@@ -1165,6 +1357,18 @@ export default function MetaSetorPage() {
     ? visibleSummaryRows.reduce((sum, row) => sum + (row.meta_margem_percentual || 0), 0)
       / visibleSummaryRows.filter((row) => row.meta_margem_percentual != null).length
     : null
+
+  const renderLoadingCurrency = (value: number | null | undefined, allowNull = false) => {
+    if (isLoadingPurchases) {
+      return <span className="text-muted-foreground">Carregando...</span>
+    }
+
+    if (value == null) {
+      return allowNull ? <span className="text-muted-foreground">-</span> : formatCurrency(0)
+    }
+
+    return formatCurrency(value)
+  }
 
   // Função para obter nome da filial
   const getFilialName = (filialId: number) => {
@@ -1235,12 +1439,15 @@ export default function MetaSetorPage() {
         'Lucro Bruto',
         'Meta Margem',
         'Margem Bruta',
+        'Meta Compras',
+        'Realizado Compras',
       ]]
 
       const body: string[][] = []
       const statusMatrix: PdfStatusDirection[][] = []
 
       visibleSummaryRows.forEach((row) => {
+        const comprasResumo = getComprasResumoPorFilial(row.filial_id)
         const atingidoDirection = isCurrentSelectedMonth
           ? null
           : getStatusDirection(row.percentual_atingido >= 100, true)
@@ -1262,6 +1469,8 @@ export default function MetaSetorPage() {
           formatCurrency(row.lucro_bruto),
           renderMetaMargemStatus(row.meta_margem_percentual),
           `${row.margem_bruta.toFixed(2)}%`,
+          comprasResumo?.valor_meta_compras != null ? formatCurrency(comprasResumo.valor_meta_compras) : '-',
+          comprasResumo?.valor_realizado_compras != null ? formatCurrency(comprasResumo.valor_realizado_compras) : '-',
         ])
 
         statusMatrix.push([
@@ -1270,6 +1479,8 @@ export default function MetaSetorPage() {
           null,
           atingidoDirection,
           ...(isCurrentSelectedMonth ? [null, acumuladoDirection] : []),
+          null,
+          null,
           null,
           null,
           null,
@@ -1297,6 +1508,8 @@ export default function MetaSetorPage() {
         formatCurrency(summaryTotals.lucroBruto),
         renderMetaMargemStatus(summaryMediaMetaMargem),
         `${summaryMargemBruta.toFixed(2)}%`,
+        summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-',
+        summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-',
       ])
 
       statusMatrix.push([
@@ -1305,6 +1518,8 @@ export default function MetaSetorPage() {
         null,
         totalAtingidoDirection,
         ...(isCurrentSelectedMonth ? [null, totalAcumuladoDirection] : []),
+        null,
+        null,
         null,
         null,
         null,
@@ -2197,10 +2412,23 @@ export default function MetaSetorPage() {
                       <br />
                       Realizada
                     </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Meta
+                      <br />
+                      Compras
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Realizado
+                      <br />
+                      Compras
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleSummaryRows.map((row) => (
+                  {visibleSummaryRows.map((row) => {
+                    const comprasResumo = getComprasResumoPorFilial(row.filial_id)
+
+                    return (
                     <TableRow key={row.filial_id}>
                       <TableCell className="w-[120px] pl-4">
                         <Badge
@@ -2259,8 +2487,11 @@ export default function MetaSetorPage() {
                           `${row.margem_bruta.toFixed(2)}%`
                         )}
                       </TableCell>
+                      <TableCell>{renderLoadingCurrency(comprasResumo?.valor_meta_compras, true)}</TableCell>
+                      <TableCell>{renderLoadingCurrency(comprasResumo?.valor_realizado_compras)}</TableCell>
                     </TableRow>
-                  ))}
+                    )
+                  })}
                   <TableRow className="bg-muted/40 font-medium">
                     <TableCell className="w-[120px] pl-4">
                       <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
@@ -2322,6 +2553,8 @@ export default function MetaSetorPage() {
                         `${summaryMargemBruta.toFixed(2)}%`
                       )}
                     </TableCell>
+                    <TableCell>{renderLoadingCurrency(summaryTotals.hasMetaCompras ? summaryTotals.valorMetaCompras : null, true)}</TableCell>
+                    <TableCell>{renderLoadingCurrency(summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -2345,7 +2578,7 @@ export default function MetaSetorPage() {
           <CardContent>
             <div className="space-y-2">
               {/* Table Header Skeleton */}
-              <div className="grid grid-cols-11 gap-4 pb-4 border-b">
+              <div className="grid grid-cols-13 gap-4 pb-4 border-b">
                 <Skeleton className="h-4 w-4" />
                 <Skeleton className="h-4 w-16" />
                 <Skeleton className="h-4 w-24" />
@@ -2357,11 +2590,13 @@ export default function MetaSetorPage() {
                 <Skeleton className="h-4 w-16" />
                 <Skeleton className="h-4 w-20" />
                 <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-20" />
               </div>
 
               {/* Table Rows Skeleton */}
               {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="grid grid-cols-11 gap-4 py-3 border-b">
+                <div key={index} className="grid grid-cols-13 gap-4 py-3 border-b">
                   <Skeleton className="h-4 w-4" />
                   <Skeleton className="h-4 w-20" />
                   <Skeleton className="h-4 w-24" />
@@ -2373,6 +2608,8 @@ export default function MetaSetorPage() {
                   <Skeleton className="h-4 w-12" />
                   <Skeleton className="h-4 w-20" />
                   <Skeleton className="h-4 w-12" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-20" />
                 </div>
               ))}
             </div>
@@ -2448,22 +2685,40 @@ export default function MetaSetorPage() {
                     <br />
                     Realizada
                   </TableHead>
+                  <TableHead className="whitespace-normal leading-tight">
+                    Meta
+                    <br />
+                    Compras
+                  </TableHead>
+                  <TableHead className="whitespace-normal leading-tight">
+                    Realizado
+                    <br />
+                    Compras
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {currentSetorData.map((meta) => {
                   const isExpanded = expandedDates[meta.data] === true // Fechado por padrão
                   const totals = meta.filiais.reduce(
-                    (acc, f) => ({
-                      valor_referencia: acc.valor_referencia + (f.valor_referencia || 0),
-                      valor_meta: acc.valor_meta + (f.valor_meta || 0),
-                      valor_realizado: acc.valor_realizado + (f.valor_realizado || 0),
-                      custo_realizado: acc.custo_realizado + (f.custo_realizado || 0),
-                      lucro_realizado: acc.lucro_realizado + (f.lucro_realizado || 0),
-                      diferenca: acc.diferenca + (f.diferenca || 0),
-                      meta_percentual: acc.meta_percentual + (f.meta_percentual ?? f.percentual_atingido ?? 0),
-                      count: acc.count + 1,
-                    }),
+                    (acc, f) => {
+                      const compras = getComprasPorDataEFilial(meta.data, f.filial_id)
+
+                      return {
+                        valor_referencia: acc.valor_referencia + (f.valor_referencia || 0),
+                        valor_meta: acc.valor_meta + (f.valor_meta || 0),
+                        valor_realizado: acc.valor_realizado + (f.valor_realizado || 0),
+                        custo_realizado: acc.custo_realizado + (f.custo_realizado || 0),
+                        lucro_realizado: acc.lucro_realizado + (f.lucro_realizado || 0),
+                        diferenca: acc.diferenca + (f.diferenca || 0),
+                        meta_percentual: acc.meta_percentual + (f.meta_percentual ?? f.percentual_atingido ?? 0),
+                        valor_meta_compras: acc.valor_meta_compras + (compras?.valor_meta_compras ?? 0),
+                        valor_realizado_compras: acc.valor_realizado_compras + (compras?.valor_realizado_compras ?? 0),
+                        has_meta_compras: acc.has_meta_compras || compras?.valor_meta_compras != null,
+                        has_realizado_compras: acc.has_realizado_compras || compras?.valor_realizado_compras != null,
+                        count: acc.count + 1,
+                      }
+                    },
                     {
                       valor_referencia: 0,
                       valor_meta: 0,
@@ -2472,6 +2727,10 @@ export default function MetaSetorPage() {
                       lucro_realizado: 0,
                       diferenca: 0,
                       meta_percentual: 0,
+                      valor_meta_compras: 0,
+                      valor_realizado_compras: 0,
+                      has_meta_compras: false,
+                      has_realizado_compras: false,
                       count: 0,
                     }
                   )
@@ -2571,10 +2830,13 @@ export default function MetaSetorPage() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
+                        <TableCell>{renderLoadingCurrency(totals.has_meta_compras ? totals.valor_meta_compras : null, true)}</TableCell>
+                        <TableCell>{renderLoadingCurrency(totals.has_realizado_compras ? totals.valor_realizado_compras : null)}</TableCell>
                       </TableRow>
 
                       {isExpanded &&
                         meta.filiais.map((filial) => {
+                          const compras = getComprasPorDataEFilial(meta.data, filial.filial_id)
                           const percentualAtingidoFilial = filial.valor_meta > 0
                             ? (filial.valor_realizado / filial.valor_meta) * 100
                             : 0
@@ -2711,6 +2973,8 @@ export default function MetaSetorPage() {
                                   <span className="text-muted-foreground">-</span>
                                 )}
                               </TableCell>
+                              <TableCell className="text-sm">{renderLoadingCurrency(compras?.valor_meta_compras, true)}</TableCell>
+                              <TableCell className="text-sm">{renderLoadingCurrency(compras?.valor_realizado_compras)}</TableCell>
                             </TableRow>
                           )
                         })}

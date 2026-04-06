@@ -648,6 +648,22 @@ get_metas_setor_report_optimized(
 
 **Nota:** Esta função **NÃO atualiza** valores realizados, apenas lê.
 
+### 3.1. Compras por Setor
+
+**Descrição:** As colunas de compras do módulo são carregadas em uma etapa separada, depois do relatório principal, para não aumentar o tempo crítico de abertura da tela.
+
+**Regra de Negócio:**
+- `meta_compras` é calculada em valor:
+  `valor_meta - (valor_meta * meta_margem_percentual / 100)`
+- `realizado_compras` vem de `entradas` + `entradas_produtos`
+- O vínculo com o setor é feito pela hierarquia de departamentos do setor, reduzida até `departamento_id` de `produtos`
+
+**Funções exclusivas:**
+- `public.get_metas_setor_compras_report(...)`
+- `public.get_metas_setor_compras_summary_by_filial(...)`
+
+**Motivo técnico:** `entradas_produtos` tem volume muito maior que `metas_setor`, então a carga de compras roda por RPC dedicada e assíncrona para preservar a percepção de performance da tela.
+
 ---
 
 ### 4. `generate_metas_setor`
