@@ -1112,6 +1112,7 @@ export default function MetaSetorPage() {
         'Margem Bruta',
         'Meta Compras',
         'Realizado Compras',
+        '% Compra/Venda',
       ]]
 
       const body: string[][] = []
@@ -1162,6 +1163,10 @@ export default function MetaSetorPage() {
           ? (totals.lucro_realizado / totals.valor_realizado) * 100
           : 0
         const atingidoDirection = getStatusDirection(percentualAtingido >= 100, showDiff)
+        const compraSobreVendaPercent = getCompraSobreVendaPercent(
+          totals.has_realizado_compras ? totals.valor_realizado_compras : null,
+          totals.valor_realizado
+        )
 
         body.push([
           format(parseISO(meta.data), 'dd/MM/yyyy'),
@@ -1179,6 +1184,7 @@ export default function MetaSetorPage() {
           showDiff ? `${margem.toFixed(2)}%` : '-',
           totals.has_meta_compras ? formatCurrency(totals.valor_meta_compras) : '-',
           totals.has_realizado_compras ? formatCurrency(totals.valor_realizado_compras) : '-',
+          compraSobreVendaPercent != null ? `${compraSobreVendaPercent.toFixed(2)}%` : '-',
         ])
         statusMatrix.push([
           null,
@@ -1189,6 +1195,7 @@ export default function MetaSetorPage() {
           null,
           null,
           atingidoDirection,
+          null,
           null,
           null,
           null,
@@ -1206,6 +1213,10 @@ export default function MetaSetorPage() {
             ? ((filial.lucro_realizado || 0) / filial.valor_realizado) * 100
             : 0
           const atingidoFilialDirection = getStatusDirection(percentualAtingidoFilial >= 100, showFilialDiff)
+          const compraSobreVendaFilial = getCompraSobreVendaPercent(
+            compras?.valor_realizado_compras,
+            filial.valor_realizado
+          )
 
           body.push([
             '',
@@ -1225,6 +1236,7 @@ export default function MetaSetorPage() {
             showFilialDiff ? `${margemFilial.toFixed(2)}%` : '-',
             compras?.valor_meta_compras != null ? formatCurrency(compras.valor_meta_compras) : '-',
             compras?.valor_realizado_compras != null ? formatCurrency(compras.valor_realizado_compras) : '-',
+            compraSobreVendaFilial != null ? `${compraSobreVendaFilial.toFixed(2)}%` : '-',
           ])
           statusMatrix.push([
             null,
@@ -1235,6 +1247,7 @@ export default function MetaSetorPage() {
             null,
             null,
             atingidoFilialDirection,
+            null,
             null,
             null,
             null,
@@ -1297,6 +1310,17 @@ export default function MetaSetorPage() {
   const getMargemRealizada = (valorRealizado: number, lucroRealizado: number) => {
     if (valorRealizado <= 0) return 0
     return (lucroRealizado / valorRealizado) * 100
+  }
+
+  const getCompraSobreVendaPercent = (
+    valorRealizadoCompras: number | null | undefined,
+    valorRealizadoVendas: number | null | undefined
+  ) => {
+    if (valorRealizadoCompras == null || valorRealizadoVendas == null || valorRealizadoVendas <= 0) {
+      return null
+    }
+
+    return (valorRealizadoCompras / valorRealizadoVendas) * 100
   }
 
   const renderMetaMargemStatus = (
@@ -1370,6 +1394,18 @@ export default function MetaSetorPage() {
     return formatCurrency(value)
   }
 
+  const renderLoadingPercentage = (value: number | null | undefined) => {
+    if (isLoadingPurchases) {
+      return <span className="text-muted-foreground">Carregando...</span>
+    }
+
+    if (value == null) {
+      return <span className="text-muted-foreground">-</span>
+    }
+
+    return `${value.toFixed(2)}%`
+  }
+
   // Função para obter nome da filial
   const getFilialName = (filialId: number) => {
     const branch = branches.find((f: { value: string; label: string }) => f.value === filialId.toString())
@@ -1441,6 +1477,7 @@ export default function MetaSetorPage() {
         'Margem Bruta',
         'Meta Compras',
         'Realizado Compras',
+        '% Compra/Venda',
       ]]
 
       const body: string[][] = []
@@ -1448,6 +1485,10 @@ export default function MetaSetorPage() {
 
       visibleSummaryRows.forEach((row) => {
         const comprasResumo = getComprasResumoPorFilial(row.filial_id)
+        const compraSobreVendaPercent = getCompraSobreVendaPercent(
+          comprasResumo?.valor_realizado_compras,
+          row.valor_realizado
+        )
         const atingidoDirection = isCurrentSelectedMonth
           ? null
           : getStatusDirection(row.percentual_atingido >= 100, true)
@@ -1471,6 +1512,7 @@ export default function MetaSetorPage() {
           `${row.margem_bruta.toFixed(2)}%`,
           comprasResumo?.valor_meta_compras != null ? formatCurrency(comprasResumo.valor_meta_compras) : '-',
           comprasResumo?.valor_realizado_compras != null ? formatCurrency(comprasResumo.valor_realizado_compras) : '-',
+          compraSobreVendaPercent != null ? `${compraSobreVendaPercent.toFixed(2)}%` : '-',
         ])
 
         statusMatrix.push([
@@ -1484,6 +1526,7 @@ export default function MetaSetorPage() {
           null,
           null,
           null,
+          null,
         ])
       })
 
@@ -1491,6 +1534,10 @@ export default function MetaSetorPage() {
         ? null
         : getStatusDirection(summaryPercentualAtingido >= 100, true)
       const totalAcumuladoDirection = getStatusDirection(summaryPercentualAtingidoAcumuladoD1 >= 100, true)
+      const summaryCompraSobreVendaPercent = getCompraSobreVendaPercent(
+        summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
+        summaryTotals.valorRealizado
+      )
 
       body.push([
         'Todas',
@@ -1510,6 +1557,7 @@ export default function MetaSetorPage() {
         `${summaryMargemBruta.toFixed(2)}%`,
         summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-',
         summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-',
+        summaryCompraSobreVendaPercent != null ? `${summaryCompraSobreVendaPercent.toFixed(2)}%` : '-',
       ])
 
       statusMatrix.push([
@@ -1518,6 +1566,7 @@ export default function MetaSetorPage() {
         null,
         totalAtingidoDirection,
         ...(isCurrentSelectedMonth ? [null, totalAcumuladoDirection] : []),
+        null,
         null,
         null,
         null,
@@ -2422,11 +2471,16 @@ export default function MetaSetorPage() {
                       <br />
                       Compras
                     </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">% Comp./Venda</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {visibleSummaryRows.map((row) => {
                     const comprasResumo = getComprasResumoPorFilial(row.filial_id)
+                    const compraSobreVendaPercent = getCompraSobreVendaPercent(
+                      comprasResumo?.valor_realizado_compras,
+                      row.valor_realizado
+                    )
 
                     return (
                     <TableRow key={row.filial_id}>
@@ -2489,6 +2543,7 @@ export default function MetaSetorPage() {
                       </TableCell>
                       <TableCell>{renderLoadingCurrency(comprasResumo?.valor_meta_compras, true)}</TableCell>
                       <TableCell>{renderLoadingCurrency(comprasResumo?.valor_realizado_compras)}</TableCell>
+                      <TableCell>{renderLoadingPercentage(compraSobreVendaPercent)}</TableCell>
                     </TableRow>
                     )
                   })}
@@ -2555,6 +2610,14 @@ export default function MetaSetorPage() {
                     </TableCell>
                     <TableCell>{renderLoadingCurrency(summaryTotals.hasMetaCompras ? summaryTotals.valorMetaCompras : null, true)}</TableCell>
                     <TableCell>{renderLoadingCurrency(summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null)}</TableCell>
+                    <TableCell>
+                      {renderLoadingPercentage(
+                        getCompraSobreVendaPercent(
+                          summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
+                          summaryTotals.valorRealizado
+                        )
+                      )}
+                    </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -2578,7 +2641,7 @@ export default function MetaSetorPage() {
           <CardContent>
             <div className="space-y-2">
               {/* Table Header Skeleton */}
-              <div className="grid grid-cols-13 gap-4 pb-4 border-b">
+              <div className="grid grid-cols-14 gap-4 pb-4 border-b">
                 <Skeleton className="h-4 w-4" />
                 <Skeleton className="h-4 w-16" />
                 <Skeleton className="h-4 w-24" />
@@ -2592,11 +2655,12 @@ export default function MetaSetorPage() {
                 <Skeleton className="h-4 w-16" />
                 <Skeleton className="h-4 w-20" />
                 <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-16" />
               </div>
 
               {/* Table Rows Skeleton */}
               {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="grid grid-cols-13 gap-4 py-3 border-b">
+                <div key={index} className="grid grid-cols-14 gap-4 py-3 border-b">
                   <Skeleton className="h-4 w-4" />
                   <Skeleton className="h-4 w-20" />
                   <Skeleton className="h-4 w-24" />
@@ -2610,6 +2674,7 @@ export default function MetaSetorPage() {
                   <Skeleton className="h-4 w-12" />
                   <Skeleton className="h-4 w-20" />
                   <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-16" />
                 </div>
               ))}
             </div>
@@ -2695,6 +2760,7 @@ export default function MetaSetorPage() {
                     <br />
                     Compras
                   </TableHead>
+                  <TableHead className="whitespace-normal leading-tight">% Comp./Venda</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2744,6 +2810,10 @@ export default function MetaSetorPage() {
                     totals.valor_meta > 0
                       ? (totals.valor_realizado / totals.valor_meta) * 100
                       : 0
+                  const compraSobreVendaPercent = getCompraSobreVendaPercent(
+                    totals.has_realizado_compras ? totals.valor_realizado_compras : null,
+                    totals.valor_realizado
+                  )
 
                   // Verificar se deve mostrar diferença
                   const showDiff = shouldShowDifference(meta.data, totals.valor_realizado)
@@ -2832,6 +2902,7 @@ export default function MetaSetorPage() {
                         </TableCell>
                         <TableCell>{renderLoadingCurrency(totals.has_meta_compras ? totals.valor_meta_compras : null, true)}</TableCell>
                         <TableCell>{renderLoadingCurrency(totals.has_realizado_compras ? totals.valor_realizado_compras : null)}</TableCell>
+                        <TableCell>{renderLoadingPercentage(compraSobreVendaPercent)}</TableCell>
                       </TableRow>
 
                       {isExpanded &&
@@ -2843,6 +2914,10 @@ export default function MetaSetorPage() {
                           const isEditingPercentual = editingCell?.data === meta.data && editingCell?.filialId === filial.filial_id && editingCell?.field === 'percentual'
                           const isEditingValor = editingCell?.data === meta.data && editingCell?.filialId === filial.filial_id && editingCell?.field === 'valor'
                           const showFilialDiff = shouldShowDifference(meta.data, filial.valor_realizado)
+                          const compraSobreVendaFilial = getCompraSobreVendaPercent(
+                            compras?.valor_realizado_compras,
+                            filial.valor_realizado
+                          )
                           
                           return (
                             <TableRow
@@ -2975,6 +3050,7 @@ export default function MetaSetorPage() {
                               </TableCell>
                               <TableCell className="text-sm">{renderLoadingCurrency(compras?.valor_meta_compras, true)}</TableCell>
                               <TableCell className="text-sm">{renderLoadingCurrency(compras?.valor_realizado_compras)}</TableCell>
+                              <TableCell className="text-sm">{renderLoadingPercentage(compraSobreVendaFilial)}</TableCell>
                             </TableRow>
                           )
                         })}
