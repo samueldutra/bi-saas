@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,12 +39,30 @@ interface Departamento {
   descricao: string
 }
 
+interface DepartamentoNivel1Mapeado extends Departamento {
+  pai_level_2_id: number | null
+  pai_level_3_id: number | null
+  pai_level_4_id: number | null
+  pai_level_5_id: number | null
+  pai_level_6_id: number | null
+}
+
 interface Setor {
   id: number
   nome: string
   departamento_nivel: number
   departamento_ids: number[]
+  departamento_ids_nivel_1?: number[]
+  ativo?: boolean
   created_at: string
+}
+
+interface ApiErrorResponse {
+  error?: string
+  message?: string
+  details?: string | null
+  hint?: string | null
+  code?: string | null
 }
 
 interface SetoresContentProps {
@@ -54,6 +72,7 @@ interface SetoresContentProps {
 export function SetoresContent({ tenantSchema }: SetoresContentProps) {
   const [setores, setSetores] = useState<Setor[]>([])
   const [departamentos, setDepartamentos] = useState<Departamento[]>([])
+  const [departamentosNivel1Mapeados, setDepartamentosNivel1Mapeados] = useState<DepartamentoNivel1Mapeado[]>([])
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingSetor, setEditingSetor] = useState<Setor | null>(null)
@@ -77,7 +96,7 @@ export function SetoresContent({ tenantSchema }: SetoresContentProps) {
     setLoading(true)
     try {
       const response = await fetch(
-        `/api/setores?schema=${tenantSchema}`
+        `/api/setores?schema=${tenantSchema}&include_level1=true`
       )
 
       if (!response.ok) throw new Error('Erro ao carregar setores')
@@ -89,6 +108,21 @@ export function SetoresContent({ tenantSchema }: SetoresContentProps) {
       alert('Não foi possível carregar os setores')
     } finally {
       setLoading(false)
+    }
+  }, [tenantSchema])
+
+  const loadDepartamentosNivel1Mapeados = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `/api/setores/departamentos?schema=${tenantSchema}&nivel=1&include_parents=true`
+      )
+
+      if (!response.ok) throw new Error('Erro ao carregar mapeamento de departamentos')
+
+      const data = await response.json()
+      setDepartamentosNivel1Mapeados(data)
+    } catch (error) {
+      console.error('Error loading departments level 1 map:', error)
     }
   }, [tenantSchema])
 
@@ -111,6 +145,10 @@ export function SetoresContent({ tenantSchema }: SetoresContentProps) {
   useEffect(() => {
     loadSetores()
   }, [loadSetores])
+
+  useEffect(() => {
+    loadDepartamentosNivel1Mapeados()
+  }, [loadDepartamentosNivel1Mapeados])
 
   useEffect(() => {
     if (formData.departamento_nivel) {
@@ -147,10 +185,99 @@ export function SetoresContent({ tenantSchema }: SetoresContentProps) {
     })
   }
 
+  const resolveDepartamentoIdsNivel1 = useCallback((nivel: number, departamentoIds: number[]) => {
+    if (departamentoIds.length === 0) return []
+
+    if (nivel === 1) {
+      return Array.from(new Set(departamentoIds))
+    }
+
+    const ids = new Set<number>()
+
+    departamentosNivel1Mapeados.forEach((departamento) => {
+      const parentId =
+        nivel === 2 ? departamento.pai_level_2_id
+          : nivel === 3 ? departamento.pai_level_3_id
+            : nivel === 4 ? departamento.pai_level_4_id
+              : nivel === 5 ? departamento.pai_level_5_id
+                : nivel === 6 ? departamento.pai_level_6_id
+                  : null
+
+      if (parentId !== null && departamentoIds.includes(parentId)) {
+        ids.add(departamento.departamento_id)
+      }
+    })
+
+    return Array.from(ids)
+  }, [departamentosNivel1Mapeados])
+
+  const conflitosPorDepartamentoNivel1 = useMemo(() => {
+    const conflitos = new Map<number, string[]>()
+
+    setores
+      .filter((setor) => setor.ativo !== false && setor.id !== editingSetor?.id)
+      .forEach((setor) => {
+        ;(setor.departamento_ids_nivel_1 || []).forEach((departamentoIdNivel1) => {
+          const nomesExistentes = conflitos.get(departamentoIdNivel1) || []
+          nomesExistentes.push(setor.nome)
+          conflitos.set(departamentoIdNivel1, nomesExistentes)
+        })
+      })
+
+    return conflitos
+  }, [setores, editingSetor?.id])
+
+  const getConflitoDepartamento = useCallback((departamentoId: number) => {
+    const departamentoNivel = Number(formData.departamento_nivel)
+    const departamentoIdsNivel1 = resolveDepartamentoIdsNivel1(departamentoNivel, [departamentoId])
+
+    if (departamentoIdsNivel1.length === 0) {
+      return null
+    }
+
+    const setoresEmConflito = Array.from(new Set(
+      departamentoIdsNivel1.flatMap((departamentoNivel1Id) => (
+        conflitosPorDepartamentoNivel1.get(departamentoNivel1Id) || []
+      ))
+    ))
+
+    if (setoresEmConflito.length === 0) {
+      return null
+    }
+
+    return {
+      departamentoIdsNivel1,
+      setores: setoresEmConflito,
+    }
+  }, [conflitosPorDepartamentoNivel1, formData.departamento_nivel, resolveDepartamentoIdsNivel1])
+
+  const conflitosSelecionados = useMemo(() => (
+    formData.departamento_ids
+      .map((departamentoId) => ({
+        departamentoId,
+        conflito: getConflitoDepartamento(departamentoId),
+      }))
+      .filter((item): item is {
+        departamentoId: number
+        conflito: NonNullable<ReturnType<typeof getConflitoDepartamento>>
+      } => item.conflito !== null)
+  ), [formData.departamento_ids, getConflitoDepartamento])
+
   const handleSaveSetor = async () => {
     if (!formData.nome || formData.departamento_ids.length === 0) {
       toast.error('Campos obrigatórios', {
         description: 'Preencha todos os campos para salvar o setor'
+      })
+      return
+    }
+
+    if (conflitosSelecionados.length > 0) {
+      const setoresEmConflito = Array.from(new Set(
+        conflitosSelecionados.flatMap((item) => item.conflito.setores)
+      ))
+
+      toast.error('Departamentos em conflito', {
+        description: `Remova os departamentos que já pertencem aos setores ativos: ${setoresEmConflito.join(', ')}.`
       })
       return
     }
@@ -172,7 +299,15 @@ export function SetoresContent({ tenantSchema }: SetoresContentProps) {
         })
       })
 
-      if (!response.ok) throw new Error('Erro ao salvar setor')
+      const responseData = await response.json().catch(() => null) as ApiErrorResponse | null
+
+      if (!response.ok) {
+        throw new Error(
+          responseData?.message
+          || responseData?.error
+          || 'Erro ao salvar setor'
+        )
+      }
 
       toast.success(
         `Setor ${editingSetor ? 'atualizado' : 'cadastrado'} com sucesso`,
@@ -183,8 +318,12 @@ export function SetoresContent({ tenantSchema }: SetoresContentProps) {
       loadSetores()
     } catch (error) {
       console.error('Error saving setor:', error)
+      const description = error instanceof Error
+        ? error.message
+        : 'Tente novamente em alguns instantes'
+
       toast.error('Erro ao salvar setor', {
-        description: 'Tente novamente em alguns instantes'
+        description
       })
     } finally {
       setLoading(false)
@@ -346,26 +485,46 @@ export function SetoresContent({ tenantSchema }: SetoresContentProps) {
                     Nenhum departamento encontrado neste nível
                   </div>
                 ) : (
-                  departamentos.map(dept => (
-                    <div key={dept.departamento_id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`dept-${dept.departamento_id}`}
-                        checked={formData.departamento_ids.includes(dept.departamento_id)}
-                        onCheckedChange={() => toggleDepartamento(dept.departamento_id)}
-                      />
-                      <label
-                        htmlFor={`dept-${dept.departamento_id}`}
-                        className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                      >
-                        <span className="font-mono text-muted-foreground">{dept.departamento_id}</span> - {dept.descricao}
-                      </label>
-                    </div>
-                  ))
+                  departamentos.map((dept) => {
+                    const conflito = getConflitoDepartamento(dept.departamento_id)
+                    const selecionado = formData.departamento_ids.includes(dept.departamento_id)
+                    const bloqueado = !selecionado && conflito !== null
+
+                    return (
+                      <div key={dept.departamento_id} className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`dept-${dept.departamento_id}`}
+                            checked={selecionado}
+                            disabled={bloqueado}
+                            onCheckedChange={() => toggleDepartamento(dept.departamento_id)}
+                          />
+                          <label
+                            htmlFor={`dept-${dept.departamento_id}`}
+                            className={`text-xs font-medium leading-none ${bloqueado ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}
+                          >
+                            <span className="font-mono text-muted-foreground">{dept.departamento_id}</span> - {dept.descricao}
+                          </label>
+                        </div>
+
+                        {conflito && (
+                          <p className="pl-6 text-[11px] text-destructive">
+                            Já vinculado aos setores ativos: {conflito.setores.join(', ')}.
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {formData.departamento_ids.length} departamento(s) selecionado(s)
               </p>
+              {conflitosSelecionados.length > 0 && (
+                <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-[11px] text-destructive">
+                  Há departamentos selecionados que entram em conflito com setores ativos. Ajuste a seleção antes de salvar.
+                </div>
+              )}
             </div>
           </div>
 

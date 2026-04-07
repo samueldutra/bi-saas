@@ -16,10 +16,19 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const schema = searchParams.get('schema')
     const nivel = searchParams.get('nivel')
+    const includeParents = searchParams.get('include_parents') === 'true'
 
     if (!schema || !nivel) {
       return NextResponse.json(
         { error: 'Schema e nível são obrigatórios' },
+        { status: 400 }
+      )
+    }
+
+    const nivelNumero = Number(nivel)
+    if (!Number.isInteger(nivelNumero) || nivelNumero < 1 || nivelNumero > 6) {
+      return NextResponse.json(
+        { error: 'Nível inválido. Use um valor entre 1 e 6.' },
         { status: 400 }
       )
     }
@@ -30,12 +39,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const tableName = `departments_level_${nivel}`
+    const tableName = `departments_level_${nivelNumero}`
+    const columns = includeParents && nivelNumero === 1
+      ? 'id, departamento_id, descricao, pai_level_2_id, pai_level_3_id, pai_level_4_id, pai_level_5_id, pai_level_6_id'
+      : 'id, departamento_id, descricao'
 
     const { data, error } = await supabase
       .schema(schema as 'public')
       .from(tableName)
-      .select('id, departamento_id, descricao')
+      .select(columns)
       .order('descricao')
 
     if (error) {

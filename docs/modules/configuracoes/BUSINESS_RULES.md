@@ -428,25 +428,12 @@ const { error } = await supabaseAdmin.auth.admin.deleteUser(userIdToDelete)
 
 ### RN-SETOR-001: Criação de Setor
 
-**Descrição**: Setores são criados com nome, cor e departamentos associados.
+**Descrição**: Setores são criados com nome, nível da hierarquia e departamentos do nível selecionado.
 
 **Campos Obrigatórios**:
 - Nome (único por tenant)
-- Cor (hex color)
-
-**Campos Opcionais**:
-- Departamentos (array de IDs por nível)
-
-**Validação**:
-```typescript
-if (!nome || nome.trim().length === 0) {
-  return { error: 'Nome é obrigatório' }
-}
-
-if (!cor || !/^#[0-9A-F]{6}$/i.test(cor)) {
-  return { error: 'Cor inválida' }
-}
-```
+- `departamento_nivel` (1 a 6)
+- `departamento_ids` com ao menos um item
 
 **Implementação**: [src/app/api/setores/route.ts:80-120](../../../src/app/api/setores/route.ts#L80-120)
 
@@ -469,36 +456,44 @@ SELECT id FROM {schema}.setores WHERE nome = $1;
 
 ### RN-SETOR-003: Associação com Departamentos
 
-**Descrição**: Setores podem ser associados a múltiplos departamentos da hierarquia de 6 níveis.
+**Descrição**: Setores podem ser associados a múltiplos departamentos, desde que todos pertençam ao mesmo nível da hierarquia.
 
 **Estrutura de Dados**:
 ```typescript
 {
-  departamento_id_nivel_1: number[],
-  departamento_id_nivel_2: number[],
-  departamento_id_nivel_3: number[],
-  departamento_id_nivel_4: number[],
-  departamento_id_nivel_5: number[],
-  departamento_id_nivel_6: number[]
+  departamento_nivel: number,
+  departamento_ids: number[]
 }
 ```
 
 **Comportamento**:
-- Arrays podem estar vazios (nenhum departamento associado)
-- Podem conter múltiplos IDs por nível
-- Usado para filtrar dados nas Metas por Setor
+- O formulário permite múltiplos IDs dentro do nível selecionado
+- O backend persiste apenas um `departamento_nivel` por setor
+- O mapeamento para departamentos nível 1 é derivado para filtros e validações
 
 **Implementação**: [setores-content.tsx:150-200](../../../src/components/configuracoes/setores-content.tsx#L150-200)
 
 ---
 
-### RN-SETOR-004: Edição de Setor
+### RN-SETOR-004: Não Sobrepor Setores Ativos
 
-**Descrição**: Setores podem ser editados, alterando nome, cor ou departamentos.
+**Descrição**: Um setor não pode reutilizar departamentos de nível 1 já consumidos por outro setor ativo do mesmo schema, inclusive quando o cadastro ocorre em níveis 2 a 6.
+
+**Comportamento**:
+- O front bloqueia a seleção quando identifica a sobreposição
+- A API retorna `409` com a mensagem do banco caso o conflito ainda chegue ao `POST` ou `PUT`
+- Na edição, o setor atual é ignorado da própria validação de conflito
+
+**Mensagem de Erro**: "Conflito de setor: departamentos nível 1 {...} já pertencem a outro setor ativo"
+
+---
+
+### RN-SETOR-005: Edição de Setor
+
+**Descrição**: Setores podem ser editados, alterando nome ou departamentos.
 
 **Campos Editáveis**:
 - ✅ Nome
-- ✅ Cor
 - ✅ Departamentos associados
 
 **Restrição**: Não pode alterar para nome já existente (exceto próprio nome).
@@ -507,7 +502,7 @@ SELECT id FROM {schema}.setores WHERE nome = $1;
 
 ---
 
-### RN-SETOR-005: Deleção de Setor
+### RN-SETOR-006: Deleção de Setor
 
 **Descrição**: Setores podem ser deletados se não houver dependências.
 
@@ -527,7 +522,7 @@ SELECT COUNT(*) FROM {schema}.metas_setor WHERE setor_id = $1;
 
 ---
 
-### RN-SETOR-006: Carregamento de Departamentos
+### RN-SETOR-007: Carregamento de Departamentos
 
 **Descrição**: Departamentos são carregados por nível para seleção.
 
@@ -535,13 +530,16 @@ SELECT COUNT(*) FROM {schema}.metas_setor WHERE setor_id = $1;
 
 **Resposta**:
 ```typescript
-{
-  nivel: number,
-  departamentos: Array<{
-    id: number,
-    descricao: string
-  }>
-}
+Array<{
+  id: number,
+  departamento_id: number,
+  descricao: string,
+  pai_level_2_id?: number | null,
+  pai_level_3_id?: number | null,
+  pai_level_4_id?: number | null,
+  pai_level_5_id?: number | null,
+  pai_level_6_id?: number | null
+}>
 ```
 
 **Implementação**: [src/app/api/setores/departamentos/route.ts](../../../src/app/api/setores/departamentos/route.ts)

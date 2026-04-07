@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateSchemaAccess, isValidSchema } from '@/lib/security/validate-schema'
 import { z } from 'zod'
+import { createSetorErrorResponse } from '@/app/api/setores/error-response'
 
 const putSchema = z.object({
   schema: z.string().min(1).refine(isValidSchema, 'Schema inválido'),
@@ -64,7 +65,7 @@ export async function PUT(
 
     if (error) {
       console.error('[API/SETORES] Error:', error)
-      return NextResponse.json({ error: 'Erro ao atualizar setor' }, { status: 500 })
+      return createSetorErrorResponse(error, 'Erro ao atualizar setor')
     }
 
     return NextResponse.json(data)

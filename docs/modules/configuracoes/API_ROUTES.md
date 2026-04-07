@@ -478,6 +478,7 @@ const response = await fetch(`/api/users/authorized-branches?${params}`, {
 
 **Query Parameters**:
 - `schema` (string): Nome do schema do tenant (obrigatório)
+- `include_level1` (boolean): Quando `true`, inclui `departamento_ids_nivel_1` calculado pela RPC `get_setores_com_nivel1`
 
 **Response - Sucesso (200)**:
 ```json
@@ -485,26 +486,20 @@ const response = await fetch(`/api/users/authorized-branches?${params}`, {
   {
     "id": 1,
     "nome": "Mercearia",
-    "cor": "#3B82F6",
-    "departamento_id_nivel_1": [1, 2, 3],
-    "departamento_id_nivel_2": [10, 11],
-    "departamento_id_nivel_3": null,
-    "departamento_id_nivel_4": null,
-    "departamento_id_nivel_5": null,
-    "departamento_id_nivel_6": null,
+    "departamento_nivel": 2,
+    "departamento_ids": [10, 11],
+    "departamento_ids_nivel_1": [1, 2, 3],
+    "ativo": true,
     "created_at": "2025-01-05T00:00:00.000Z",
     "updated_at": "2025-01-12T15:30:00.000Z"
   },
   {
     "id": 2,
     "nome": "Açougue",
-    "cor": "#10B981",
-    "departamento_id_nivel_1": [4, 5],
-    "departamento_id_nivel_2": null,
-    "departamento_id_nivel_3": null,
-    "departamento_id_nivel_4": null,
-    "departamento_id_nivel_5": null,
-    "departamento_id_nivel_6": null,
+    "departamento_nivel": 1,
+    "departamento_ids": [4, 5],
+    "departamento_ids_nivel_1": [4, 5],
+    "ativo": true,
     "created_at": "2025-01-06T00:00:00.000Z",
     "updated_at": "2025-01-12T15:30:00.000Z"
   }
@@ -521,8 +516,9 @@ const setores = await response.json()
 **Fluxo**:
 1. Valida autenticação e permissões
 2. Valida parâmetro `schema`
-3. Busca setores: `SELECT * FROM {schema}.setores ORDER BY nome`
-4. Retorna array de setores
+3. Se `include_level1=true`, usa a RPC `get_setores_com_nivel1`
+4. Caso contrário, busca setores com `SELECT * FROM {schema}.setores ORDER BY nome`
+5. Retorna array de setores
 
 ---
 
@@ -539,13 +535,8 @@ const setores = await response.json()
 {
   schema: string                  // Schema do tenant (obrigatório)
   nome: string                    // Nome do setor (obrigatório, único)
-  cor: string                     // Cor hex (obrigatório)
-  departamento_id_nivel_1?: number[]
-  departamento_id_nivel_2?: number[]
-  departamento_id_nivel_3?: number[]
-  departamento_id_nivel_4?: number[]
-  departamento_id_nivel_5?: number[]
-  departamento_id_nivel_6?: number[]
+  departamento_nivel: number      // Nível da hierarquia (1-6)
+  departamento_ids: number[]      // IDs do nível selecionado
 }
 ```
 
@@ -554,22 +545,29 @@ const setores = await response.json()
 {
   "id": 3,
   "nome": "Padaria",
-  "cor": "#F59E0B",
-  "departamento_id_nivel_1": [6, 7],
-  "departamento_id_nivel_2": [20],
-  "departamento_id_nivel_3": null,
-  "departamento_id_nivel_4": null,
-  "departamento_id_nivel_5": null,
-  "departamento_id_nivel_6": null,
+  "departamento_nivel": 2,
+  "departamento_ids": [20],
+  "ativo": true,
   "created_at": "2025-01-12T16:00:00.000Z",
   "updated_at": "2025-01-12T16:00:00.000Z"
 }
 ```
 
-**Response - Erro (400)**:
+**Response - Erro (409 - nome duplicado)**:
 ```json
 {
-  "error": "Setor com este nome já existe"
+  "error": "Setor já existente",
+  "message": "Já existe um setor com este nome neste schema.",
+  "code": "23505"
+}
+```
+
+**Response - Erro (409 - conflito com setor ativo)**:
+```json
+{
+  "error": "Conflito de setor",
+  "message": "Conflito de setor: departamentos nível 1 {1,2,3} já pertencem a outro setor ativo",
+  "code": "23514"
 }
 ```
 
@@ -581,9 +579,8 @@ const response = await fetch('/api/setores', {
   body: JSON.stringify({
     schema: 'okilao',
     nome: 'Padaria',
-    cor: '#F59E0B',
-    departamento_id_nivel_1: [6, 7],
-    departamento_id_nivel_2: [20]
+    departamento_nivel: 2,
+    departamento_ids: [20]
   })
 })
 
@@ -592,9 +589,9 @@ const novoSetor = await response.json()
 
 **Fluxo**:
 1. Valida autenticação e permissões
-2. Valida dados (nome, cor, schema)
-3. Verifica se nome já existe no schema
-4. Insere setor no `{schema}.setores`
+2. Valida dados (`schema`, `nome`, `departamento_nivel`, `departamento_ids`)
+3. Insere setor no `{schema}.setores`
+4. Se o banco detectar nome duplicado ou sobreposição com outro setor ativo, retorna `409`
 5. Retorna setor criado
 
 ---
@@ -616,14 +613,10 @@ const novoSetor = await response.json()
 **Request Body**:
 ```typescript
 {
-  nome?: string                   // Novo nome (opcional)
-  cor?: string                    // Nova cor (opcional)
-  departamento_id_nivel_1?: number[]
-  departamento_id_nivel_2?: number[]
-  departamento_id_nivel_3?: number[]
-  departamento_id_nivel_4?: number[]
-  departamento_id_nivel_5?: number[]
-  departamento_id_nivel_6?: number[]
+  schema: string                  // Schema do tenant (obrigatório)
+  nome: string                    // Novo nome do setor
+  departamento_nivel: number      // Nível da hierarquia (1-6)
+  departamento_ids: number[]      // IDs do nível selecionado
 }
 ```
 
@@ -632,13 +625,9 @@ const novoSetor = await response.json()
 {
   "id": 1,
   "nome": "Mercearia Atualizada",
-  "cor": "#3B82F6",
-  "departamento_id_nivel_1": [1, 2, 3, 4],
-  "departamento_id_nivel_2": [10, 11],
-  "departamento_id_nivel_3": null,
-  "departamento_id_nivel_4": null,
-  "departamento_id_nivel_5": null,
-  "departamento_id_nivel_6": null,
+  "departamento_nivel": 1,
+  "departamento_ids": [1, 2, 3, 4],
+  "ativo": true,
   "created_at": "2025-01-05T00:00:00.000Z",
   "updated_at": "2025-01-12T16:30:00.000Z"
 }
@@ -652,8 +641,10 @@ const response = await fetch(`/api/setores/1?${params}`, {
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
+    schema: 'okilao',
     nome: 'Mercearia Atualizada',
-    departamento_id_nivel_1: [1, 2, 3, 4]
+    departamento_nivel: 1,
+    departamento_ids: [1, 2, 3, 4]
   })
 })
 
@@ -663,8 +654,8 @@ const setorAtualizado = await response.json()
 **Fluxo**:
 1. Valida autenticação e permissões
 2. Valida parâmetros (id, schema)
-3. Se alterou nome, verifica se novo nome já existe
-4. Atualiza setor no `{schema}.setores`
+3. Atualiza setor no `{schema}.setores`
+4. Se o banco detectar nome duplicado ou sobreposição com outro setor ativo, retorna `409`
 5. Retorna setor atualizado
 
 ---
@@ -737,18 +728,22 @@ SELECT COUNT(*) FROM {schema}.metas_setor WHERE setor_id = $1;
 **Query Parameters**:
 - `schema` (string): Nome do schema do tenant (obrigatório)
 - `nivel` (number): Nível do departamento (1-6, obrigatório)
+- `include_parents` (boolean): Quando `true` e `nivel=1`, inclui `pai_level_2_id` a `pai_level_6_id`
 
 **Response - Sucesso (200)**:
 ```json
-{
-  "nivel": 1,
-  "departamentos": [
-    { "id": 1, "descricao": "MERCEARIA" },
-    { "id": 2, "descricao": "AÇOUGUE" },
-    { "id": 3, "descricao": "PADARIA" },
-    { "id": 4, "descricao": "BEBIDAS" }
-  ]
-}
+[
+  {
+    "id": 1,
+    "departamento_id": 1,
+    "descricao": "MERCEARIA",
+    "pai_level_2_id": 10,
+    "pai_level_3_id": 20,
+    "pai_level_4_id": null,
+    "pai_level_5_id": null,
+    "pai_level_6_id": null
+  }
+]
 ```
 
 **Exemplo de Uso**:
@@ -774,8 +769,9 @@ const departamentosPorNivel = await Promise.all(promises)
 **Fluxo**:
 1. Valida autenticação e permissões
 2. Valida parâmetros (schema, nivel entre 1-6)
-3. Busca departamentos: `SELECT id, descricao FROM {schema}.departments_level_{nivel}`
-4. Retorna objeto com nivel e array de departamentos
+3. Busca departamentos em `{schema}.departments_level_{nivel}`
+4. Se `include_parents=true` e `nivel=1`, inclui a hierarquia pai para validação de conflitos no front
+5. Retorna array simples de departamentos
 
 **Tabelas Utilizadas**:
 - `{schema}.departments_level_1`

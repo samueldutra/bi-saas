@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateSchemaAccess, isValidSchema } from '@/lib/security/validate-schema'
 import { z } from 'zod'
+import { createSetorErrorResponse } from '@/app/api/setores/error-response'
 
 // GET - Lista todos os setores
 // Parâmetros:
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('[API/SETORES] Error:', error)
-      return NextResponse.json({ error: 'Erro ao criar setor' }, { status: 500 })
+      return createSetorErrorResponse(error, 'Erro ao criar setor')
     }
 
     return NextResponse.json(data)

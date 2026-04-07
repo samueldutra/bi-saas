@@ -186,12 +186,13 @@ O módulo de Configurações é o centro de gerenciamento administrativo do BI S
 
 ### 4. Setores
 
-**Descrição**: CRUD de setores de negócio com associação a departamentos da hierarquia de 6 níveis.
+**Descrição**: CRUD de setores de negócio com associação a departamentos da hierarquia de 6 níveis e prevenção de sobreposição com setores ativos.
 
 **Funcionalidades**:
 - Listar todos os setores do tenant
-- Criar novo setor com nome e cor
+- Criar novo setor com nome, nível e departamentos
 - Associar departamentos aos setores (multi-select por nível)
+- Impedir seleção de departamentos que já conflitam com outro setor ativo
 - Editar setor existente
 - Deletar setor (se não houver dependências)
 - Visualizar departamentos associados
