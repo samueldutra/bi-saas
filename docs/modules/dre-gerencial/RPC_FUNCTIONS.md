@@ -41,13 +41,14 @@ CREATE OR REPLACE FUNCTION public.get_despesas_hierarquia(
   p_filial_id INTEGER,        -- ID da filial específica
   p_data_inicial DATE,        -- Data inicial do período (YYYY-MM-DD)
   p_data_final DATE,          -- Data final do período (YYYY-MM-DD)
-  p_tipo_data TEXT DEFAULT 'data_emissao'  -- Campo de data para filtro (NÃO USADO)
+  p_tipo_data TEXT DEFAULT 'data_despesa'  -- Campo de data para filtro
 )
 RETURNS TABLE (
   dept_id INTEGER,
   dept_descricao TEXT,
   tipo_id INTEGER,
   tipo_descricao TEXT,
+  data_despesa DATE,
   data_emissao DATE,
   descricao_despesa TEXT,
   id_fornecedor INTEGER,      -- CORREÇÃO: INTEGER (não TEXT)
@@ -71,6 +72,7 @@ BEGIN
       d.descricao as dept_descricao,
       td.id as tipo_id,
       td.descricao as tipo_descricao,
+      desp.data_despesa,
       desp.data_emissao,
       desp.descricao_despesa,
       desp.id_fornecedor,
@@ -104,9 +106,9 @@ $$;
 | `p_filial_id` | INTEGER | ✅ | ID da filial | `1` |
 | `p_data_inicial` | DATE | ✅ | Data inicial do período | `'2024-10-01'` |
 | `p_data_final` | DATE | ✅ | Data final do período | `'2024-10-31'` |
-| `p_tipo_data` | TEXT | ❌ (default: 'data_emissao') | **IGNORADO** - função sempre usa `data_despesa` | *Não usado* |
+| `p_tipo_data` | TEXT | ❌ (default: 'data_despesa') | Campo de data usado no filtro (`data_despesa` ou `data_emissao`) | `'data_despesa'` |
 
-**⚠️ IMPORTANTE**: O parâmetro `p_tipo_data` existe na assinatura mas **NÃO É UTILIZADO**. A função sempre filtra por `data_despesa` (não `data_emissao`).
+**⚠️ IMPORTANTE**: No DRE Gerencial, a API usa `p_tipo_data = 'data_despesa'`, então a listagem respeita a data de lançamento/competência da despesa.
 
 ### Retorno
 
@@ -120,6 +122,7 @@ $$;
 | `dept_descricao` | TEXT | Nome do departamento | `'DESPESAS FIXAS'` |
 | `tipo_id` | INTEGER | ID do tipo de despesa | `5` |
 | `tipo_descricao` | TEXT | Nome do tipo | `'ENERGIA ELÉTRICA'` |
+| `data_despesa` | DATE | Data de lançamento/competência da despesa | `'2024-10-15'` |
 | `data_emissao` | DATE | Data de emissão da nota | `'2024-10-10'` |
 | `descricao_despesa` | TEXT | Descrição da despesa | `'Energia Elétrica - Outubro'` |
 | `id_fornecedor` | INTEGER | ID do fornecedor | `123` |
@@ -144,6 +147,7 @@ $$;
     "dept_descricao": "DESPESAS FIXAS",
     "tipo_id": 5,
     "tipo_descricao": "ENERGIA ELÉTRICA",
+    "data_despesa": "2024-10-15",
     "data_emissao": "2024-10-10",
     "descricao_despesa": "Energia Elétrica - Matriz",
     "id_fornecedor": 123,
@@ -158,6 +162,7 @@ $$;
     "dept_descricao": "DESPESAS FIXAS",
     "tipo_id": 6,
     "tipo_descricao": "ÁGUA",
+    "data_despesa": "2024-10-12",
     "data_emissao": "2024-10-12",
     "descricao_despesa": "Água - Outubro",
     "id_fornecedor": 456,
@@ -185,7 +190,7 @@ const { data: resultData, error: rpcError } = await (supabase.rpc as any)('get_d
   p_filial_id: finalFilialId,
   p_data_inicial: dataInicial,
   p_data_final: dataFinal,
-  p_tipo_data: 'data_emissao'
+  p_tipo_data: 'data_despesa'
 })
 ```
 

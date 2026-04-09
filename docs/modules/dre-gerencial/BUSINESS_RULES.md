@@ -99,6 +99,11 @@
 - **Objetivo**: Evitar divergência entre os números já carregados e os valores que aparecem ao alternar o tipo de filtro
 - **Implementação**: [dre-filter.tsx](../../../src/components/despesas/dre-filter.tsx:163-179)
 
+### RF-008: Despesas do DRE são filtradas por `data_despesa`
+- **Descrição**: A busca da hierarquia de despesas do DRE usa a data de lançamento/competência (`data_despesa`) como referência do período
+- **Motivo**: Garantir que despesas lançadas no mês apareçam no DRE mesmo quando a `data_emissao` da nota pertence a outro mês
+- **Implementação**: [route.ts](../../../src/app/api/dre-gerencial/hierarquia/route.ts:114-119)
+
 ---
 
 ## Regras de Cálculo
@@ -360,7 +365,8 @@
 - **Exibição**: Abaixo da descrição da despesa
 - **Formato**: `DD/MM/YYYY • Nota: 12345-01` (texto pequeno, cor muted)
 - **Campos**:
-  - `data_emissao`: sempre exibida se disponível
+  - `data_despesa`: sempre exibida ao lado da nota
+  - `data_emissao`: mantida apenas no payload da despesa
   - `numero_nota`: exibida se disponível
   - `serie_nota`: exibida junto com número se disponível
 - **Implementação**: [columns.tsx](../../../src/components/despesas/columns.tsx:111-115)

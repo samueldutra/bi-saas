@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       p_filial_id: finalFilialId,
       p_data_inicial: dataInicial,
       p_data_final: dataFinal,
-      p_tipo_data: 'data_emissao'
+      p_tipo_data: 'data_despesa'
     })
 
     if (rpcError) {
@@ -134,8 +134,8 @@ export async function GET(request: NextRequest) {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     resultData?.forEach((desp: any) => {
       // Processar gráfico
-      if (desp.data_emissao) {
-        const mes = desp.data_emissao.substring(0, 7) // YYYY-MM
+      if (desp.data_despesa) {
+        const mes = desp.data_despesa.substring(0, 7) // YYYY-MM
         const valorAtual = graficoMap.get(mes) || 0
         graficoMap.set(mes, valorAtual + (parseFloat(desp.valor) || 0))
       }
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
       // Adicionar despesa
       const tipo = tiposMap.get(tipoKey)
       tipo.despesas.push({
-        data_despesa: desp.data_emissao,
+        data_despesa: desp.data_despesa,
         descricao_despesa: desp.descricao_despesa,
         fornecedor_id: desp.id_fornecedor,
         numero_nota: desp.numero_nota,

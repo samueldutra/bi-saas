@@ -388,7 +388,7 @@ export async function GET(request: NextRequest) {
     p_filial_id: finalFilialId,
     p_data_inicial: data_inicial,
     p_data_final: data_final,
-    p_tipo_data: 'data_emissao'
+    p_tipo_data: 'data_despesa'
   })
 
   // 6. Processar hierarquia
@@ -430,6 +430,7 @@ BEGIN
       dd.descricao AS dept_descricao,
       td.id AS tipo_id,
       td.descricao AS tipo_descricao,
+      d.data_despesa,
       d.data_emissao,
       d.descricao_despesa,
       d.fornecedor_id AS id_fornecedor,

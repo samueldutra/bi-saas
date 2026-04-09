@@ -137,7 +137,7 @@ export const createColumns = (
               </span>
               {tipo === 'despesa' && (
                 <span className="text-[10px] text-muted-foreground">
-                  {formatDate(row.original.data_emissao)}
+                  {formatDate(row.original.data_despesa || row.original.data_emissao)}
                   {row.original.numero_nota && ` • Nota: ${row.original.numero_nota}`}
                   {row.original.serie_nota && `-${row.original.serie_nota}`}
                 </span>

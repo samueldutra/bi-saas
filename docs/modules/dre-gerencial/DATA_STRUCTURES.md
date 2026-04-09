@@ -714,13 +714,14 @@ CREATE OR REPLACE FUNCTION get_despesas_hierarquia(
   p_filial_id INTEGER,
   p_data_inicial DATE,
   p_data_final DATE,
-  p_tipo_data TEXT DEFAULT 'data_emissao'
+  p_tipo_data TEXT DEFAULT 'data_despesa'
 )
 RETURNS TABLE (
   dept_id INTEGER,
   dept_descricao TEXT,
   tipo_id INTEGER,
   tipo_descricao TEXT,
+  data_despesa DATE,
   data_emissao DATE,
   descricao_despesa TEXT,
   id_fornecedor TEXT,
