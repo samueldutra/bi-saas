@@ -233,15 +233,20 @@ Comparação temporal de indicadores.
 interface ComparacaoIndicadores {
   current: IndicadoresData     // Período atual
   pam: {
-    data: IndicadoresData      // Período Anterior Mesmo (mês anterior)
+    data: IndicadoresData      // Período Anterior Mesmo
     ano: number                // Ano do PAM
   }
   paa: {
-    data: IndicadoresData      // Período Anterior Acumulado (ano anterior)
+    data: IndicadoresData      // Período Anterior Acumulado
     ano: number                // Ano do PAA
   }
 }
 ```
+
+**Observações**:
+- Em filtro mensal, `pam` continua sendo o mês anterior
+- Em filtro anual, `pam` segue a lógica YTD/ano equivalente
+- Em filtro customizado, `pam` usa o intervalo imediatamente anterior com a mesma duração e `paa` usa o mesmo intervalo no ano anterior
 
 **Exemplo**:
 ```json

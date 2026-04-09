@@ -2,6 +2,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { type FilterType } from '@/components/despesas/dre-filter'
+import { differenceInCalendarDays, format, subDays, subYears } from 'date-fns'
 import { TrendingUp, TrendingDown, Receipt, SquarePercent } from 'lucide-react'
 
 interface IndicadoresData {
@@ -30,9 +32,14 @@ interface IndicatorsCardsProps {
   indicadores: ComparacaoIndicadores | null
   loading: boolean
   mes: number
+  filterType: FilterType
+  appliedPeriod: {
+    dataInicio: Date
+    dataFim: Date
+  }
 }
 
-export function IndicatorsCards({ indicadores, loading, mes }: IndicatorsCardsProps) {
+export function IndicatorsCards({ indicadores, loading, mes, filterType, appliedPeriod }: IndicatorsCardsProps) {
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -67,6 +74,23 @@ export function IndicatorsCards({ indicadores, loading, mes }: IndicatorsCardsPr
     return MESES_ABREV[mesAnterior] || ''
   }
 
+  const formatRangeLabel = (start: Date, end: Date): string => {
+    return `${format(start, 'dd/MM/yyyy')} a ${format(end, 'dd/MM/yyyy')}`
+  }
+
+  const getCustomComparisonLabels = () => {
+    const totalDias = differenceInCalendarDays(appliedPeriod.dataFim, appliedPeriod.dataInicio) + 1
+    const pamFim = subDays(appliedPeriod.dataInicio, 1)
+    const pamInicio = subDays(appliedPeriod.dataInicio, totalDias)
+    const paaInicio = subYears(appliedPeriod.dataInicio, 1)
+    const paaFim = subYears(appliedPeriod.dataFim, 1)
+
+    return {
+      pam: formatRangeLabel(pamInicio, pamFim),
+      paa: formatRangeLabel(paaInicio, paaFim)
+    }
+  }
+
   if (loading || !indicadores) {
     return (
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -90,13 +114,19 @@ export function IndicatorsCards({ indicadores, loading, mes }: IndicatorsCardsPr
   const { current, pam, paa } = indicadores
 
   // Determinar labels baseados no filtro de mês
-  const labelPam = mes === -1
-    ? `${pam.ano} (YTD)`
-    : `${getMesAnteriorAbrev(mes)}/${pam.ano}`
+  const customLabels = filterType === 'custom' ? getCustomComparisonLabels() : null
+  const labelPam = filterType === 'custom'
+    ? customLabels?.pam || ''
+    : mes === -1
+      ? `${pam.ano} (YTD)`
+      : `${getMesAnteriorAbrev(mes)}/${pam.ano}`
 
-  const labelPaa = mes === -1
-    ? `${paa.ano} (YTD)`
-    : `${getMesAbrev(mes)}/${paa.ano}`
+  const labelPaa = filterType === 'custom'
+    ? customLabels?.paa || ''
+    : mes === -1
+      ? `${paa.ano} (YTD)`
+      : `${getMesAbrev(mes)}/${paa.ano}`
+  const showPaa = filterType === 'custom' || mes !== -1
 
   // Calcular variações para Receita Bruta
   const variacaoPamReceita = calculateVariation(current.receitaBruta, pam.data.receitaBruta)
@@ -150,7 +180,7 @@ export function IndicatorsCards({ indicadores, loading, mes }: IndicatorsCardsPr
                 </span>
               </div>
             )}
-            {mes !== -1 && (
+            {showPaa && (
               <>
                 <div className="text-[10px] text-muted-foreground flex items-center justify-between mt-2">
                   <span>{labelPaa}:</span>
@@ -208,7 +238,7 @@ export function IndicatorsCards({ indicadores, loading, mes }: IndicatorsCardsPr
                 </span>
               </div>
             )}
-            {mes !== -1 && (
+            {showPaa && (
               <>
                 <div className="text-[10px] text-muted-foreground flex items-center justify-between mt-2">
                   <span>{labelPaa}:</span>
@@ -269,7 +299,7 @@ export function IndicatorsCards({ indicadores, loading, mes }: IndicatorsCardsPr
                 </span>
               </div>
             )}
-            {mes !== -1 && (
+            {showPaa && (
               <>
                 <div className="text-[10px] text-muted-foreground flex items-center justify-between mt-2">
                   <span>{labelPaa}:</span>
@@ -332,7 +362,7 @@ export function IndicatorsCards({ indicadores, loading, mes }: IndicatorsCardsPr
                 </span>
               </div>
             )}
-            {mes !== -1 && (
+            {showPaa && (
               <>
                 <div className="text-[10px] text-muted-foreground flex items-center justify-between mt-2">
                   <span>{labelPaa}:</span>

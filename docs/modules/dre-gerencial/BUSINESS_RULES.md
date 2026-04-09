@@ -238,12 +238,26 @@
   - Selecionado: Junho/2024 → PAM = Maio/2024
 - **Implementação**: [page.tsx](../../../src/app/(dashboard)/dre-gerencial/page.tsx:149-150)
 
+### RCT-001A: PAM para Período Customizado
+- **Descrição**: Quando o filtro é `Período Customizado`, o PAM usa o intervalo imediatamente anterior com a mesma quantidade de dias
+- **Exemplo**:
+  - Selecionado: `01/01/2026 a 31/03/2026` → PAM = `03/10/2025 a 31/12/2025`
+  - Selecionado: `01/04/2026 a 30/04/2026` → PAM = `02/03/2026 a 31/03/2026`
+- **Objetivo**: Garantir que os cards comparem períodos equivalentes sem recalcular o intervalo atual via YTD
+- **Implementação**: [page.tsx](../../../src/app/(dashboard)/dre-gerencial/page.tsx:255-300)
+
 ### RCT-002: Cálculo de PAA (Período Anterior Acumulado)
 - **Descrição**: Mesmo mês do ano anterior
 - **Cálculo**: `anoParam - 1` (mesmo mês)
 - **Exemplo**:
   - Selecionado: Outubro/2024 → PAA = Outubro/2023
 - **Implementação**: [page.tsx](../../../src/app/(dashboard)/dre-gerencial/page.tsx:154)
+
+### RCT-002A: PAA para Período Customizado
+- **Descrição**: Quando o filtro é `Período Customizado`, o PAA usa o mesmo intervalo deslocado em 1 ano
+- **Exemplo**:
+  - Selecionado: `01/01/2026 a 31/03/2026` → PAA = `01/01/2025 a 31/03/2025`
+- **Implementação**: [page.tsx](../../../src/app/(dashboard)/dre-gerencial/page.tsx:255-300)
 
 ### RCT-003: Busca Paralela de Períodos
 - **Descrição**: Busca 3 conjuntos de dados simultaneamente:

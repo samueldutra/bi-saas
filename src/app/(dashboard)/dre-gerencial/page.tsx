@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useTenantContext } from '@/contexts/tenant-context'
 import { useBranchesOptions } from '@/hooks/use-branches'
 import { logModuleAccess } from '@/lib/audit'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { differenceInCalendarDays, endOfMonth, format, startOfMonth, subDays, subYears } from 'date-fns'
 import { type FilialOption } from '@/components/filters'
 import { DataTable } from '@/components/despesas/data-table'
 import { createColumns, type DespesaRow } from '@/components/despesas/columns'
@@ -129,6 +129,17 @@ interface AppliedPeriodState {
   dataFim: Date
 }
 
+interface ApiPeriodRange {
+  dataInicio: string
+  dataFim: string
+}
+
+interface ComparisonPeriods {
+  current: ApiPeriodRange
+  pam: ApiPeriodRange
+  paa: ApiPeriodRange
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AutoTableConfig = any
 
@@ -226,7 +237,7 @@ export default function DespesasPage() {
 
   // Calcular datas com base em mês e ano
   // dataReferenciaYTD: usado apenas quando mesParam === -1 para calcular YTD do ano anterior
-  const getDatasMesAno = (mesParam: number, anoParam: number, dataReferenciaYTD?: Date) => {
+  function getDatasMesAno(mesParam: number, anoParam: number, dataReferenciaYTD?: Date) {
     let dataInicio: Date
     let dataFim: Date
 
@@ -263,6 +274,56 @@ export default function DespesasPage() {
     return {
       dataInicio: format(dataInicio, 'yyyy-MM-dd'),
       dataFim: format(dataFim, 'yyyy-MM-dd')
+    }
+  }
+
+  const buildComparisonPeriods = (period: AppliedPeriodState): ComparisonPeriods => {
+    if (period.filterType === 'custom') {
+      const totalDias = differenceInCalendarDays(period.dataFim, period.dataInicio) + 1
+      const pamFim = subDays(period.dataInicio, 1)
+      const pamInicio = subDays(period.dataInicio, totalDias)
+      const paaInicio = subYears(period.dataInicio, 1)
+      const paaFim = subYears(period.dataFim, 1)
+
+      return {
+        current: {
+          dataInicio: format(period.dataInicio, 'yyyy-MM-dd'),
+          dataFim: format(period.dataFim, 'yyyy-MM-dd')
+        },
+        pam: {
+          dataInicio: format(pamInicio, 'yyyy-MM-dd'),
+          dataFim: format(pamFim, 'yyyy-MM-dd')
+        },
+        paa: {
+          dataInicio: format(paaInicio, 'yyyy-MM-dd'),
+          dataFim: format(paaFim, 'yyyy-MM-dd')
+        }
+      }
+    }
+
+    let mesPam: number
+    let anoPam: number
+    let dataReferenciaYTD: Date | undefined
+
+    if (period.mes === -1) {
+      mesPam = -1
+      anoPam = period.ano - 1
+
+      const anoAtual = new Date().getFullYear()
+      if (period.ano === anoAtual) {
+        dataReferenciaYTD = new Date()
+      } else {
+        dataReferenciaYTD = new Date(period.ano, 11, 31)
+      }
+    } else {
+      mesPam = period.mes - 1 < 0 ? 11 : period.mes - 1
+      anoPam = period.mes - 1 < 0 ? period.ano - 1 : period.ano
+    }
+
+    return {
+      current: getDatasMesAno(period.mes, period.ano),
+      pam: getDatasMesAno(mesPam, anoPam, dataReferenciaYTD),
+      paa: getDatasMesAno(period.mes, period.ano - 1, dataReferenciaYTD)
     }
   }
 
@@ -1225,13 +1286,15 @@ export default function DespesasPage() {
   const handleFilter = async (config: FilterConfig) => {
     const { filiais, filterType: newFilterType, mes: mesParam, ano: anoParam, dataInicio, dataFim } = config
 
-    setAppliedPeriod({
+    const appliedConfig: AppliedPeriodState = {
       filterType: newFilterType,
       mes: mesParam,
       ano: anoParam,
       dataInicio,
       dataFim,
-    })
+    }
+
+    setAppliedPeriod(appliedConfig)
 
     if (currentTenant?.supabase_schema && filiais.length > 0) {
       setLoading(true)
@@ -1239,60 +1302,18 @@ export default function DespesasPage() {
       setError('')
 
       try {
-        // Período atual - usar datas do config se for customizado
-        let dataInicioStr: string
-        let dataFimStr: string
-
-        if (newFilterType === 'custom') {
-          dataInicioStr = format(dataInicio, 'yyyy-MM-dd')
-          dataFimStr = format(dataFim, 'yyyy-MM-dd')
-        } else {
-          const datas = getDatasMesAno(mesParam, anoParam)
-          dataInicioStr = datas.dataInicio
-          dataFimStr = datas.dataFim
-        }
-
-        // PAM - Período Anterior Mesmo
-        let mesPam: number
-        let anoPam: number
-        let dataReferenciaYTD: Date | undefined
-
-        if (mesParam === -1) {
-          // "Todos" selecionado → PAM = YTD do ano anterior
-          mesPam = -1
-          anoPam = anoParam - 1
-
-          // Para calcular YTD do ano anterior, precisamos da data de referência
-          // Se anoParam === ano atual, usa data de hoje
-          // Se anoParam !== ano atual, usa 31/12 do ano filtrado
-          const anoAtual = new Date().getFullYear()
-          if (anoParam === anoAtual) {
-            dataReferenciaYTD = new Date() // Hoje (ex: 17/11/2025)
-          } else {
-            // Último dia do ano filtrado (ex: 31/12/2024)
-            dataReferenciaYTD = new Date(anoParam, 11, 31)
-          }
-        } else {
-          // Mês específico → PAM = mês anterior (lógica atual)
-          mesPam = mesParam - 1 < 0 ? 11 : mesParam - 1
-          anoPam = mesParam - 1 < 0 ? anoParam - 1 : anoParam
-        }
-
-        const { dataInicio: dataInicioPam, dataFim: dataFimPam } = getDatasMesAno(mesPam, anoPam, dataReferenciaYTD)
-
-        // PAA - Período Anterior Acumulado (sempre usa mesmo período, mas 1 ano atrás)
-        const { dataInicio: dataInicioPaa, dataFim: dataFimPaa } = getDatasMesAno(mesParam, anoParam - 1, dataReferenciaYTD)
+        const comparisonPeriods = buildComparisonPeriods(appliedConfig)
 
         // Buscar em paralelo (despesas + receita bruta + faturamento)
         const [dataAtual, despesasPam, despesasPaa, receitaBruta, faturamento] = await Promise.all([
-          fetchDespesasPeriodo(filiais, dataInicioStr, dataFimStr),
-          fetchDespesasPeriodo(filiais, dataInicioPam, dataFimPam),
-          fetchDespesasPeriodo(filiais, dataInicioPaa, dataFimPaa),
+          fetchDespesasPeriodo(filiais, comparisonPeriods.current.dataInicio, comparisonPeriods.current.dataFim),
+          fetchDespesasPeriodo(filiais, comparisonPeriods.pam.dataInicio, comparisonPeriods.pam.dataFim),
+          fetchDespesasPeriodo(filiais, comparisonPeriods.paa.dataInicio, comparisonPeriods.paa.dataFim),
           newFilterType === 'custom'
-            ? fetchReceitaBrutaCustom(filiais, dataInicioStr, dataFimStr)
+            ? fetchReceitaBrutaCustom(filiais, comparisonPeriods.current.dataInicio, comparisonPeriods.current.dataFim)
             : fetchReceitaBrutaPorFilial(filiais, mesParam, anoParam),
           newFilterType === 'custom'
-            ? fetchFaturamentoCustom(filiais, dataInicioStr, dataFimStr)
+            ? fetchFaturamentoCustom(filiais, comparisonPeriods.current.dataInicio, comparisonPeriods.current.dataFim)
             : fetchFaturamento(filiais, mesParam, anoParam)
         ])
 
@@ -1304,7 +1325,7 @@ export default function DespesasPage() {
         setLoading(false)
 
         // Agora buscar indicadores com os dados de despesas e faturamento já carregados
-        await fetchIndicadores(filiais, mesParam, anoParam, dataAtual, despesasPam, despesasPaa, faturamento)
+        await fetchIndicadores(filiais, appliedConfig, dataAtual, despesasPam, despesasPaa, faturamento)
       } catch (err) {
         const error = err as Error
         console.error('[Despesas] Erro ao buscar despesas:', error)
@@ -1398,8 +1419,7 @@ export default function DespesasPage() {
   // Buscar indicadores (mesma API do DRE Gerencial)
   const fetchIndicadores = async (
     filiais: FilialOption[],
-    mesParam: number,
-    anoParam: number,
+    appliedConfig: AppliedPeriodState,
     despesasAtual?: ReportData | null,
     despesasPam?: ReportData | null,
     despesasPaa?: ReportData | null,
@@ -1412,36 +1432,8 @@ export default function DespesasPage() {
     setLoadingIndicadores(true)
 
     try {
-      const { dataInicio, dataFim } = getDatasMesAno(mesParam, anoParam)
+      const comparisonPeriods = buildComparisonPeriods(appliedConfig)
       const filialIds = filiais.map(f => f.value).join(',')
-
-      // Buscar dados PAM - Período Anterior Mesmo (mesma lógica do handleFilter)
-      let mesPam: number
-      let anoPam: number
-      let dataReferenciaYTD: Date | undefined
-
-      if (mesParam === -1) {
-        // "Todos" selecionado → PAM = YTD do ano anterior
-        mesPam = -1
-        anoPam = anoParam - 1
-
-        // Para calcular YTD do ano anterior, precisamos da data de referência
-        const anoAtual = new Date().getFullYear()
-        if (anoParam === anoAtual) {
-          dataReferenciaYTD = new Date() // Hoje
-        } else {
-          dataReferenciaYTD = new Date(anoParam, 11, 31) // Último dia do ano filtrado
-        }
-      } else {
-        // Mês específico → PAM = mês anterior (lógica atual)
-        mesPam = mesParam - 1 < 0 ? 11 : mesParam - 1
-        anoPam = mesParam - 1 < 0 ? anoParam - 1 : anoParam
-      }
-
-      const { dataInicio: dataInicioPam, dataFim: dataFimPam } = getDatasMesAno(mesPam, anoPam, dataReferenciaYTD)
-
-      // Buscar dados PAA - Período Anterior Acumulado (sempre usa mesmo período, mas 1 ano atrás)
-      const { dataInicio: dataInicioPaa, dataFim: dataFimPaa } = getDatasMesAno(mesParam, anoParam - 1, dataReferenciaYTD)
 
       // Buscar todos os dados em paralelo: dashboard (atual, PAM, PAA) + faturamento (PAM, PAA)
       const [
@@ -1454,38 +1446,38 @@ export default function DespesasPage() {
         // Dashboard atual
         fetch(`/api/dashboard?${new URLSearchParams({
           schema: currentTenant.supabase_schema,
-          data_inicio: dataInicio,
-          data_fim: dataFim,
+          data_inicio: comparisonPeriods.current.dataInicio,
+          data_fim: comparisonPeriods.current.dataFim,
           filiais: filialIds || 'all'
         })}`).then(r => r.ok ? r.json() : null),
 
         // Dashboard PAM
         fetch(`/api/dashboard?${new URLSearchParams({
           schema: currentTenant.supabase_schema,
-          data_inicio: dataInicioPam,
-          data_fim: dataFimPam,
+          data_inicio: comparisonPeriods.pam.dataInicio,
+          data_fim: comparisonPeriods.pam.dataFim,
           filiais: filialIds || 'all'
         })}`).then(r => r.ok ? r.json() : null),
 
         // Dashboard PAA
         fetch(`/api/dashboard?${new URLSearchParams({
           schema: currentTenant.supabase_schema,
-          data_inicio: dataInicioPaa,
-          data_fim: dataFimPaa,
+          data_inicio: comparisonPeriods.paa.dataInicio,
+          data_fim: comparisonPeriods.paa.dataFim,
           filiais: filialIds || 'all'
         })}`).then(r => r.ok ? r.json() : null),
 
         // Faturamento PAM
-        fetchFaturamentoPeriodo(dataInicioPam, dataFimPam, filialIds || 'all'),
+        fetchFaturamentoPeriodo(comparisonPeriods.pam.dataInicio, comparisonPeriods.pam.dataFim, filialIds || 'all'),
 
         // Faturamento PAA
-        fetchFaturamentoPeriodo(dataInicioPaa, dataFimPaa, filialIds || 'all')
+        fetchFaturamentoPeriodo(comparisonPeriods.paa.dataInicio, comparisonPeriods.paa.dataFim, filialIds || 'all')
       ])
 
       const result = {
         current: dashboardAtual,
-        pam: { data: dashboardPam, ano: anoPam },
-        paa: { data: dashboardPaa, ano: anoParam - 1 }
+        pam: { data: dashboardPam, ano: new Date(comparisonPeriods.pam.dataFim).getFullYear() },
+        paa: { data: dashboardPaa, ano: new Date(comparisonPeriods.paa.dataFim).getFullYear() }
       }
 
       // Estruturar dados de faturamento para PAM e PAA
@@ -2074,6 +2066,8 @@ export default function DespesasPage() {
           indicadores={indicadores}
           loading={loadingIndicadores}
           mes={mes}
+          filterType={appliedPeriod.filterType}
+          appliedPeriod={appliedPeriod}
         />
       )}
 

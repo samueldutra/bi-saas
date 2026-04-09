@@ -81,7 +81,7 @@ export function DREFilter({
   const [localAno, setLocalAno] = useState<number>(ano)
 
   // Tipo de filtro de período
-  const [filterType, setFilterType] = useState<FilterType>(mes === -1 ? 'year' : 'month')
+  const [filterType, setFilterType] = useState<FilterType>(appliedPeriod?.filterType || (mes === -1 ? 'year' : 'month'))
 
   // Estados para período customizado
   const [startDateInput, setStartDateInput] = useState<string>('')
@@ -100,9 +100,6 @@ export function DREFilter({
 
   useEffect(() => {
     setLocalMes(mes)
-    if (mes === -1) {
-      setFilterType('year')
-    }
   }, [mes])
 
   useEffect(() => {
@@ -110,6 +107,10 @@ export function DREFilter({
   }, [ano])
 
   useEffect(() => {
+    if (appliedPeriod?.filterType) {
+      setFilterType(appliedPeriod.filterType)
+    }
+
     if (appliedPeriod?.filterType === 'custom') {
       setStartDateInput(format(appliedPeriod.dataInicio, 'dd/MM/yyyy'))
       setEndDateInput(format(appliedPeriod.dataFim, 'dd/MM/yyyy'))
