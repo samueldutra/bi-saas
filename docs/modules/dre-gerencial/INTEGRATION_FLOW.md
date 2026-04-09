@@ -112,16 +112,19 @@ useEffect(() => {
 
 ```typescript
 const hoje = new Date()
-const mesAnterior = hoje.getMonth() - 1 < 0 ? 11 : hoje.getMonth() - 1
-const anoMesAnterior = hoje.getMonth() - 1 < 0 ? hoje.getFullYear() - 1 : hoje.getFullYear()
+const mesAtual = hoje.getMonth()
+const anoAtual = hoje.getFullYear()
 
-const [mes, setMes] = useState<number>(mesAnterior)
-const [ano, setAno] = useState<number>(anoMesAnterior)
+const [mes, setMes] = useState<number>(mesAtual)
+const [ano, setAno] = useState<number>(anoAtual)
 ```
 
 **Exemplos**:
-- Hoje = 15/01/2025 → Período padrão = Dezembro/2024
-- Hoje = 15/06/2024 → Período padrão = Maio/2024
+- Hoje = 09/04/2026 → Período padrão = Abril/2026
+- Hoje = 15/06/2024 → Período padrão = Junho/2024
+
+**Observação**:
+- A carga inicial do relatório usa sempre o mês atual e mantém internamente o período aplicado para reutilizar o mesmo intervalo nos filtros e na exportação.
 
 ---
 
@@ -151,7 +154,16 @@ useEffect(() => {
 ```typescript
 useEffect(() => {
   if (currentTenant?.supabase_schema && filiaisSelecionadas.length > 0 && !isLoadingBranches && !data) {
-    handleFilter(filiaisSelecionadas, mes, ano)
+    const initialConfig = {
+      filiais: filiaisSelecionadas,
+      filterType: 'month',
+      mes,
+      ano,
+      dataInicio: startOfMonth(new Date(ano, mes)),
+      dataFim: endOfMonth(new Date(ano, mes))
+    }
+
+    handleFilter(initialConfig)
   }
 }, [currentTenant?.supabase_schema, filiaisSelecionadas.length, isLoadingBranches, data])
 ```

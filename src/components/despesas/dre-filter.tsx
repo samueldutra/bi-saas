@@ -53,6 +53,13 @@ interface DREFilterProps {
   setAno: (ano: number) => void
   branches: FilialOption[]
   isLoadingBranches: boolean
+  appliedPeriod?: {
+    filterType: FilterType
+    mes: number
+    ano: number
+    dataInicio: Date
+    dataFim: Date
+  }
   onFilter: (config: FilterConfig) => void
 }
 
@@ -65,6 +72,7 @@ export function DREFilter({
   setAno,
   branches,
   isLoadingBranches,
+  appliedPeriod,
   onFilter,
 }: DREFilterProps) {
   // Estados locais para os filtros (não aplicados ainda)
@@ -101,6 +109,15 @@ export function DREFilter({
     setLocalAno(ano)
   }, [ano])
 
+  useEffect(() => {
+    if (appliedPeriod?.filterType === 'custom') {
+      setStartDateInput(format(appliedPeriod.dataInicio, 'dd/MM/yyyy'))
+      setEndDateInput(format(appliedPeriod.dataFim, 'dd/MM/yyyy'))
+      setStartMonth(appliedPeriod.dataInicio)
+      setEndMonth(appliedPeriod.dataFim)
+    }
+  }, [appliedPeriod])
+
   // Calcular datas baseado nos filtros
   const calculateDates = (type: FilterType, mesParam: number, anoParam: number): { dataInicio: Date, dataFim: Date } => {
     if (type === 'custom') {
@@ -121,6 +138,35 @@ export function DREFilter({
         dataFim: endOfMonth(new Date(anoParam, mesParam))
       }
     }
+  }
+
+  const getAppliedDates = () => {
+    if (appliedPeriod) {
+      return {
+        dataInicio: appliedPeriod.dataInicio,
+        dataFim: appliedPeriod.dataFim
+      }
+    }
+
+    return calculateDates(filterType, localMes, localAno)
+  }
+
+  const getCurrentSelectionDates = (type: FilterType) => {
+    if (type === 'custom') {
+      const startDate = parse(startDateInput, 'dd/MM/yyyy', new Date())
+      const endDate = parse(endDateInput, 'dd/MM/yyyy', new Date())
+
+      if (isValid(startDate) && isValid(endDate) && startDate <= endDate) {
+        return {
+          dataInicio: startDate,
+          dataFim: endDate
+        }
+      }
+
+      return getAppliedDates()
+    }
+
+    return calculateDates(type, localMes, localAno)
   }
 
   // Aplicar filtros
@@ -162,6 +208,7 @@ export function DREFilter({
 
   // Handler para mudança de tipo de filtro
   const handleFilterTypeChange = (value: FilterType) => {
+    const previousFilterType = filterType
     setFilterType(value)
 
     if (value === 'month' && localMes === -1) {
@@ -169,13 +216,12 @@ export function DREFilter({
     } else if (value === 'year') {
       setLocalMes(-1)
     } else if (value === 'custom') {
-      const now = new Date()
-      const firstDay = startOfMonth(now)
-      const lastDay = endOfMonth(now)
-      setStartDateInput(format(firstDay, 'dd/MM/yyyy'))
-      setEndDateInput(format(lastDay, 'dd/MM/yyyy'))
-      setStartMonth(firstDay) // Inicializa o mês do calendário
-      setEndMonth(lastDay)    // Inicializa o mês do calendário
+      const baseDates = getCurrentSelectionDates(previousFilterType)
+
+      setStartDateInput(format(baseDates.dataInicio, 'dd/MM/yyyy'))
+      setEndDateInput(format(baseDates.dataFim, 'dd/MM/yyyy'))
+      setStartMonth(baseDates.dataInicio)
+      setEndMonth(baseDates.dataFim)
     }
   }
 

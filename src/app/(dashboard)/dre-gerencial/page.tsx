@@ -121,8 +121,46 @@ interface PDFRowData {
   [key: string]: string | number // Permite propriedades dinâmicas como filial_1, filial_2, total
 }
 
+interface AppliedPeriodState {
+  filterType: FilterType
+  mes: number
+  ano: number
+  dataInicio: Date
+  dataFim: Date
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AutoTableConfig = any
+
+const MESES_NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+
+function formatAppliedPeriodRange(period: AppliedPeriodState) {
+  return `${format(period.dataInicio, 'dd/MM/yyyy')} a ${format(period.dataFim, 'dd/MM/yyyy')}`
+}
+
+function buildPeriodSlug(period: AppliedPeriodState) {
+  if (period.filterType === 'custom') {
+    return `${format(period.dataInicio, 'yyyy-MM-dd')}_a_${format(period.dataFim, 'yyyy-MM-dd')}`
+  }
+
+  if (period.filterType === 'year' || period.mes === -1) {
+    return `${period.ano}`
+  }
+
+  return `${period.mes + 1}-${period.ano}`
+}
+
+function buildPeriodPdfLabel(period: AppliedPeriodState) {
+  if (period.filterType === 'year' || period.mes === -1) {
+    return `PERÍODO: ${period.ano} (ANO COMPLETO)`
+  }
+
+  if (period.filterType === 'custom') {
+    return `PERÍODO: ${formatAppliedPeriodRange(period)}`
+  }
+
+  return `PERÍODO: ${MESES_NOMES[period.mes].toUpperCase()}/${period.ano}`
+}
 
 export default function DespesasPage() {
   const { currentTenant, userProfile } = useTenantContext()
@@ -132,20 +170,23 @@ export default function DespesasPage() {
     includeAll: false
   })
 
-  // Estados dos filtros - filial, mês e ano (mês anterior como padrão)
+  // Estados dos filtros - filial, mês e ano (mês atual como padrão)
   const hoje = new Date()
-  const mesAnterior = hoje.getMonth() - 1 < 0 ? 11 : hoje.getMonth() - 1
-  const anoMesAnterior = hoje.getMonth() - 1 < 0 ? hoje.getFullYear() - 1 : hoje.getFullYear()
+  const mesAtual = hoje.getMonth()
+  const anoAtual = hoje.getFullYear()
+  const dataInicioAtual = startOfMonth(new Date(anoAtual, mesAtual))
+  const dataFimAtual = endOfMonth(new Date(anoAtual, mesAtual))
   
   const [filiaisSelecionadas, setFiliaisSelecionadas] = useState<FilialOption[]>([])
-  const [mes, setMes] = useState<number>(mesAnterior)
-  const [ano, setAno] = useState<number>(anoMesAnterior)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [filterType, setFilterType] = useState<FilterType>('month')
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [customDataInicio, setCustomDataInicio] = useState<Date | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [customDataFim, setCustomDataFim] = useState<Date | null>(null)
+  const [mes, setMes] = useState<number>(mesAtual)
+  const [ano, setAno] = useState<number>(anoAtual)
+  const [appliedPeriod, setAppliedPeriod] = useState<AppliedPeriodState>({
+    filterType: 'month',
+    mes: mesAtual,
+    ano: anoAtual,
+    dataInicio: dataInicioAtual,
+    dataFim: dataFimAtual,
+  })
 
   // Estados dos dados
   const [data, setData] = useState<ReportData | null>(null)
@@ -978,11 +1019,7 @@ export default function DespesasPage() {
       doc.text(tenantNome, marginLeft, 22, { align: 'left' })
 
       // Período filtrado
-      const mesNomes = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
-                        'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO']
-      const periodoTexto = mes === -1
-        ? `PERÍODO: ${ano} (ANO COMPLETO)`
-        : `PERÍODO: ${mesNomes[mes]}/${ano}`
+      const periodoTexto = buildPeriodPdfLabel(appliedPeriod)
 
       doc.setFontSize(9)
       doc.text(periodoTexto, marginLeft, 28, { align: 'left' })
@@ -1170,7 +1207,7 @@ export default function DespesasPage() {
 
       // Salvar PDF
       const tenantSlug = (currentTenant.name || 'empresa').toLowerCase().replace(/\s/g, '-')
-      const periodoSlug = mes === -1 ? `${ano}` : `${mes + 1}-${ano}`
+      const periodoSlug = buildPeriodSlug(appliedPeriod)
       const nomeArquivo = `dre-gerencial-${tenantSlug}-${periodoSlug}-${Date.now()}.pdf`
       doc.save(nomeArquivo)
 
@@ -1188,14 +1225,13 @@ export default function DespesasPage() {
   const handleFilter = async (config: FilterConfig) => {
     const { filiais, filterType: newFilterType, mes: mesParam, ano: anoParam, dataInicio, dataFim } = config
 
-    // Atualizar estado do tipo de filtro
-    setFilterType(newFilterType)
-
-    // Se for período customizado, salvar as datas
-    if (newFilterType === 'custom') {
-      setCustomDataInicio(dataInicio)
-      setCustomDataFim(dataFim)
-    }
+    setAppliedPeriod({
+      filterType: newFilterType,
+      mes: mesParam,
+      ano: anoParam,
+      dataInicio,
+      dataFim,
+    })
 
     if (currentTenant?.supabase_schema && filiais.length > 0) {
       setLoading(true)
@@ -2028,6 +2064,7 @@ export default function DespesasPage() {
         setAno={setAno}
         branches={branches}
         isLoadingBranches={isLoadingBranches}
+        appliedPeriod={appliedPeriod}
         onFilter={handleFilter}
       />
 
@@ -2232,4 +2269,3 @@ export default function DespesasPage() {
     </div>
   )
 }
-

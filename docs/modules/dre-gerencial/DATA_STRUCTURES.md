@@ -355,6 +355,46 @@ export type DespesaRow = {
 
 ### 6. Interfaces de Filtro
 
+#### FilterConfig
+Configuração enviada pelo formulário para aplicar o DRE.
+
+```typescript
+interface FilterConfig {
+  filiais: FilialOption[]
+  filterType: 'month' | 'year' | 'custom'
+  mes: number
+  ano: number
+  dataInicio: Date
+  dataFim: Date
+}
+```
+
+**Observações**:
+- `mes = -1` representa filtro anual
+- `dataInicio` e `dataFim` sempre carregam o intervalo efetivamente enviado às APIs
+
+---
+
+#### AppliedPeriodState
+Estado persistido na página para representar o período aplicado ao relatório.
+
+```typescript
+interface AppliedPeriodState {
+  filterType: 'month' | 'year' | 'custom'
+  mes: number
+  ano: number
+  dataInicio: Date
+  dataFim: Date
+}
+```
+
+**Uso**:
+- Alimenta o resumo visual de "Período aplicado"
+- Reaproveita o intervalo já aplicado ao alternar para `Período Customizado`
+- Mantém a referência temporal consistente entre UI, APIs e exportação
+
+---
+
 #### FilialOption
 Opção de filial no filtro multi-seleção.
 

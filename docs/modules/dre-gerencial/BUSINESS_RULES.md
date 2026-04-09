@@ -60,17 +60,25 @@
 - **Implementação**: [page.tsx](../../../src/app/(dashboard)/dre-gerencial/page.tsx:119-123)
 
 ### RF-003: Período Padrão
-- **Descrição**: Mês e ano padrão são MÊS ANTERIOR ao atual
+- **Descrição**: Mês e ano padrão são o MÊS ATUAL e o ANO ATUAL
 - **Cálculo**:
   ```typescript
   const hoje = new Date()
-  const mesAnterior = hoje.getMonth() - 1 < 0 ? 11 : hoje.getMonth() - 1
-  const anoMesAnterior = hoje.getMonth() - 1 < 0 ? hoje.getFullYear() - 1 : hoje.getFullYear()
+  const mesAtual = hoje.getMonth()
+  const anoAtual = hoje.getFullYear()
   ```
-- **Exemplo**: Se hoje é Janeiro/2025 → Padrão = Dezembro/2024
+- **Exemplo**: Se hoje é Abril/2026 → Padrão = Abril/2026
 - **Implementação**: [page.tsx](../../../src/app/(dashboard)/dre-gerencial/page.tsx:101-107)
 
-### RF-004: Validação de Parâmetros API
+### RF-004: Período Aplicado Explícito
+- **Descrição**: A página mantém estado explícito do período efetivamente aplicado ao relatório
+- **Comportamento**:
+- O estado interno usa sempre o intervalo realmente enviado às APIs
+- O estado é atualizado no mesmo fluxo que dispara a busca de dados
+- O mesmo intervalo é reutilizado ao alternar o tipo de filtro e ao exportar PDF
+- **Implementação**: [page.tsx](../../../src/app/(dashboard)/dre-gerencial/page.tsx:1188-1262)
+
+### RF-005: Validação de Parâmetros API
 - **Descrição**: API valida parâmetros obrigatórios
 - **Obrigatórios**:
   - `schema`: string não vazia
@@ -80,11 +88,16 @@
 - **Comportamento**: Retorna 400 Bad Request se inválido
 - **Implementação**: [route.ts](../../../src/app/api/dre-gerencial/hierarquia/route.ts:23-28)
 
-### RF-005: Filial Específica Obrigatória na API
+### RF-006: Filial Específica Obrigatória na API
 - **Descrição**: A API `/api/dre-gerencial/hierarquia` NÃO aceita `filial_id=all`
 - **Motivo**: RPC function `get_despesas_hierarquia` requer filial específica
 - **Comportamento**: Página faz múltiplas chamadas (uma por filial) e consolida
 - **Implementação**: [route.ts](../../../src/app/api/dre-gerencial/hierarquia/route.ts:56-60)
+
+### RF-007: Período Customizado Reaproveita o Intervalo Aplicado
+- **Descrição**: Ao trocar de `Mês` ou `Ano` para `Período Customizado`, o formulário herda o intervalo aplicado no relatório em vez de preencher com a data atual do relógio
+- **Objetivo**: Evitar divergência entre os números já carregados e os valores que aparecem ao alternar o tipo de filtro
+- **Implementação**: [dre-filter.tsx](../../../src/components/despesas/dre-filter.tsx:163-179)
 
 ---
 
