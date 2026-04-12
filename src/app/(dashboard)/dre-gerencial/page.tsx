@@ -1628,6 +1628,27 @@ export default function DespesasPage() {
 
           // Despesas
           tipo.despesas?.forEach((desp: any) => {
+            const shouldLogSophiaHonorariosTransform =
+              currentTenant?.supabase_schema === 'sophia' &&
+              appliedPeriod.filterType === 'month' &&
+              appliedPeriod.ano === 2026 &&
+              appliedPeriod.mes === 0 &&
+              desp.descricao_despesa?.toUpperCase().includes('HONORARIOS ADVG')
+
+            if (shouldLogSophiaHonorariosTransform) {
+              console.log('[DRE Transform Sophia Jan/2026] HONORARIOS ADVG antes da tabela:', {
+                filialId,
+                dept_descricao: dept.dept_descricao,
+                tipo_descricao: tipo.tipo_descricao,
+                data_despesa: desp.data_despesa,
+                data_emissao: desp.data_emissao,
+                descricao_despesa: desp.descricao_despesa,
+                numero_nota: desp.numero_nota,
+                serie_nota: desp.serie_nota,
+                valor: desp.valor
+              })
+            }
+
             const despKey = `${tipoKey}-${desp.data_despesa}-${desp.descricao_despesa}-${desp.numero_nota}`
             
             if (!despesaMap.has(despKey)) {

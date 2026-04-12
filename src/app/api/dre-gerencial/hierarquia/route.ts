@@ -126,6 +126,47 @@ export async function GET(request: NextRequest) {
 
     console.log('[API] Dados RPC recebidos:', resultData?.length || 0, 'registros')
 
+    const shouldLogSophiaHonorarios =
+      schema === 'sophia' &&
+      dataInicial === '2026-01-01' &&
+      dataFinal === '2026-01-31'
+
+    if (shouldLogSophiaHonorarios) {
+      const honorariosRows = (resultData || []).filter((desp: {
+        tipo_id?: number
+        tipo_descricao?: string | null
+        descricao_despesa?: string | null
+      }) => (
+        desp.tipo_id === 454 ||
+        desp.tipo_descricao?.toUpperCase().includes('HONORARIOS') ||
+        desp.descricao_despesa?.toUpperCase().includes('HONORARIOS')
+      ))
+
+      console.log('[API Debug Sophia Jan/2026] HONORARIOS retornados pelo RPC:', {
+        filialId: finalFilialId,
+        total: honorariosRows.length,
+        rows: honorariosRows.map((desp: {
+          tipo_id?: number
+          tipo_descricao?: string | null
+          data_despesa?: string | null
+          data_emissao?: string | null
+          descricao_despesa?: string | null
+          numero_nota?: number | null
+          serie_nota?: string | null
+          valor?: number | string | null
+        }) => ({
+          tipo_id: desp.tipo_id,
+          tipo_descricao: desp.tipo_descricao,
+          data_despesa: desp.data_despesa,
+          data_emissao: desp.data_emissao,
+          descricao_despesa: desp.descricao_despesa,
+          numero_nota: desp.numero_nota,
+          serie_nota: desp.serie_nota,
+          valor: desp.valor
+        }))
+      })
+    }
+
     // Processar dados para estrutura hierárquica
     const departamentosMap = new Map()
     const tiposMap = new Map()
