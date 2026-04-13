@@ -1,6 +1,6 @@
 # Metas Mensal
 
-> Status: ✅ Implementado | Versão: 1.5.1
+> Status: ✅ Implementado | Versão: 1.6.0
 
 ## Visão Geral
 
@@ -15,6 +15,7 @@ O módulo de **Metas Mensais** permite o gerenciamento e acompanhamento de metas
 - 🏢 Suporte a múltiplas filiais simultâneas
 - 📅 Agrupamento inteligente por data
 - 🎯 Indicadores de atingimento (mês completo e D-1)
+- 🛒 Colunas de compras com carregamento tardio
 - 🔐 Respeita restrições de filiais por usuário
 
 ## Funcionalidades
@@ -23,6 +24,7 @@ O módulo de **Metas Mensais** permite o gerenciamento e acompanhamento de metas
 - ✅ Visualização por filial ou múltiplas filiais
 - ✅ Edição inline de meta percentual e valor
 - ✅ Atualização automática de vendas realizadas
+- ✅ Meta Compras, Realizado Compras e % Comp./Venda
 - ✅ Cards de resumo (Total Vendas, Progresso Mês, Progresso D-1)
 - ✅ Agrupamento expansível por data (modo múltiplas filiais)
 - ✅ Lista detalhada por dia (modo filial única)
@@ -54,12 +56,15 @@ O módulo de **Metas Mensais** permite o gerenciamento e acompanhamento de metas
   - [POST /api/metas/generate](../../src/app/api/metas/generate/route.ts) - Gera metas mensais
   - [GET /api/metas/report](../../src/app/api/metas/report/route.ts) - Busca relatório de metas
   - [POST /api/metas/update](../../src/app/api/metas/update/route.ts) - Atualiza metas/valores
+  - [GET /api/metas/compras](../../src/app/api/metas/compras/route.ts) - Busca dados de compras das metas
 
 - **RPC Functions**:
   - `generate_metas_mensais` - Gera metas para todos os dias do mês
   - `get_metas_mensais_report` - Retorna relatório com valores realizados
   - `update_meta_mensal` - Atualiza meta individual
   - `atualizar_valores_realizados_metas` - Atualiza valores em lote
+  - `get_metas_mensais_compras_report` - Retorna compras por dia/filial
+  - `get_metas_mensais_compras_summary_by_filial` - Retorna resumo de compras por filial
 
 ### Database
 
@@ -116,11 +121,20 @@ Usuário → Seleciona filtros (Filiais, Mês, Ano)
        → Atualiza valores realizados (background)
        → GET /api/metas/report
        → RPC get_metas_mensais_report()
+       → GET /api/metas/compras (assíncrono, após relatório)
        → Retorna MetasReport
        → Frontend renderiza:
           - Cards de resumo
           - Tabela com metas (agrupada ou detalhada)
+          - Colunas de compras preenchidas por último
 ```
+
+### Compras
+
+- **Meta Compras**: `valor_meta - (valor_meta * meta_margem_percentual / 100)`
+- **Realizado Compras**: soma de `entradas.valor_total` por filial/data com `transacao IN ('P', 'V')`
+- **% Comp./Venda**: `realizado_compras / valor_realizado * 100`
+- **Carregamento**: feito em chamada separada para não degradar o tempo crítico de abertura da tela
 
 ### 3. Edição Inline
 
@@ -227,6 +241,6 @@ Ver [CHANGELOG.md](./CHANGELOG.md) para detalhes completos.
 
 ## Versão
 
-**Versão Atual**: 1.5.1
-**Última Atualização**: 2025-01-12
+**Versão Atual**: 1.6.0
+**Última Atualização**: 2026-04-13
 **Responsável**: Documentação Técnica

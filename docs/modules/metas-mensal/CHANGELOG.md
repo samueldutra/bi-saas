@@ -6,6 +6,35 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e
 
 ---
 
+## [1.6.0] - 2026-04-13
+
+### ✨ Adicionado
+- **Colunas de Compras** no módulo mensal:
+  - `Meta Compras`
+  - `Realizado Compras`
+  - `% Comp./Venda`
+- **Nova API**: `GET /api/metas/compras`
+- **Novas funções RPC**:
+  - `get_metas_mensais_compras_report`
+  - `get_metas_mensais_compras_summary_by_filial`
+
+### 🔧 Regras de Negócio
+- `Meta Compras` é calculada em valor a partir de `valor_meta` e `meta_margem_percentual`
+- `Realizado Compras` usa `entradas.valor_total` por `filial_id + data_entrada`
+- Apenas transações reais são consideradas: `transacao IN ('P', 'V')`
+- As colunas de compras carregam por último, em fluxo assíncrono separado do relatório principal
+
+### 📊 Interface
+- Tabela de resumo mensal atualizada com as 3 colunas de compras
+- Tabela diária atualizada nas visões de filial única e múltiplas filiais
+- Exportações PDF mensal e diária atualizadas com os novos campos
+
+### ⚡ Performance
+- Consulta de compras desacoplada do relatório principal para preservar a abertura inicial da página
+- Índice dedicado em `entradas(data_entrada, filial_id, id)` com filtro de transações de compra
+
+---
+
 ## [1.5.0] - 2025-01-11
 
 ### ✨ Adicionado

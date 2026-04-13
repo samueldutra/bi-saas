@@ -64,6 +64,23 @@ interface MetaSummaryRow {
   margem_bruta: number
 }
 
+interface MetaComprasRow {
+  data: string
+  filial_id: number
+  valor_meta_compras: number | null
+  valor_realizado_compras: number
+}
+
+interface MetaComprasSummaryRow {
+  filial_id: number
+  valor_meta_compras: number | null
+  valor_realizado_compras: number
+}
+
+interface ComprasByDateMap {
+  [date: string]: Record<number, MetaComprasSummaryRow>
+}
+
 interface GroupedByDate {
   [date: string]: {
     data: string
@@ -157,6 +174,9 @@ export default function MetaMensalPage() {
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<MetasReport | null>(null)
   const [summaryRows, setSummaryRows] = useState<MetaSummaryRow[]>([])
+  const [comprasByDate, setComprasByDate] = useState<ComprasByDateMap>({})
+  const [comprasSummaryByFilial, setComprasSummaryByFilial] = useState<Record<number, MetaComprasSummaryRow>>({})
+  const [isLoadingPurchases, setIsLoadingPurchases] = useState(false)
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({})
 
   // Estados do formulário de criação
@@ -184,6 +204,8 @@ export default function MetaMensalPage() {
   const lastUpdatedPeriodKeyRef = useRef('')
   const latestLoadRequestIdRef = useRef(0)
   const reportAbortControllerRef = useRef<AbortController | null>(null)
+  const purchasesAbortControllerRef = useRef<AbortController | null>(null)
+  const latestPurchasesRequestIdRef = useRef(0)
 
   useEffect(() => {
     setIsClientReady(true)
@@ -214,6 +236,12 @@ export default function MetaMensalPage() {
     latestLoadRequestIdRef.current = 0
     reportAbortControllerRef.current?.abort()
     reportAbortControllerRef.current = null
+    latestPurchasesRequestIdRef.current = 0
+    purchasesAbortControllerRef.current?.abort()
+    purchasesAbortControllerRef.current = null
+    setComprasByDate({})
+    setComprasSummaryByFilial({})
+    setIsLoadingPurchases(false)
   }, [currentTenant?.id])
 
   // Ao carregar filiais, selecionar todas por padrão e carregar dados
@@ -269,6 +297,102 @@ export default function MetaMensalPage() {
     }
   }
 
+  const clearPurchasesState = () => {
+    latestPurchasesRequestIdRef.current = 0
+    purchasesAbortControllerRef.current?.abort()
+    purchasesAbortControllerRef.current = null
+    setComprasByDate({})
+    setComprasSummaryByFilial({})
+    setIsLoadingPurchases(false)
+  }
+
+  const loadPurchasesData = async (
+    schema: string,
+    filiais: FilialOption[],
+    mesParam: number,
+    anoParam: number
+  ) => {
+    const filialIds = filiais.map((filial) => filial.value).join(',')
+    const requestId = latestPurchasesRequestIdRef.current + 1
+    latestPurchasesRequestIdRef.current = requestId
+
+    purchasesAbortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    purchasesAbortControllerRef.current = abortController
+
+    setIsLoadingPurchases(true)
+
+    try {
+      const params = new URLSearchParams({
+        schema,
+        mes: mesParam.toString(),
+        ano: anoParam.toString(),
+      })
+
+      if (filialIds) {
+        params.append('filial_id', filialIds)
+      }
+
+      const response = await fetch(`/api/metas/compras?${params}`, {
+        signal: abortController.signal
+      })
+
+      if (!response.ok) {
+        throw new Error('Erro ao carregar compras das metas')
+      }
+
+      const data = await response.json() as {
+        report?: MetaComprasRow[]
+        resumo?: MetaComprasSummaryRow[]
+      }
+
+      if (latestPurchasesRequestIdRef.current !== requestId) {
+        return
+      }
+
+      const comprasDateMap: ComprasByDateMap = {}
+      const comprasSummaryMap: Record<number, MetaComprasSummaryRow> = {}
+
+      for (const row of data.report ?? []) {
+        if (!comprasDateMap[row.data]) {
+          comprasDateMap[row.data] = {}
+        }
+
+        comprasDateMap[row.data][row.filial_id] = {
+          filial_id: row.filial_id,
+          valor_meta_compras: row.valor_meta_compras,
+          valor_realizado_compras: row.valor_realizado_compras,
+        }
+      }
+
+      for (const row of data.resumo ?? []) {
+        comprasSummaryMap[row.filial_id] = row
+      }
+
+      setComprasByDate(comprasDateMap)
+      setComprasSummaryByFilial(comprasSummaryMap)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return
+      }
+
+      console.error('[METAS] ❌ Error loading purchases:', error)
+
+      if (latestPurchasesRequestIdRef.current === requestId) {
+        setComprasByDate({})
+        setComprasSummaryByFilial({})
+      }
+    } finally {
+      if (latestPurchasesRequestIdRef.current === requestId) {
+        setIsLoadingPurchases(false)
+      }
+
+      if (purchasesAbortControllerRef.current === abortController) {
+        purchasesAbortControllerRef.current = null
+      }
+    }
+  }
+
   const loadReport = async (
     filiais?: FilialOption[],
     mesParam?: number,
@@ -287,6 +411,12 @@ export default function MetaMensalPage() {
     reportAbortControllerRef.current?.abort()
     const abortController = new AbortController()
     reportAbortControllerRef.current = abortController
+
+    setComprasByDate({})
+    setComprasSummaryByFilial({})
+    setIsLoadingPurchases(false)
+    purchasesAbortControllerRef.current?.abort()
+    purchasesAbortControllerRef.current = null
 
     setLoading(true)
     try {
@@ -354,6 +484,12 @@ export default function MetaMensalPage() {
       if (latestLoadRequestIdRef.current === requestId) {
         setReport(data)
         setSummaryRows(summaryData.resumo || [])
+        void loadPurchasesData(
+          currentTenant.supabase_schema,
+          filiaisToUse,
+          mesToUse,
+          anoToUse
+        )
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -373,6 +509,7 @@ export default function MetaMensalPage() {
           margem_bruta: 0
         })
         setSummaryRows([])
+        clearPurchasesState()
       }
     } finally {
       if (latestLoadRequestIdRef.current === requestId) {
@@ -721,6 +858,12 @@ export default function MetaMensalPage() {
     const valorMetaAcumuladaD1 = visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta_acumulada_d1, 0)
     const lucroBruto = visibleSummaryRows.reduce((sum, row) => sum + row.lucro_bruto, 0)
     const metaMargemRows = visibleSummaryRows.filter((row) => row.meta_margem_percentual != null)
+    const metaComprasRows = visibleSummaryRows
+      .map((row) => comprasSummaryByFilial[row.filial_id]?.valor_meta_compras)
+      .filter((value): value is number => value != null)
+    const realizadoComprasRows = visibleSummaryRows
+      .map((row) => comprasSummaryByFilial[row.filial_id]?.valor_realizado_compras)
+      .filter((value): value is number => value != null)
     const mediaMetaMargem = metaMargemRows.length > 0
       ? metaMargemRows.reduce((sum, row) => sum + (row.meta_margem_percentual || 0), 0) / metaMargemRows.length
       : null
@@ -734,8 +877,55 @@ export default function MetaMensalPage() {
       mediaMetaMargem,
       lucroBruto,
       margemBruta: valorRealizado > 0 ? (lucroBruto / valorRealizado) * 100 : 0,
+      valorMetaCompras: metaComprasRows.reduce((sum, value) => sum + value, 0),
+      valorRealizadoCompras: realizadoComprasRows.reduce((sum, value) => sum + value, 0),
+      hasMetaCompras: metaComprasRows.length > 0,
+      hasRealizadoCompras: realizadoComprasRows.length > 0,
     }
-  }, [visibleSummaryRows])
+  }, [comprasSummaryByFilial, visibleSummaryRows])
+
+  const getPurchasesByDateAndFilial = (date: string, filialId: number) => {
+    return comprasByDate[date]?.[filialId]
+  }
+
+  const getPurchaseSummaryByFilial = (filialId: number) => {
+    return comprasSummaryByFilial[filialId]
+  }
+
+  const getCompraSobreVendaPercent = (
+    valorRealizadoCompras: number | null | undefined,
+    valorRealizadoVendas: number | null | undefined
+  ) => {
+    if (valorRealizadoCompras == null || valorRealizadoVendas == null || valorRealizadoVendas <= 0) {
+      return null
+    }
+
+    return (valorRealizadoCompras / valorRealizadoVendas) * 100
+  }
+
+  const renderLoadingCurrency = (value: number | null | undefined, allowNull = false) => {
+    if (isLoadingPurchases) {
+      return <span className="text-muted-foreground">Carregando...</span>
+    }
+
+    if (value == null) {
+      return allowNull ? <span className="text-muted-foreground">-</span> : formatCurrency(0)
+    }
+
+    return formatCurrency(value)
+  }
+
+  const renderLoadingPercentage = (value: number | null | undefined) => {
+    if (isLoadingPurchases) {
+      return <span className="text-muted-foreground">Carregando...</span>
+    }
+
+    if (value == null) {
+      return <span className="text-muted-foreground">-</span>
+    }
+
+    return formatPlainPercentage(value)
+  }
 
   // Funções de edição inline
   const startEditing = (metaId: number, field: 'percentual' | 'valor', currentValue: number) => {
@@ -907,12 +1097,20 @@ export default function MetaMensalPage() {
         'Lucro Bruto',
         'Meta Margem',
         'Margem Bruta',
+        'Meta Compras',
+        'Realizado Compras',
+        '% Comp./Venda',
       ]]
 
       const body: string[][] = []
       const statusMatrix: PdfStatusDirection[][] = []
 
       visibleSummaryRows.forEach((row) => {
+        const comprasResumo = getPurchaseSummaryByFilial(row.filial_id)
+        const compraSobreVenda = getCompraSobreVendaPercent(
+          comprasResumo?.valor_realizado_compras,
+          row.valor_realizado
+        )
         const rowCells: string[] = []
         const rowStatuses: PdfStatusDirection[] = []
 
@@ -954,6 +1152,23 @@ export default function MetaMensalPage() {
         rowStatuses.push(metaMargemDirection)
 
         rowCells.push(formatPlainPercentage(row.margem_bruta))
+        rowStatuses.push(null)
+
+        rowCells.push(
+          comprasResumo?.valor_meta_compras != null
+            ? formatCurrency(comprasResumo.valor_meta_compras)
+            : '-'
+        )
+        rowStatuses.push(null)
+
+        rowCells.push(
+          comprasResumo?.valor_realizado_compras != null
+            ? formatCurrency(comprasResumo.valor_realizado_compras)
+            : '-'
+        )
+        rowStatuses.push(null)
+
+        rowCells.push(compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-')
         rowStatuses.push(null)
 
         body.push(rowCells)
@@ -999,6 +1214,19 @@ export default function MetaMensalPage() {
       totalStatuses.push(totalMetaMargemDirection)
 
       totalCells.push(formatPlainPercentage(summaryTotals.margemBruta))
+      totalStatuses.push(null)
+
+      totalCells.push(summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-')
+      totalStatuses.push(null)
+
+      totalCells.push(summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-')
+      totalStatuses.push(null)
+
+      const compraSobreVendaTotal = getCompraSobreVendaPercent(
+        summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
+        summaryTotals.valorRealizado
+      )
+      totalCells.push(compraSobreVendaTotal != null ? formatPlainPercentage(compraSobreVendaTotal) : '-')
       totalStatuses.push(null)
 
       body.push(totalCells)
@@ -1074,6 +1302,9 @@ export default function MetaMensalPage() {
             'Lucro Bruto',
             'Meta Margem',
             'Margem Bruta',
+            'Meta Compras',
+            'Realizado Compras',
+            '% Comp./Venda',
           ]]
         : [[
             'Data',
@@ -1087,6 +1318,9 @@ export default function MetaMensalPage() {
             'Lucro Bruto',
             'Meta Margem',
             'Margem Bruta',
+            'Meta Compras',
+            'Realizado Compras',
+            '% Comp./Venda',
           ]]
 
       const body: string[][] = []
@@ -1094,6 +1328,23 @@ export default function MetaMensalPage() {
 
       if (filiaisSelecionadas.length !== 1) {
         groupedEntries.forEach(([dateKey, group]) => {
+          const comprasDoDia = group.metas.reduce(
+            (acc, meta) => {
+              const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
+              return {
+                valorMetaCompras: acc.valorMetaCompras + (compra?.valor_meta_compras ?? 0),
+                valorRealizadoCompras: acc.valorRealizadoCompras + (compra?.valor_realizado_compras ?? 0),
+                hasMetaCompras: acc.hasMetaCompras || compra?.valor_meta_compras != null,
+                hasRealizadoCompras: acc.hasRealizadoCompras || compra?.valor_realizado_compras != null,
+              }
+            },
+            {
+              valorMetaCompras: 0,
+              valorRealizadoCompras: 0,
+              hasMetaCompras: false,
+              hasRealizadoCompras: false,
+            }
+          )
           const percentualAtingidoDia = group.total_meta > 0
             ? (group.total_realizado / group.total_meta) * 100
             : 0
@@ -1105,6 +1356,10 @@ export default function MetaMensalPage() {
             ? getStatusDirection(margemRealizadaDia >= group.media_meta_margem_percentual, showDifference)
             : null
           const atingidoDirection = getStatusDirection(percentualAtingidoDia >= 100, showDifference)
+          const compraSobreVenda = getCompraSobreVendaPercent(
+            comprasDoDia.hasRealizadoCompras ? comprasDoDia.valorRealizadoCompras : null,
+            group.total_realizado
+          )
 
           body.push([
             format(parseISO(group.data), 'dd/MM/yyyy'),
@@ -1125,6 +1380,9 @@ export default function MetaMensalPage() {
             showDifference
               ? formatPlainPercentage(group.margem_bruta)
               : '-',
+            comprasDoDia.hasMetaCompras ? formatCurrency(comprasDoDia.valorMetaCompras) : '-',
+            comprasDoDia.hasRealizadoCompras ? formatCurrency(comprasDoDia.valorRealizadoCompras) : '-',
+            compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-',
           ])
 
           statusMatrix.push([
@@ -1138,10 +1396,14 @@ export default function MetaMensalPage() {
             null,
             margemDirection,
             null,
+            null,
+            null,
+            null,
           ])
         })
       } else {
         filteredMetas.forEach((meta) => {
+          const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
           const percentualAtingidoMeta = meta.valor_meta > 0
             ? (meta.valor_realizado / meta.valor_meta) * 100
             : 0
@@ -1151,6 +1413,10 @@ export default function MetaMensalPage() {
           const margemDirection = meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
             ? getStatusDirection(margem >= meta.meta_margem_percentual, showDiff)
             : null
+          const compraSobreVenda = getCompraSobreVendaPercent(
+            compra?.valor_realizado_compras,
+            meta.valor_realizado
+          )
 
           body.push([
             format(parseISO(meta.data), 'dd/MM/yyyy'),
@@ -1172,6 +1438,9 @@ export default function MetaMensalPage() {
             showDiff
               ? formatPlainPercentage(margem)
               : '-',
+            compra?.valor_meta_compras != null ? formatCurrency(compra.valor_meta_compras) : '-',
+            compra?.valor_realizado_compras != null ? formatCurrency(compra.valor_realizado_compras) : '-',
+            compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-',
           ])
 
           statusMatrix.push([
@@ -1185,6 +1454,9 @@ export default function MetaMensalPage() {
             atingidoDirection,
             null,
             margemDirection,
+            null,
+            null,
+            null,
             null,
           ])
         })
@@ -1758,10 +2030,28 @@ export default function MetaMensalPage() {
                       <br />
                       Realizada
                     </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Meta
+                      <br />
+                      Compras
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Realizado
+                      <br />
+                      Compras
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">% Comp./Venda</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleSummaryRows.map((row) => (
+                  {visibleSummaryRows.map((row) => {
+                    const comprasResumo = getPurchaseSummaryByFilial(row.filial_id)
+                    const compraSobreVenda = getCompraSobreVendaPercent(
+                      comprasResumo?.valor_realizado_compras,
+                      row.valor_realizado
+                    )
+
+                    return (
                     <TableRow key={row.filial_id}>
                       <TableCell className="w-[120px] pl-4">
                         <Badge
@@ -1820,8 +2110,12 @@ export default function MetaMensalPage() {
                           formatPlainPercentage(row.margem_bruta)
                         )}
                       </TableCell>
+                      <TableCell>{renderLoadingCurrency(comprasResumo?.valor_meta_compras, true)}</TableCell>
+                      <TableCell>{renderLoadingCurrency(comprasResumo?.valor_realizado_compras)}</TableCell>
+                      <TableCell>{renderLoadingPercentage(compraSobreVenda)}</TableCell>
                     </TableRow>
-                  ))}
+                    )
+                  })}
                   <TableRow className="bg-muted/40 font-medium">
                     <TableCell className="w-[120px] pl-4">
                       <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
@@ -1877,6 +2171,16 @@ export default function MetaMensalPage() {
                         formatPlainPercentage(summaryTotals.margemBruta)
                       )}
                     </TableCell>
+                    <TableCell>{renderLoadingCurrency(summaryTotals.hasMetaCompras ? summaryTotals.valorMetaCompras : null, true)}</TableCell>
+                    <TableCell>{renderLoadingCurrency(summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null)}</TableCell>
+                    <TableCell>
+                      {renderLoadingPercentage(
+                        getCompraSobreVendaPercent(
+                          summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
+                          summaryTotals.valorRealizado
+                        )
+                      )}
+                    </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -1907,15 +2211,15 @@ export default function MetaMensalPage() {
           {loading ? (
             <div className="space-y-2">
               {/* Header skeleton */}
-              <div className="grid grid-cols-11 gap-4 pb-4 border-b">
-                {Array.from({ length: 11 }).map((_, i) => (
+              <div className="grid grid-cols-14 gap-4 pb-4 border-b">
+                {Array.from({ length: 14 }).map((_, i) => (
                   <Skeleton key={i} className="h-4 w-full" />
                 ))}
               </div>
               {/* Rows skeleton */}
               {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="grid grid-cols-11 gap-4 py-3 border-b">
-                  {Array.from({ length: 11 }).map((_, i) => (
+                <div key={index} className="grid grid-cols-14 gap-4 py-3 border-b">
+                  {Array.from({ length: 14 }).map((_, i) => (
                     <Skeleton key={i} className="h-4 w-full" />
                   ))}
                 </div>
@@ -1983,6 +2287,17 @@ export default function MetaMensalPage() {
                       <br />
                       Realizada
                     </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Meta
+                      <br />
+                      Compras
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Realizado
+                      <br />
+                      Compras
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">% Comp./Venda</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1995,6 +2310,27 @@ export default function MetaMensalPage() {
                     const isDateFuture = isTodayOrFuture(dateKey)
                     const hasNoSales = group.total_realizado === 0
                     const showDifference = !(isDateFuture && hasNoSales)
+                    const comprasDoDia = group.metas.reduce(
+                      (acc, meta) => {
+                        const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
+                        return {
+                          valorMetaCompras: acc.valorMetaCompras + (compra?.valor_meta_compras ?? 0),
+                          valorRealizadoCompras: acc.valorRealizadoCompras + (compra?.valor_realizado_compras ?? 0),
+                          hasMetaCompras: acc.hasMetaCompras || compra?.valor_meta_compras != null,
+                          hasRealizadoCompras: acc.hasRealizadoCompras || compra?.valor_realizado_compras != null,
+                        }
+                      },
+                      {
+                        valorMetaCompras: 0,
+                        valorRealizadoCompras: 0,
+                        hasMetaCompras: false,
+                        hasRealizadoCompras: false,
+                      }
+                    )
+                    const compraSobreVenda = getCompraSobreVendaPercent(
+                      comprasDoDia.hasRealizadoCompras ? comprasDoDia.valorRealizadoCompras : null,
+                      group.total_realizado
+                    )
                     
                     return (
                       <React.Fragment key={dateKey}>
@@ -2072,20 +2408,28 @@ export default function MetaMensalPage() {
                               ) : (
                                 `${group.margem_bruta.toFixed(2)}%`
                               )
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{renderLoadingCurrency(comprasDoDia.hasMetaCompras ? comprasDoDia.valorMetaCompras : null, true)}</TableCell>
+                        <TableCell>{renderLoadingCurrency(comprasDoDia.hasRealizadoCompras ? comprasDoDia.valorRealizadoCompras : null)}</TableCell>
+                        <TableCell>{renderLoadingPercentage(compraSobreVenda)}</TableCell>
+                      </TableRow>
 
                         {/* Linhas detalhadas por filial */}
                         {isExpanded && group.metas.map((meta) => {
+                          const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
                           const percentualAtingidoMeta = meta.valor_meta > 0
                             ? (meta.valor_realizado / meta.valor_meta) * 100
                             : 0
                           const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                           const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                           const showMetaDifference = shouldShowDifference(meta)
+                          const compraSobreVendaMeta = getCompraSobreVendaPercent(
+                            compra?.valor_realizado_compras,
+                            meta.valor_realizado
+                          )
                           
                           return (
                             <TableRow 
@@ -2208,6 +2552,9 @@ export default function MetaMensalPage() {
                                   <span className="text-muted-foreground">-</span>
                                 )}
                               </TableCell>
+                              <TableCell className="text-sm">{renderLoadingCurrency(compra?.valor_meta_compras, true)}</TableCell>
+                              <TableCell className="text-sm">{renderLoadingCurrency(compra?.valor_realizado_compras)}</TableCell>
+                              <TableCell className="text-sm">{renderLoadingPercentage(compraSobreVendaMeta)}</TableCell>
                             </TableRow>
                           )
                         })}
@@ -2274,16 +2621,32 @@ export default function MetaMensalPage() {
                       <br />
                       Realizada
                     </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Meta
+                      <br />
+                      Compras
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">
+                      Realizado
+                      <br />
+                      Compras
+                    </TableHead>
+                    <TableHead className="whitespace-normal leading-tight">% Comp./Venda</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredMetas.map((meta) => {
+                      const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
                       const percentualAtingidoMeta = meta.valor_meta > 0
                         ? (meta.valor_realizado / meta.valor_meta) * 100
                         : 0
                       const isEditingPercentual = editingCell?.id === meta.id && editingCell?.field === 'percentual'
                       const isEditingValor = editingCell?.id === meta.id && editingCell?.field === 'valor'
                       const showDiff = shouldShowDifference(meta)
+                      const compraSobreVenda = getCompraSobreVendaPercent(
+                        compra?.valor_realizado_compras,
+                        meta.valor_realizado
+                      )
                       
                       return (
                         <TableRow key={meta.id}>
@@ -2402,6 +2765,9 @@ export default function MetaMensalPage() {
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
+                          <TableCell>{renderLoadingCurrency(compra?.valor_meta_compras, true)}</TableCell>
+                          <TableCell>{renderLoadingCurrency(compra?.valor_realizado_compras)}</TableCell>
+                          <TableCell>{renderLoadingPercentage(compraSobreVenda)}</TableCell>
                         </TableRow>
                       )
                     })}
