@@ -19,6 +19,7 @@ import {
   Radio,
   ChevronRight,
   ChartCandlestick,
+  Wallet,
 } from 'lucide-react'
 
 import {
@@ -95,6 +96,12 @@ const gerencialNavigation: NavigationItem[] = [
     href: '/dre-comparativo',
     icon: FileBarChart,
     moduleId: 'dre_comparativo',
+  },
+  {
+    name: 'Fluxo de Caixa',
+    href: '/fluxo-caixa',
+    icon: Wallet,
+    badge: 'Novo',
   },
   {
     name: 'Descontos de Vendas',
@@ -291,7 +298,9 @@ export function AppSidebar() {
                                 >
                                   <div>
                                     <ItemIcon />
-                                    <span>{item.name}</span>
+                                    <span className="min-w-0 flex-1 truncate whitespace-nowrap">
+                                      {item.name}
+                                    </span>
                                     <Badge variant="secondary" className="ml-auto text-xs">
                                       Em breve
                                     </Badge>
@@ -301,7 +310,9 @@ export function AppSidebar() {
                                 <SidebarMenuSubButton asChild isActive={isActive}>
                                   <Link href={item.href}>
                                     <ItemIcon className={isLiveModule ? 'animate-pulse-live' : undefined} />
-                                    <span>{item.name}</span>
+                                    <span className="min-w-0 flex-1 truncate whitespace-nowrap">
+                                      {item.name}
+                                    </span>
                                     {item.badge && (
                                       <Badge variant="secondary" className="ml-auto text-xs">
                                         {item.badge}
