@@ -150,6 +150,13 @@ function organizeHierarchyTotais(rows: TotaisRow[]): Hierarquia {
   for (const dept3 of Object.values(hierarquia)) {
     for (const dept2 of Object.values(dept3.filhos)) {
       for (const dept1 of Object.values(dept2.filhos)) {
+        if (dept1.valor_vendido > 0) {
+          dept1.percentual_lucro = (dept1.lucro_total / dept1.valor_vendido) * 100
+        }
+        if (dept1.valor_vendido_ano_anterior > 0) {
+          dept1.percentual_lucro_ano_anterior = (dept1.lucro_total_ano_anterior / dept1.valor_vendido_ano_anterior) * 100
+        }
+
         dept2.total_qtde += dept1.total_qtde
         dept2.valor_vendido += dept1.valor_vendido
         dept2.lucro_total += dept1.lucro_total
