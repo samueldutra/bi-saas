@@ -10,12 +10,14 @@ Campos atuais:
 - `tenant_id: uuid`
 - `parameter_key: text`
 - `parameter_value: boolean`
+- `parameter_numeric_value: numeric(4,2) | null`
 - `created_at: timestamptz`
 - `updated_at: timestamptz`
 
 Constraint relevante:
 
 - `UNIQUE (tenant_id, parameter_key)`
+- `tenant_parameters_margem_perda_numeric_check`: quando `parameter_key = 'margem_perda'`, `parameter_numeric_value` deve estar preenchido entre `0.00` e `99.99`
 
 ## Chaves Atualmente Utilizadas
 
@@ -47,6 +49,18 @@ Constraint relevante:
   - `tenant-parameters-server`
   - APIs do `Dashboard 360`
 
+### `margem_perda`
+
+- domínio: `numeric(4,2)`
+- default efetivo no frontend e server-side: `0.00`
+- armazenamento:
+  - `parameter_value = false`
+  - `parameter_numeric_value = valor informado`
+- consumidores atuais:
+  - `parametros-content`
+  - `use-tenant-parameters`
+  - `tenant-parameters-server` via `getMargemPerdaDefault(schema)`
+
 ## Estrutura Client-side
 
 Estado atual usado no frontend:
@@ -65,6 +79,14 @@ Shape inicial recorrente:
 }
 ```
 
+Parâmetros numéricos ficam em estrutura separada para preservar o contrato booleano:
+
+```ts
+{
+  margem_perda: 0,
+}
+```
+
 ## Estrutura Local da Tela
 
 `ParametrosContent` trabalha com:
@@ -75,6 +97,7 @@ interface TenantParameter {
   tenant_id: string
   parameter_key: string
   parameter_value: boolean
+  parameter_numeric_value: number | string | null
   created_at: string
   updated_at: string
 }
@@ -87,6 +110,12 @@ interface TenantParameter {
 1. `schema -> tenant.id` via tabela `tenants`
 2. `tenant.id + parameter_key` em `tenant_parameters`
 3. retorno booleano seguro com fallback `false`
+
+`getMargemPerdaDefault(schema)` resolve:
+
+1. `schema -> tenant.id` via tabela `tenants`
+2. `tenant.id + parameter_key = margem_perda` em `tenant_parameters`
+3. retorno numérico seguro com fallback `0`
 
 ## Observações
 

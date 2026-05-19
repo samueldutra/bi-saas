@@ -24,7 +24,20 @@ Usuário altera um switch
   -> window.location.reload() reaplica navegação/estado
 ```
 
-## 3. Fluxo de consumo client-side de `enable_descontos_venda`
+## 3. Fluxo de atualização de `margem_perda`
+
+```text
+Usuário informa uma margem no campo decimal
+  -> updateNumericParameter('margem_perda', value)
+  -> valida formato 0.00 até 99.99
+  -> SELECT por tenant_id + parameter_key
+  -> se existir: UPDATE parameter_numeric_value
+  -> se não existir: INSERT com parameter_value = false e parameter_numeric_value
+  -> mensagem de sucesso é exibida
+  -> não há reload porque o parâmetro não altera navegação
+```
+
+## 4. Fluxo de consumo client-side de `enable_descontos_venda`
 
 ```text
 TenantContext define tenant corrente
@@ -34,7 +47,7 @@ TenantContext define tenant corrente
   -> se false: redirect para /dashboard
 ```
 
-## 4. Fluxo de consumo server-side de `enable_faturamento_metas`
+## 5. Fluxo de consumo server-side de `enable_faturamento_metas`
 
 ```text
 API de metas recebe schema
@@ -45,7 +58,7 @@ API de metas recebe schema
   -> se RPC nova falhar e parâmetro estiver ativo: fallback para RPC legada
 ```
 
-## 5. Fluxo de consumo server-side de `enable_api_filial_vendas`
+## 6. Fluxo de consumo server-side de `enable_api_filial_vendas`
 
 ```text
 API do Dashboard 360 recebe schema
@@ -56,7 +69,18 @@ API do Dashboard 360 recebe schema
   -> quando ativa: usa base vendas_filiais_snapshot
 ```
 
-## 6. Dependências relevantes
+## 7. Fluxo de consumo server-side de `margem_perda`
+
+```text
+Consumidor de cálculo de margem recebe schema
+  -> getMargemPerdaDefault(schema)
+  -> tenants: resolve tenant.id por supabase_schema
+  -> tenant_parameters: busca margem_perda
+  -> retorna parameter_numeric_value
+  -> se não houver registro ou valor válido: retorna 0
+```
+
+## 8. Dependências relevantes
 
 - `TenantContext` para tenant corrente
 - `createClient()` no browser para leitura e escrita direta
@@ -64,10 +88,11 @@ API do Dashboard 360 recebe schema
 - tabela `public.tenants`
 - tabela `public.tenant_parameters`
 
-## 7. Lacunas atuais conhecidas
+## 9. Lacunas atuais conhecidas
 
 - não existe API route dedicada para gerenciamento de parâmetros
 - não existe cache centralizado de parâmetros por tenant
 - a proteção de `Descontos de Vendas` está no cliente, não no middleware
 - a tela de parâmetros não reutiliza diretamente `use-tenant-parameters`
 - `enable_api_filial_vendas` é consumido server-side pelas APIs do `Dashboard 360`
+- `margem_perda` ainda não está aplicado em uma rotina específica de cálculo de margem de lucro

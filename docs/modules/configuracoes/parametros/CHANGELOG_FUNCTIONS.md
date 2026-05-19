@@ -1,5 +1,23 @@
 # Changelog: Configurações > Parâmetros
 
+## 2026-05-19
+
+### Versão documental
+
+- `1.3.0`
+
+### Alterações
+
+- adicionado o parâmetro numérico `margem_perda`
+- criada persistência em `tenant_parameters.parameter_numeric_value`
+- criado campo decimal `Margem de perda default` na tela de `Configurações > Parâmetros`
+- criado helper server-side `getMargemPerdaDefault(schema)` com fallback `0.00`
+- documentado o intervalo aceito de `0.00` a `99.99`
+
+### Impacto
+
+- médio
+
 ## 2026-04-01
 
 ### Versão documental

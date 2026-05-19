@@ -10,7 +10,9 @@ Somente usuários com role `admin` ou `superadmin` podem acessar a aba `Parâmet
 
 ## RN-PARAM-003: Padrão seguro
 
-Na ausência de registro para uma chave em `tenant_parameters`, o comportamento efetivo deve ser `false`.
+Na ausência de registro para uma chave booleana em `tenant_parameters`, o comportamento efetivo deve ser `false`.
+
+Na ausência de registro para `margem_perda`, o comportamento efetivo deve ser `0.00`.
 
 ## RN-PARAM-004: Chave única por tenant
 
@@ -54,8 +56,18 @@ ticket_medio = vendas / quantidade_clientes
 
 ## RN-PARAM-010: Reload após alteração
 
-Após alteração bem-sucedida na tela de parâmetros, a interface atual recarrega a página para reaplicar navegação e estados dependentes do tenant.
+Após alteração bem-sucedida em parâmetros booleanos na tela de parâmetros, a interface atual recarrega a página para reaplicar navegação e estados dependentes do tenant.
+
+O parâmetro numérico `margem_perda` não altera navegação nem visibilidade de tela; por isso, sua gravação exibe confirmação sem recarregar a página.
 
 ## RN-PARAM-011: Fonte oficial de documentação
 
 Mudanças neste submódulo só são consideradas completas quando a pasta `docs/modules/configuracoes/parametros/` estiver atualizada no mesmo ciclo de implementação.
+
+## RN-PARAM-012: Margem de perda default por schema
+
+`margem_perda` deve ser gravado por `tenant_id`, respeitando o schema corrente selecionado no sistema.
+
+O valor aceito deve ser decimal entre `0.00` e `99.99`, persistido em `tenant_parameters.parameter_numeric_value`.
+
+`parameter_value` permanece `false` para esse parâmetro, pois ele não é uma flag booleana.

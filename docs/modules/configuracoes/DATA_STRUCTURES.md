@@ -587,6 +587,7 @@ type TenantParameterRow = {
   tenant_id: string
   parameter_key: string
   parameter_value: boolean
+  parameter_numeric_value: number | null
   created_at: string
   updated_at: string
 }
@@ -598,6 +599,11 @@ type TenantParameterRow = {
 type TenantParametersState = {
   enable_descontos_venda: boolean
   enable_faturamento_metas: boolean
+  enable_api_filial_vendas: boolean
+}
+
+type TenantNumericParametersState = {
+  margem_perda: number
 }
 ```
 

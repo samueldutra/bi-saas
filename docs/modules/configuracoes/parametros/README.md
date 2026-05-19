@@ -6,11 +6,12 @@
 
 ## Visão Geral
 
-O submódulo `Configurações > Parâmetros` centraliza flags booleanas por tenant na tabela `public.tenant_parameters`. Hoje ele controla:
+O submódulo `Configurações > Parâmetros` centraliza parâmetros por tenant na tabela `public.tenant_parameters`. Hoje ele controla:
 
 - visibilidade e acesso do módulo `Descontos de Vendas`
 - seleção das RPCs de metas com ou sem faturamento
 - seleção da origem PDV do `Dashboard 360` entre a base legada e o snapshot da API `/filial/vendas`
+- margem de perda default para cálculos de margem de lucro
 
 O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext`.
 
@@ -57,6 +58,18 @@ O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext
   - quando `false`, o `Dashboard 360` continua usando as RPCs legadas baseadas em `vendas_diarias_por_filial`
   - a regra de ticket médio da fonte nova é `vendas / quantidade_clientes`
 
+### 4. `margem_perda`
+
+- Tipo: `numeric(4,2)`
+- Padrão efetivo: `0.00`
+- Persistência:
+  - salvo em `tenant_parameters.parameter_numeric_value`
+  - gravado por `tenant_id`, que representa o schema corrente selecionado no sistema
+- Efeito:
+  - não controla visibilidade de tela ou menu
+  - disponibiliza uma margem de perda default para consumidores de cálculo de margem de lucro
+  - valores aceitos vão de `0.00` a `99.99`
+
 ## Arquivos de Referência
 
 - [../README.md](../README.md)
@@ -85,12 +98,14 @@ O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext
 - `src/app/api/metas/update/route.ts`
 - `src/app/api/metas/setor/generate/route.ts`
 - `src/app/api/metas/setor/update-valores/route.ts`
+- helper `getMargemPerdaDefault(schema)` para consumidores server-side de margem de lucro
 
 ## Pontos de Atenção
 
 - A tela `parametros-content.tsx` hoje duplica parte da lógica já existente em `use-tenant-parameters.ts`.
 - A tipagem gerada em `src/types/database.types.ts` ainda não inclui `tenant_parameters`.
 - A proteção do módulo `Descontos de Vendas` não está mais no middleware; o controle atual está no menu e na página cliente.
+- `margem_perda` é um parâmetro numérico; não deve ser lido pela coluna booleana `parameter_value`.
 
 ## Regra Permanente de Manutenção
 

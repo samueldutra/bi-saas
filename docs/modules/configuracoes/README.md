@@ -161,13 +161,14 @@ O módulo de Configurações é o centro de gerenciamento administrativo do BI S
 
 ### 3. Parâmetros
 
-**Descrição**: Configuração de parâmetros booleanos que controlam funcionalidades do sistema por tenant.
+**Descrição**: Configuração de parâmetros booleanos e numéricos por tenant.
 
 **Documentação Oficial do Submódulo**: [./parametros/README.md](./parametros/README.md)
 
 **Funcionalidades**:
 - Toggle para habilitar/desabilitar "Descontos de Venda"
 - Toggle para habilitar/desabilitar o uso de faturamento nas rotinas de metas
+- Campo decimal para margem de perda default
 - Efeito imediato no menu lateral (adiciona/remove item)
 - Persistência automática
 
@@ -181,6 +182,7 @@ O módulo de Configurações é o centro de gerenciamento administrativo do BI S
 - `enable_descontos_venda`: Habilita módulo de Descontos de Venda
 - `enable_faturamento_metas`: Habilita RPCs de metas com base em faturamento
 - `enable_api_filial_vendas`: Habilita as RPCs do `Dashboard 360` baseadas no snapshot da API `/filial/vendas`
+- `margem_perda`: Define margem de perda default por schema, de `0.00` a `99.99`
 
 ---
 
