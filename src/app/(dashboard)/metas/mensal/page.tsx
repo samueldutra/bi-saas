@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { PlusIcon, ChevronDown, ChevronRight, Loader2, RefreshCw, Target, TrendingUp, CircleArrowDown, CircleArrowUp, FileDown, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -196,7 +197,10 @@ export default function MetaMensalPage() {
   const [editingValue, setEditingValue] = useState<string>('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [isExportingSummaryPdf, setIsExportingSummaryPdf] = useState(false)
+  const [isExportingSummaryXls, setIsExportingSummaryXls] = useState(false)
+  const [isExportingSummaryCsv, setIsExportingSummaryCsv] = useState(false)
   const [isExportingDailyPdf, setIsExportingDailyPdf] = useState(false)
+  const isExportingSummary = isExportingSummaryPdf || isExportingSummaryXls || isExportingSummaryCsv
 
   // Estado para botão atualizar valores
   const [isUpdatingValues, setIsUpdatingValues] = useState(false)
@@ -1073,6 +1077,172 @@ export default function MetaMensalPage() {
     }
   }
 
+  const buildSummaryExportData = () => {
+    const headers = [
+      'Filial',
+      'Valor Meta Mês',
+      'Valor Realizado Mês',
+      '% Atingido Mês',
+      ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
+      'Lucro Bruto',
+      'Meta Margem',
+      'Margem Bruta',
+      'Meta Compras',
+      'Realizado Compras',
+      '% Comp./Venda',
+    ]
+    const rows: string[][] = []
+    const statusMatrix: PdfStatusDirection[][] = []
+
+    visibleSummaryRows.forEach((row) => {
+      const comprasResumo = getPurchaseSummaryByFilial(row.filial_id)
+      const compraSobreVenda = getCompraSobreVendaPercent(
+        comprasResumo?.valor_realizado_compras,
+        row.valor_realizado
+      )
+      const rowCells: string[] = []
+      const rowStatuses: PdfStatusDirection[] = []
+
+      rowCells.push(getFilialName(row.filial_id))
+      rowStatuses.push(null)
+
+      rowCells.push(formatCurrency(row.valor_meta))
+      rowStatuses.push(null)
+
+      rowCells.push(formatCurrency(row.valor_realizado))
+      rowStatuses.push(null)
+
+      const atingidoMesDirection = isCurrentSelectedMonth
+        ? null
+        : getStatusDirection(row.percentual_atingido >= 100, true)
+      rowCells.push(formatPlainPercentage(row.percentual_atingido))
+      rowStatuses.push(atingidoMesDirection)
+
+      if (isCurrentSelectedMonth) {
+        rowCells.push(formatCurrency(row.valor_meta_acumulada_d1))
+        rowStatuses.push(null)
+
+        const acumuladoDirection = getStatusDirection(row.percentual_atingido_acumulado_d1 >= 100, true)
+        rowCells.push(formatPlainPercentage(row.percentual_atingido_acumulado_d1))
+        rowStatuses.push(acumuladoDirection)
+      }
+
+      rowCells.push(formatCurrency(row.lucro_bruto))
+      rowStatuses.push(null)
+
+      const metaMargemDirection = row.meta_margem_percentual != null && row.meta_margem_percentual > 0
+        ? getStatusDirection(row.margem_bruta >= row.meta_margem_percentual, true)
+        : null
+      rowCells.push(
+        row.meta_margem_percentual != null && row.meta_margem_percentual > 0
+          ? formatPlainPercentage(row.meta_margem_percentual)
+          : '-'
+      )
+      rowStatuses.push(metaMargemDirection)
+
+      rowCells.push(formatPlainPercentage(row.margem_bruta))
+      rowStatuses.push(null)
+
+      rowCells.push(
+        comprasResumo?.valor_meta_compras != null
+          ? formatCurrency(comprasResumo.valor_meta_compras)
+          : '-'
+      )
+      rowStatuses.push(null)
+
+      rowCells.push(
+        comprasResumo?.valor_realizado_compras != null
+          ? formatCurrency(comprasResumo.valor_realizado_compras)
+          : '-'
+      )
+      rowStatuses.push(null)
+
+      rowCells.push(compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-')
+      rowStatuses.push(null)
+
+      rows.push(rowCells)
+      statusMatrix.push(rowStatuses)
+    })
+
+    const totalCells: string[] = []
+    const totalStatuses: PdfStatusDirection[] = []
+
+    totalCells.push('Todas')
+    totalStatuses.push(null)
+    totalCells.push(formatCurrency(summaryTotals.valorMeta))
+    totalStatuses.push(null)
+    totalCells.push(formatCurrency(summaryTotals.valorRealizado))
+    totalStatuses.push(null)
+
+    const totalAtingidoDirection = isCurrentSelectedMonth
+      ? null
+      : getStatusDirection(summaryTotals.percentualAtingido >= 100, true)
+    totalCells.push(formatPlainPercentage(summaryTotals.percentualAtingido))
+    totalStatuses.push(totalAtingidoDirection)
+
+    if (isCurrentSelectedMonth) {
+      totalCells.push(formatCurrency(summaryTotals.valorMetaAcumuladaD1))
+      totalStatuses.push(null)
+
+      const totalAcumuladoDirection = getStatusDirection(summaryTotals.percentualAtingidoAcumuladoD1 >= 100, true)
+      totalCells.push(formatPlainPercentage(summaryTotals.percentualAtingidoAcumuladoD1))
+      totalStatuses.push(totalAcumuladoDirection)
+    }
+
+    totalCells.push(formatCurrency(summaryTotals.lucroBruto))
+    totalStatuses.push(null)
+
+    const totalMetaMargemDirection = summaryTotals.mediaMetaMargem != null && summaryTotals.mediaMetaMargem > 0
+      ? getStatusDirection(summaryTotals.margemBruta >= summaryTotals.mediaMetaMargem, true)
+      : null
+    totalCells.push(
+      summaryTotals.mediaMetaMargem != null && summaryTotals.mediaMetaMargem > 0
+        ? formatPlainPercentage(summaryTotals.mediaMetaMargem)
+        : '-'
+    )
+    totalStatuses.push(totalMetaMargemDirection)
+
+    totalCells.push(formatPlainPercentage(summaryTotals.margemBruta))
+    totalStatuses.push(null)
+
+    totalCells.push(summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-')
+    totalStatuses.push(null)
+
+    totalCells.push(summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-')
+    totalStatuses.push(null)
+
+    const compraSobreVendaTotal = getCompraSobreVendaPercent(
+      summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
+      summaryTotals.valorRealizado
+    )
+    totalCells.push(compraSobreVendaTotal != null ? formatPlainPercentage(compraSobreVendaTotal) : '-')
+    totalStatuses.push(null)
+
+    rows.push(totalCells)
+    statusMatrix.push(totalStatuses)
+
+    return {
+      headers,
+      rows,
+      statusMatrix,
+    }
+  }
+
+  const getSummaryExportFilename = (extension: 'pdf' | 'xlsx' | 'csv') => {
+    return `resumo-meta-mensal-${mes.toString().padStart(2, '0')}-${ano}.${extension}`
+  }
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const handleExportSummaryPdf = async () => {
     if (visibleSummaryRows.length === 0) return
 
@@ -1088,149 +1258,12 @@ export default function MetaMensalPage() {
         format: 'a4',
       })
 
-      const head = [[
-        'Filial',
-        'Valor Meta Mês',
-        'Valor Realizado Mês',
-        '% Atingido Mês',
-        ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
-        'Lucro Bruto',
-        'Meta Margem',
-        'Margem Bruta',
-        'Meta Compras',
-        'Realizado Compras',
-        '% Comp./Venda',
-      ]]
-
-      const body: string[][] = []
-      const statusMatrix: PdfStatusDirection[][] = []
-
-      visibleSummaryRows.forEach((row) => {
-        const comprasResumo = getPurchaseSummaryByFilial(row.filial_id)
-        const compraSobreVenda = getCompraSobreVendaPercent(
-          comprasResumo?.valor_realizado_compras,
-          row.valor_realizado
+      const { headers, rows, statusMatrix } = buildSummaryExportData()
+      const body = rows.map((row, rowIndex) =>
+        row.map((cell, columnIndex) =>
+          formatPdfStatusValue(cell, statusMatrix[rowIndex]?.[columnIndex] ?? null)
         )
-        const rowCells: string[] = []
-        const rowStatuses: PdfStatusDirection[] = []
-
-        rowCells.push(getFilialName(row.filial_id))
-        rowStatuses.push(null)
-
-        rowCells.push(formatCurrency(row.valor_meta))
-        rowStatuses.push(null)
-
-        rowCells.push(formatCurrency(row.valor_realizado))
-        rowStatuses.push(null)
-
-        const atingidoMesDirection = isCurrentSelectedMonth
-          ? null
-          : getStatusDirection(row.percentual_atingido >= 100, true)
-        rowCells.push(formatPdfStatusValue(formatPlainPercentage(row.percentual_atingido), atingidoMesDirection))
-        rowStatuses.push(atingidoMesDirection)
-
-        if (isCurrentSelectedMonth) {
-          rowCells.push(formatCurrency(row.valor_meta_acumulada_d1))
-          rowStatuses.push(null)
-
-          const acumuladoDirection = getStatusDirection(row.percentual_atingido_acumulado_d1 >= 100, true)
-          rowCells.push(formatPdfStatusValue(formatPlainPercentage(row.percentual_atingido_acumulado_d1), acumuladoDirection))
-          rowStatuses.push(acumuladoDirection)
-        }
-
-        rowCells.push(formatCurrency(row.lucro_bruto))
-        rowStatuses.push(null)
-
-        const metaMargemDirection = row.meta_margem_percentual != null && row.meta_margem_percentual > 0
-          ? getStatusDirection(row.margem_bruta >= row.meta_margem_percentual, true)
-          : null
-        rowCells.push(
-          row.meta_margem_percentual != null && row.meta_margem_percentual > 0
-            ? formatPdfStatusValue(formatPlainPercentage(row.meta_margem_percentual), metaMargemDirection)
-            : '-'
-        )
-        rowStatuses.push(metaMargemDirection)
-
-        rowCells.push(formatPlainPercentage(row.margem_bruta))
-        rowStatuses.push(null)
-
-        rowCells.push(
-          comprasResumo?.valor_meta_compras != null
-            ? formatCurrency(comprasResumo.valor_meta_compras)
-            : '-'
-        )
-        rowStatuses.push(null)
-
-        rowCells.push(
-          comprasResumo?.valor_realizado_compras != null
-            ? formatCurrency(comprasResumo.valor_realizado_compras)
-            : '-'
-        )
-        rowStatuses.push(null)
-
-        rowCells.push(compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-')
-        rowStatuses.push(null)
-
-        body.push(rowCells)
-        statusMatrix.push(rowStatuses)
-      })
-
-      const totalCells: string[] = []
-      const totalStatuses: PdfStatusDirection[] = []
-
-      totalCells.push('Todas')
-      totalStatuses.push(null)
-      totalCells.push(formatCurrency(summaryTotals.valorMeta))
-      totalStatuses.push(null)
-      totalCells.push(formatCurrency(summaryTotals.valorRealizado))
-      totalStatuses.push(null)
-
-      const totalAtingidoDirection = isCurrentSelectedMonth
-        ? null
-        : getStatusDirection(summaryTotals.percentualAtingido >= 100, true)
-      totalCells.push(formatPdfStatusValue(formatPlainPercentage(summaryTotals.percentualAtingido), totalAtingidoDirection))
-      totalStatuses.push(totalAtingidoDirection)
-
-      if (isCurrentSelectedMonth) {
-        totalCells.push(formatCurrency(summaryTotals.valorMetaAcumuladaD1))
-        totalStatuses.push(null)
-
-        const totalAcumuladoDirection = getStatusDirection(summaryTotals.percentualAtingidoAcumuladoD1 >= 100, true)
-        totalCells.push(formatPdfStatusValue(formatPlainPercentage(summaryTotals.percentualAtingidoAcumuladoD1), totalAcumuladoDirection))
-        totalStatuses.push(totalAcumuladoDirection)
-      }
-
-      totalCells.push(formatCurrency(summaryTotals.lucroBruto))
-      totalStatuses.push(null)
-
-      const totalMetaMargemDirection = summaryTotals.mediaMetaMargem != null && summaryTotals.mediaMetaMargem > 0
-        ? getStatusDirection(summaryTotals.margemBruta >= summaryTotals.mediaMetaMargem, true)
-        : null
-      totalCells.push(
-        summaryTotals.mediaMetaMargem != null && summaryTotals.mediaMetaMargem > 0
-          ? formatPdfStatusValue(formatPlainPercentage(summaryTotals.mediaMetaMargem), totalMetaMargemDirection)
-          : '-'
       )
-      totalStatuses.push(totalMetaMargemDirection)
-
-      totalCells.push(formatPlainPercentage(summaryTotals.margemBruta))
-      totalStatuses.push(null)
-
-      totalCells.push(summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-')
-      totalStatuses.push(null)
-
-      totalCells.push(summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-')
-      totalStatuses.push(null)
-
-      const compraSobreVendaTotal = getCompraSobreVendaPercent(
-        summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
-        summaryTotals.valorRealizado
-      )
-      totalCells.push(compraSobreVendaTotal != null ? formatPlainPercentage(compraSobreVendaTotal) : '-')
-      totalStatuses.push(null)
-
-      body.push(totalCells)
-      statusMatrix.push(totalStatuses)
 
       doc.setFontSize(16)
       doc.text(`Resumo Meta mensal: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`, 14, 16)
@@ -1239,7 +1272,7 @@ export default function MetaMensalPage() {
 
       autoTable(doc as never, {
         startY: 28,
-        head,
+        head: [headers],
         body,
         styles: {
           fontSize: 9,
@@ -1264,7 +1297,7 @@ export default function MetaMensalPage() {
         },
       })
 
-      doc.save(`resumo-meta-mensal-${mes.toString().padStart(2, '0')}-${ano}.pdf`)
+      doc.save(getSummaryExportFilename('pdf'))
     } catch (error) {
       console.error('Error exporting summary PDF:', error)
       toast.error('Erro ao exportar PDF', {
@@ -1272,6 +1305,96 @@ export default function MetaMensalPage() {
       })
     } finally {
       setIsExportingSummaryPdf(false)
+    }
+  }
+
+  const handleExportSummaryXls = async () => {
+    if (visibleSummaryRows.length === 0) return
+
+    try {
+      setIsExportingSummaryXls(true)
+
+      const ExcelJS = await import('exceljs')
+      const { headers, rows } = buildSummaryExportData()
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('Resumo Meta Mensal')
+
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      worksheet.addRow(headers)
+      worksheet.addRows(rows)
+
+      headers.forEach((header, index) => {
+        const column = worksheet.getColumn(index + 1)
+        column.width = Math.max(16, Math.min(24, header.length + 4))
+        column.alignment = { vertical: 'middle', wrapText: true }
+      })
+
+      const headerRow = worksheet.getRow(1)
+      headerRow.font = { bold: true, color: { argb: 'FF0F172A' } }
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' },
+      }
+      headerRow.alignment = { vertical: 'middle', wrapText: true }
+
+      const totalRow = worksheet.getRow(worksheet.rowCount)
+      totalRow.font = { bold: true, color: { argb: 'FF0F172A' } }
+      totalRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF8FAFC' },
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      downloadBlob(
+        new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+        getSummaryExportFilename('xlsx')
+      )
+    } catch (error) {
+      console.error('Error exporting summary XLS:', error)
+      toast.error('Erro ao exportar XLS', {
+        description: 'Não foi possível gerar a planilha do resumo.'
+      })
+    } finally {
+      setIsExportingSummaryXls(false)
+    }
+  }
+
+  const escapeCsvValue = (value: string) => {
+    const normalizedValue = value.replace(/\r?\n/g, ' ')
+
+    if (/[";\r\n]/.test(normalizedValue)) {
+      return `"${normalizedValue.replace(/"/g, '""')}"`
+    }
+
+    return normalizedValue
+  }
+
+  const handleExportSummaryCsv = () => {
+    if (visibleSummaryRows.length === 0) return
+
+    try {
+      setIsExportingSummaryCsv(true)
+
+      const { headers, rows } = buildSummaryExportData()
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeCsvValue).join(';'))
+        .join('\r\n')
+
+      downloadBlob(
+        new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8' }),
+        getSummaryExportFilename('csv')
+      )
+    } catch (error) {
+      console.error('Error exporting summary CSV:', error)
+      toast.error('Erro ao exportar CSV', {
+        description: 'Não foi possível gerar o CSV do resumo.'
+      })
+    } finally {
+      setIsExportingSummaryCsv(false)
     }
   }
 
@@ -1957,16 +2080,32 @@ export default function MetaMensalPage() {
             <CardTitle>{`Resumo Meta mensal: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`}</CardTitle>
             <CardDescription>Resumo mensal da Meta</CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportSummaryPdf}
-            disabled={loading || isExportingSummaryPdf || visibleSummaryRows.length === 0}
-            className="gap-2"
-          >
-            <FileDown className="h-4 w-4" />
-            {isExportingSummaryPdf ? 'Exportando...' : 'Exportar PDF'}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || isExportingSummary || visibleSummaryRows.length === 0}
+                className="gap-2"
+              >
+                <FileDown className="h-4 w-4" />
+                {isExportingSummary ? 'Exportando...' : 'Exportar'}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onSelect={() => void handleExportSummaryPdf()}>
+                <FileDown className="h-4 w-4" />
+                Exportar PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleExportSummaryXls()}>
+                Exportar XLS
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleExportSummaryCsv}>
+                Exportar CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </CardHeader>
         <CardContent>
           {loading ? (

@@ -24,6 +24,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   Table,
   TableBody,
@@ -197,7 +198,13 @@ export default function MetaSetorPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [isUpdatingValues, setIsUpdatingValues] = useState(false)
   const [isExportingDailyPdf, setIsExportingDailyPdf] = useState(false)
+  const [isExportingDailyXls, setIsExportingDailyXls] = useState(false)
+  const [isExportingDailyCsv, setIsExportingDailyCsv] = useState(false)
   const [isExportingSummaryPdf, setIsExportingSummaryPdf] = useState(false)
+  const [isExportingSummaryXls, setIsExportingSummaryXls] = useState(false)
+  const [isExportingSummaryCsv, setIsExportingSummaryCsv] = useState(false)
+  const isExportingDaily = isExportingDailyPdf || isExportingDailyXls || isExportingDailyCsv
+  const isExportingSummary = isExportingSummaryPdf || isExportingSummaryXls || isExportingSummaryCsv
 
   // Ref para evitar múltiplas chamadas simultâneas de atualização
   const isUpdatingRef = useRef(false)
@@ -1083,6 +1090,172 @@ export default function MetaSetorPage() {
     )
   }
 
+  const buildDailyExportData = () => {
+    const headers = [
+      'Data',
+      'Dia da Semana',
+      'Filial',
+      'Valor Referência',
+      '% Meta',
+      'Valor Meta',
+      'Valor Realizado',
+      '% Atingido',
+      'Lucro Bruto',
+      'Meta Margem',
+      'Margem Bruta',
+      'Meta Compras',
+      'Realizado Compras',
+      '% Compra/Venda',
+    ]
+    const rows: string[][] = []
+    const statusMatrix: PdfStatusDirection[][] = []
+
+    currentSetorData.forEach((meta) => {
+      const totals = meta.filiais.reduce(
+        (acc, f) => {
+          const compras = getComprasPorDataEFilial(meta.data, f.filial_id)
+
+          return {
+            valor_referencia: acc.valor_referencia + (f.valor_referencia || 0),
+            valor_meta: acc.valor_meta + (f.valor_meta || 0),
+            valor_realizado: acc.valor_realizado + (f.valor_realizado || 0),
+            lucro_realizado: acc.lucro_realizado + (f.lucro_realizado || 0),
+            meta_percentual: acc.meta_percentual + (f.meta_percentual ?? f.percentual_atingido ?? 0),
+            valor_meta_compras: acc.valor_meta_compras + (compras?.valor_meta_compras ?? 0),
+            valor_realizado_compras: acc.valor_realizado_compras + (compras?.valor_realizado_compras ?? 0),
+            has_meta_compras: acc.has_meta_compras || compras?.valor_meta_compras != null,
+            has_realizado_compras: acc.has_realizado_compras || compras?.valor_realizado_compras != null,
+            count: acc.count + 1,
+          }
+        },
+        {
+          valor_referencia: 0,
+          valor_meta: 0,
+          valor_realizado: 0,
+          lucro_realizado: 0,
+          meta_percentual: 0,
+          valor_meta_compras: 0,
+          valor_realizado_compras: 0,
+          has_meta_compras: false,
+          has_realizado_compras: false,
+          count: 0,
+        }
+      )
+
+      const avgMeta = totals.count > 0 ? totals.meta_percentual / totals.count : 0
+      const metaMargemRows = meta.filiais.filter((f) => f.meta_margem_percentual != null)
+      const mediaMetaMargem = metaMargemRows.length > 0
+        ? metaMargemRows.reduce((sum, f) => sum + (f.meta_margem_percentual || 0), 0) / metaMargemRows.length
+        : null
+      const percentualAtingido = totals.valor_meta > 0
+        ? (totals.valor_realizado / totals.valor_meta) * 100
+        : 0
+      const showDiff = shouldShowDifference(meta.data, totals.valor_realizado)
+      const margem = totals.valor_realizado > 0
+        ? (totals.lucro_realizado / totals.valor_realizado) * 100
+        : 0
+      const atingidoDirection = getStatusDirection(percentualAtingido >= 100, showDiff)
+      const compraSobreVendaPercent = getCompraSobreVendaPercent(
+        totals.has_realizado_compras ? totals.valor_realizado_compras : null,
+        totals.valor_realizado
+      )
+
+      rows.push([
+        format(parseISO(meta.data), 'dd/MM/yyyy'),
+        meta.dia_semana || '-',
+        'Todas',
+        formatCurrency(totals.valor_referencia),
+        `${avgMeta.toFixed(2)}%`,
+        formatCurrency(totals.valor_meta),
+        formatCurrency(totals.valor_realizado),
+        showDiff ? `${percentualAtingido.toFixed(2)}%` : '-',
+        showDiff ? formatCurrency(totals.lucro_realizado) : '-',
+        renderMetaMargemStatus(mediaMetaMargem),
+        showDiff ? `${margem.toFixed(2)}%` : '-',
+        totals.has_meta_compras ? formatCurrency(totals.valor_meta_compras) : '-',
+        totals.has_realizado_compras ? formatCurrency(totals.valor_realizado_compras) : '-',
+        compraSobreVendaPercent != null ? `${compraSobreVendaPercent.toFixed(2)}%` : '-',
+      ])
+      statusMatrix.push([
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        atingidoDirection,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ])
+
+      meta.filiais.forEach((filial) => {
+        const compras = getComprasPorDataEFilial(meta.data, filial.filial_id)
+        const percentualAtingidoFilial = filial.valor_meta > 0
+          ? (filial.valor_realizado / filial.valor_meta) * 100
+          : 0
+        const showFilialDiff = shouldShowDifference(meta.data, filial.valor_realizado)
+        const margemFilial = filial.valor_realizado > 0
+          ? ((filial.lucro_realizado || 0) / filial.valor_realizado) * 100
+          : 0
+        const atingidoFilialDirection = getStatusDirection(percentualAtingidoFilial >= 100, showFilialDiff)
+        const compraSobreVendaFilial = getCompraSobreVendaPercent(
+          compras?.valor_realizado_compras,
+          filial.valor_realizado
+        )
+
+        rows.push([
+          '',
+          filial.data_referencia ? `Ref: ${format(parseISO(filial.data_referencia), 'dd/MM/yyyy')}` : '-',
+          getFilialName(filial.filial_id),
+          filial.valor_referencia != null ? formatCurrency(filial.valor_referencia) : '-',
+          filial.meta_percentual != null
+            ? `${filial.meta_percentual.toFixed(2)}%`
+            : (filial.percentual_atingido != null ? `${filial.percentual_atingido.toFixed(2)}%` : '-'),
+          formatCurrency(filial.valor_meta),
+          formatCurrency(filial.valor_realizado),
+          showFilialDiff ? `${percentualAtingidoFilial.toFixed(2)}%` : '-',
+          showFilialDiff ? formatCurrency(filial.lucro_realizado || 0) : '-',
+          renderMetaMargemStatus(filial.meta_margem_percentual),
+          showFilialDiff ? `${margemFilial.toFixed(2)}%` : '-',
+          compras?.valor_meta_compras != null ? formatCurrency(compras.valor_meta_compras) : '-',
+          compras?.valor_realizado_compras != null ? formatCurrency(compras.valor_realizado_compras) : '-',
+          compraSobreVendaFilial != null ? `${compraSobreVendaFilial.toFixed(2)}%` : '-',
+        ])
+        statusMatrix.push([
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          atingidoFilialDirection,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+        ])
+      })
+    })
+
+    return {
+      headers,
+      rows,
+      statusMatrix,
+    }
+  }
+
+  const getDailyExportFilename = (extension: 'pdf' | 'xlsx' | 'csv') => {
+    return `metas-setor-${selectedSetor}-${mes.toString().padStart(2, '0')}-${ano}.${extension}`
+  }
+
   const handleExportDailyPdf = async () => {
     if (currentSetorData.length === 0) return
 
@@ -1098,164 +1271,12 @@ export default function MetaSetorPage() {
         format: 'a4',
       })
 
-      const head = [[
-        'Data',
-        'Dia da Semana',
-        'Filial',
-        'Valor Referência',
-        '% Meta',
-        'Valor Meta',
-        'Valor Realizado',
-        '% Atingido',
-        'Lucro Bruto',
-        'Meta Margem',
-        'Margem Bruta',
-        'Meta Compras',
-        'Realizado Compras',
-        '% Compra/Venda',
-      ]]
-
-      const body: string[][] = []
-      const statusMatrix: PdfStatusDirection[][] = []
-
-      currentSetorData.forEach((meta) => {
-        const totals = meta.filiais.reduce(
-          (acc, f) => {
-            const compras = getComprasPorDataEFilial(meta.data, f.filial_id)
-
-            return {
-              valor_referencia: acc.valor_referencia + (f.valor_referencia || 0),
-              valor_meta: acc.valor_meta + (f.valor_meta || 0),
-              valor_realizado: acc.valor_realizado + (f.valor_realizado || 0),
-              lucro_realizado: acc.lucro_realizado + (f.lucro_realizado || 0),
-              meta_percentual: acc.meta_percentual + (f.meta_percentual ?? f.percentual_atingido ?? 0),
-              valor_meta_compras: acc.valor_meta_compras + (compras?.valor_meta_compras ?? 0),
-              valor_realizado_compras: acc.valor_realizado_compras + (compras?.valor_realizado_compras ?? 0),
-              has_meta_compras: acc.has_meta_compras || compras?.valor_meta_compras != null,
-              has_realizado_compras: acc.has_realizado_compras || compras?.valor_realizado_compras != null,
-              count: acc.count + 1,
-            }
-          },
-          {
-            valor_referencia: 0,
-            valor_meta: 0,
-            valor_realizado: 0,
-            lucro_realizado: 0,
-            meta_percentual: 0,
-            valor_meta_compras: 0,
-            valor_realizado_compras: 0,
-            has_meta_compras: false,
-            has_realizado_compras: false,
-            count: 0,
-          }
+      const { headers, rows, statusMatrix } = buildDailyExportData()
+      const body = rows.map((row, rowIndex) =>
+        row.map((cell, columnIndex) =>
+          formatPdfStatusValue(cell, statusMatrix[rowIndex]?.[columnIndex] ?? null)
         )
-
-        const avgMeta = totals.count > 0 ? totals.meta_percentual / totals.count : 0
-        const metaMargemRows = meta.filiais.filter((f) => f.meta_margem_percentual != null)
-        const mediaMetaMargem = metaMargemRows.length > 0
-          ? metaMargemRows.reduce((sum, f) => sum + (f.meta_margem_percentual || 0), 0) / metaMargemRows.length
-          : null
-        const percentualAtingido = totals.valor_meta > 0
-          ? (totals.valor_realizado / totals.valor_meta) * 100
-          : 0
-        const showDiff = shouldShowDifference(meta.data, totals.valor_realizado)
-        const margem = totals.valor_realizado > 0
-          ? (totals.lucro_realizado / totals.valor_realizado) * 100
-          : 0
-        const atingidoDirection = getStatusDirection(percentualAtingido >= 100, showDiff)
-        const compraSobreVendaPercent = getCompraSobreVendaPercent(
-          totals.has_realizado_compras ? totals.valor_realizado_compras : null,
-          totals.valor_realizado
-        )
-
-        body.push([
-          format(parseISO(meta.data), 'dd/MM/yyyy'),
-          meta.dia_semana || '-',
-          'Todas',
-          formatCurrency(totals.valor_referencia),
-          `${avgMeta.toFixed(2)}%`,
-          formatCurrency(totals.valor_meta),
-          formatCurrency(totals.valor_realizado),
-          showDiff
-            ? formatPdfStatusValue(`${percentualAtingido.toFixed(2)}%`, atingidoDirection)
-            : '-',
-          showDiff ? formatCurrency(totals.lucro_realizado) : '-',
-          renderMetaMargemStatus(mediaMetaMargem),
-          showDiff ? `${margem.toFixed(2)}%` : '-',
-          totals.has_meta_compras ? formatCurrency(totals.valor_meta_compras) : '-',
-          totals.has_realizado_compras ? formatCurrency(totals.valor_realizado_compras) : '-',
-          compraSobreVendaPercent != null ? `${compraSobreVendaPercent.toFixed(2)}%` : '-',
-        ])
-        statusMatrix.push([
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          atingidoDirection,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-        ])
-
-        meta.filiais.forEach((filial) => {
-          const compras = getComprasPorDataEFilial(meta.data, filial.filial_id)
-          const percentualAtingidoFilial = filial.valor_meta > 0
-            ? (filial.valor_realizado / filial.valor_meta) * 100
-            : 0
-          const showFilialDiff = shouldShowDifference(meta.data, filial.valor_realizado)
-          const margemFilial = filial.valor_realizado > 0
-            ? ((filial.lucro_realizado || 0) / filial.valor_realizado) * 100
-            : 0
-          const atingidoFilialDirection = getStatusDirection(percentualAtingidoFilial >= 100, showFilialDiff)
-          const compraSobreVendaFilial = getCompraSobreVendaPercent(
-            compras?.valor_realizado_compras,
-            filial.valor_realizado
-          )
-
-          body.push([
-            '',
-            filial.data_referencia ? `Ref: ${format(parseISO(filial.data_referencia), 'dd/MM/yyyy')}` : '-',
-            getFilialName(filial.filial_id),
-            filial.valor_referencia != null ? formatCurrency(filial.valor_referencia) : '-',
-            filial.meta_percentual != null
-              ? `${filial.meta_percentual.toFixed(2)}%`
-              : (filial.percentual_atingido != null ? `${filial.percentual_atingido.toFixed(2)}%` : '-'),
-            formatCurrency(filial.valor_meta),
-            formatCurrency(filial.valor_realizado),
-            showFilialDiff
-              ? formatPdfStatusValue(`${percentualAtingidoFilial.toFixed(2)}%`, atingidoFilialDirection)
-              : '-',
-            showFilialDiff ? formatCurrency(filial.lucro_realizado || 0) : '-',
-            renderMetaMargemStatus(filial.meta_margem_percentual),
-            showFilialDiff ? `${margemFilial.toFixed(2)}%` : '-',
-            compras?.valor_meta_compras != null ? formatCurrency(compras.valor_meta_compras) : '-',
-            compras?.valor_realizado_compras != null ? formatCurrency(compras.valor_realizado_compras) : '-',
-            compraSobreVendaFilial != null ? `${compraSobreVendaFilial.toFixed(2)}%` : '-',
-          ])
-          statusMatrix.push([
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            atingidoFilialDirection,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-          ])
-        })
-      })
+      )
 
       doc.setFontSize(16)
       doc.text(
@@ -1268,7 +1289,7 @@ export default function MetaSetorPage() {
 
       autoTable(doc as never, {
         startY: 28,
-        head,
+        head: [headers],
         body,
         styles: {
           fontSize: 8,
@@ -1283,7 +1304,7 @@ export default function MetaSetorPage() {
         },
       })
 
-      doc.save(`metas-setor-${selectedSetor}-${mes.toString().padStart(2, '0')}-${ano}.pdf`)
+      doc.save(getDailyExportFilename('pdf'))
     } catch (error) {
       console.error('Error exporting setor PDF:', error)
       toast.error('Erro ao exportar PDF', {
@@ -1291,6 +1312,92 @@ export default function MetaSetorPage() {
       })
     } finally {
       setIsExportingDailyPdf(false)
+    }
+  }
+
+  const handleExportDailyXls = async () => {
+    if (currentSetorData.length === 0) return
+
+    try {
+      setIsExportingDailyXls(true)
+
+      const ExcelJS = await import('exceljs')
+      const { headers, rows } = buildDailyExportData()
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('Metas Setor por Dia')
+
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      worksheet.addRow(headers)
+      worksheet.addRows(rows)
+
+      headers.forEach((header, index) => {
+        const column = worksheet.getColumn(index + 1)
+        column.width = Math.max(14, Math.min(24, header.length + 4))
+        column.alignment = { vertical: 'middle', wrapText: true }
+      })
+
+      const headerRow = worksheet.getRow(1)
+      headerRow.font = { bold: true, color: { argb: 'FF0F172A' } }
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' },
+      }
+      headerRow.alignment = { vertical: 'middle', wrapText: true }
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return
+
+        const filialCell = row.getCell(3)
+        if (filialCell.value === 'Todas') {
+          row.font = { bold: true, color: { argb: 'FF0F172A' } }
+          row.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF8FAFC' },
+          }
+        }
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      downloadBlob(
+        new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+        getDailyExportFilename('xlsx')
+      )
+    } catch (error) {
+      console.error('Error exporting setor daily XLS:', error)
+      toast.error('Erro ao exportar XLS', {
+        description: 'Não foi possível gerar a planilha do resumo diário do setor.'
+      })
+    } finally {
+      setIsExportingDailyXls(false)
+    }
+  }
+
+  const handleExportDailyCsv = () => {
+    if (currentSetorData.length === 0) return
+
+    try {
+      setIsExportingDailyCsv(true)
+
+      const { headers, rows } = buildDailyExportData()
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeCsvValue).join(';'))
+        .join('\r\n')
+
+      downloadBlob(
+        new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8' }),
+        getDailyExportFilename('csv')
+      )
+    } catch (error) {
+      console.error('Error exporting setor daily CSV:', error)
+      toast.error('Erro ao exportar CSV', {
+        description: 'Não foi possível gerar o CSV do resumo diário do setor.'
+      })
+    } finally {
+      setIsExportingDailyCsv(false)
     }
   }
 
@@ -1451,6 +1558,132 @@ export default function MetaSetorPage() {
     </Tooltip>
   )
 
+  const buildSummaryExportData = () => {
+    const headers = [
+      'Filial',
+      'Valor Meta Mês',
+      'Valor Realizado Mês',
+      '% Atingido Mês',
+      ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
+      'Lucro Bruto',
+      'Meta Margem',
+      'Margem Bruta',
+      'Meta Compras',
+      'Realizado Compras',
+      '% Compra/Venda',
+    ]
+    const rows: string[][] = []
+    const statusMatrix: PdfStatusDirection[][] = []
+
+    visibleSummaryRows.forEach((row) => {
+      const comprasResumo = getComprasResumoPorFilial(row.filial_id)
+      const compraSobreVendaPercent = getCompraSobreVendaPercent(
+        comprasResumo?.valor_realizado_compras,
+        row.valor_realizado
+      )
+      const atingidoDirection = isCurrentSelectedMonth
+        ? null
+        : getStatusDirection(row.percentual_atingido >= 100, true)
+      const acumuladoDirection = getStatusDirection(row.percentual_atingido_acumulado_d1 >= 100, true)
+
+      rows.push([
+        row.filial_nome || getFilialName(row.filial_id),
+        formatCurrency(row.valor_meta),
+        formatCurrency(row.valor_realizado),
+        `${row.percentual_atingido.toFixed(2)}%`,
+        ...(isCurrentSelectedMonth
+          ? [
+              formatCurrency(row.valor_meta_acumulada_d1),
+              `${row.percentual_atingido_acumulado_d1.toFixed(2)}%`,
+            ]
+          : []),
+        formatCurrency(row.lucro_bruto),
+        renderMetaMargemStatus(row.meta_margem_percentual),
+        `${row.margem_bruta.toFixed(2)}%`,
+        comprasResumo?.valor_meta_compras != null ? formatCurrency(comprasResumo.valor_meta_compras) : '-',
+        comprasResumo?.valor_realizado_compras != null ? formatCurrency(comprasResumo.valor_realizado_compras) : '-',
+        compraSobreVendaPercent != null ? `${compraSobreVendaPercent.toFixed(2)}%` : '-',
+      ])
+
+      statusMatrix.push([
+        null,
+        null,
+        null,
+        atingidoDirection,
+        ...(isCurrentSelectedMonth ? [null, acumuladoDirection] : []),
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ])
+    })
+
+    const totalAtingidoDirection = isCurrentSelectedMonth
+      ? null
+      : getStatusDirection(summaryPercentualAtingido >= 100, true)
+    const totalAcumuladoDirection = getStatusDirection(summaryPercentualAtingidoAcumuladoD1 >= 100, true)
+    const summaryCompraSobreVendaPercent = getCompraSobreVendaPercent(
+      summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
+      summaryTotals.valorRealizado
+    )
+
+    rows.push([
+      'Todas',
+      formatCurrency(summaryTotals.valorMeta),
+      formatCurrency(summaryTotals.valorRealizado),
+      `${summaryPercentualAtingido.toFixed(2)}%`,
+      ...(isCurrentSelectedMonth
+        ? [
+            formatCurrency(summaryTotals.valorMetaAcumuladaD1),
+            `${summaryPercentualAtingidoAcumuladoD1.toFixed(2)}%`,
+          ]
+        : []),
+      formatCurrency(summaryTotals.lucroBruto),
+      renderMetaMargemStatus(summaryMediaMetaMargem),
+      `${summaryMargemBruta.toFixed(2)}%`,
+      summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-',
+      summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-',
+      summaryCompraSobreVendaPercent != null ? `${summaryCompraSobreVendaPercent.toFixed(2)}%` : '-',
+    ])
+
+    statusMatrix.push([
+      null,
+      null,
+      null,
+      totalAtingidoDirection,
+      ...(isCurrentSelectedMonth ? [null, totalAcumuladoDirection] : []),
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ])
+
+    return {
+      headers,
+      rows,
+      statusMatrix,
+    }
+  }
+
+  const getSummaryExportFilename = (extension: 'pdf' | 'xlsx' | 'csv') => {
+    return `resumo-meta-setor-${selectedSetor}-${mes.toString().padStart(2, '0')}-${ano}.${extension}`
+  }
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const handleExportSummaryPdf = async () => {
     if (visibleSummaryRows.length === 0) return
 
@@ -1466,113 +1699,12 @@ export default function MetaSetorPage() {
         format: 'a4',
       })
 
-      const head = [[
-        'Filial',
-        'Valor Meta Mês',
-        'Valor Realizado Mês',
-        '% Atingido Mês',
-        ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
-        'Lucro Bruto',
-        'Meta Margem',
-        'Margem Bruta',
-        'Meta Compras',
-        'Realizado Compras',
-        '% Compra/Venda',
-      ]]
-
-      const body: string[][] = []
-      const statusMatrix: PdfStatusDirection[][] = []
-
-      visibleSummaryRows.forEach((row) => {
-        const comprasResumo = getComprasResumoPorFilial(row.filial_id)
-        const compraSobreVendaPercent = getCompraSobreVendaPercent(
-          comprasResumo?.valor_realizado_compras,
-          row.valor_realizado
+      const { headers, rows, statusMatrix } = buildSummaryExportData()
+      const body = rows.map((row, rowIndex) =>
+        row.map((cell, columnIndex) =>
+          formatPdfStatusValue(cell, statusMatrix[rowIndex]?.[columnIndex] ?? null)
         )
-        const atingidoDirection = isCurrentSelectedMonth
-          ? null
-          : getStatusDirection(row.percentual_atingido >= 100, true)
-        const acumuladoDirection = getStatusDirection(row.percentual_atingido_acumulado_d1 >= 100, true)
-
-        body.push([
-          row.filial_nome || getFilialName(row.filial_id),
-          formatCurrency(row.valor_meta),
-          formatCurrency(row.valor_realizado),
-          isCurrentSelectedMonth
-            ? `${row.percentual_atingido.toFixed(2)}%`
-            : formatPdfStatusValue(`${row.percentual_atingido.toFixed(2)}%`, atingidoDirection),
-          ...(isCurrentSelectedMonth
-            ? [
-                formatCurrency(row.valor_meta_acumulada_d1),
-                formatPdfStatusValue(`${row.percentual_atingido_acumulado_d1.toFixed(2)}%`, acumuladoDirection),
-              ]
-            : []),
-          formatCurrency(row.lucro_bruto),
-          renderMetaMargemStatus(row.meta_margem_percentual),
-          `${row.margem_bruta.toFixed(2)}%`,
-          comprasResumo?.valor_meta_compras != null ? formatCurrency(comprasResumo.valor_meta_compras) : '-',
-          comprasResumo?.valor_realizado_compras != null ? formatCurrency(comprasResumo.valor_realizado_compras) : '-',
-          compraSobreVendaPercent != null ? `${compraSobreVendaPercent.toFixed(2)}%` : '-',
-        ])
-
-        statusMatrix.push([
-          null,
-          null,
-          null,
-          atingidoDirection,
-          ...(isCurrentSelectedMonth ? [null, acumuladoDirection] : []),
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-        ])
-      })
-
-      const totalAtingidoDirection = isCurrentSelectedMonth
-        ? null
-        : getStatusDirection(summaryPercentualAtingido >= 100, true)
-      const totalAcumuladoDirection = getStatusDirection(summaryPercentualAtingidoAcumuladoD1 >= 100, true)
-      const summaryCompraSobreVendaPercent = getCompraSobreVendaPercent(
-        summaryTotals.hasRealizadoCompras ? summaryTotals.valorRealizadoCompras : null,
-        summaryTotals.valorRealizado
       )
-
-      body.push([
-        'Todas',
-        formatCurrency(summaryTotals.valorMeta),
-        formatCurrency(summaryTotals.valorRealizado),
-        isCurrentSelectedMonth
-          ? `${summaryPercentualAtingido.toFixed(2)}%`
-          : formatPdfStatusValue(`${summaryPercentualAtingido.toFixed(2)}%`, totalAtingidoDirection),
-        ...(isCurrentSelectedMonth
-          ? [
-              formatCurrency(summaryTotals.valorMetaAcumuladaD1),
-              formatPdfStatusValue(`${summaryPercentualAtingidoAcumuladoD1.toFixed(2)}%`, totalAcumuladoDirection),
-            ]
-          : []),
-        formatCurrency(summaryTotals.lucroBruto),
-        renderMetaMargemStatus(summaryMediaMetaMargem),
-        `${summaryMargemBruta.toFixed(2)}%`,
-        summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-',
-        summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-',
-        summaryCompraSobreVendaPercent != null ? `${summaryCompraSobreVendaPercent.toFixed(2)}%` : '-',
-      ])
-
-      statusMatrix.push([
-        null,
-        null,
-        null,
-        totalAtingidoDirection,
-        ...(isCurrentSelectedMonth ? [null, totalAcumuladoDirection] : []),
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-      ])
 
       doc.setFontSize(16)
       doc.text(`Resumo Meta mensal do Setor: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)} - Setor: ${currentSetor?.nome ?? ''}`, 14, 16)
@@ -1581,7 +1713,7 @@ export default function MetaSetorPage() {
 
       autoTable(doc as never, {
         startY: 28,
-        head,
+        head: [headers],
         body,
         styles: {
           fontSize: 9,
@@ -1596,7 +1728,7 @@ export default function MetaSetorPage() {
         },
       })
 
-      doc.save(`resumo-meta-setor-${selectedSetor}-${mes.toString().padStart(2, '0')}-${ano}.pdf`)
+      doc.save(getSummaryExportFilename('pdf'))
     } catch (error) {
       console.error('Error exporting setor summary PDF:', error)
       toast.error('Erro ao exportar PDF', {
@@ -1604,6 +1736,96 @@ export default function MetaSetorPage() {
       })
     } finally {
       setIsExportingSummaryPdf(false)
+    }
+  }
+
+  const handleExportSummaryXls = async () => {
+    if (visibleSummaryRows.length === 0) return
+
+    try {
+      setIsExportingSummaryXls(true)
+
+      const ExcelJS = await import('exceljs')
+      const { headers, rows } = buildSummaryExportData()
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('Resumo Meta Setor')
+
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      worksheet.addRow(headers)
+      worksheet.addRows(rows)
+
+      headers.forEach((header, index) => {
+        const column = worksheet.getColumn(index + 1)
+        column.width = Math.max(16, Math.min(24, header.length + 4))
+        column.alignment = { vertical: 'middle', wrapText: true }
+      })
+
+      const headerRow = worksheet.getRow(1)
+      headerRow.font = { bold: true, color: { argb: 'FF0F172A' } }
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' },
+      }
+      headerRow.alignment = { vertical: 'middle', wrapText: true }
+
+      const totalRow = worksheet.getRow(worksheet.rowCount)
+      totalRow.font = { bold: true, color: { argb: 'FF0F172A' } }
+      totalRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF8FAFC' },
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      downloadBlob(
+        new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+        getSummaryExportFilename('xlsx')
+      )
+    } catch (error) {
+      console.error('Error exporting setor summary XLS:', error)
+      toast.error('Erro ao exportar XLS', {
+        description: 'Não foi possível gerar a planilha do resumo mensal do setor.'
+      })
+    } finally {
+      setIsExportingSummaryXls(false)
+    }
+  }
+
+  const escapeCsvValue = (value: string) => {
+    const normalizedValue = value.replace(/\r?\n/g, ' ')
+
+    if (/[";\r\n]/.test(normalizedValue)) {
+      return `"${normalizedValue.replace(/"/g, '""')}"`
+    }
+
+    return normalizedValue
+  }
+
+  const handleExportSummaryCsv = () => {
+    if (visibleSummaryRows.length === 0) return
+
+    try {
+      setIsExportingSummaryCsv(true)
+
+      const { headers, rows } = buildSummaryExportData()
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeCsvValue).join(';'))
+        .join('\r\n')
+
+      downloadBlob(
+        new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8' }),
+        getSummaryExportFilename('csv')
+      )
+    } catch (error) {
+      console.error('Error exporting setor summary CSV:', error)
+      toast.error('Erro ao exportar CSV', {
+        description: 'Não foi possível gerar o CSV do resumo mensal do setor.'
+      })
+    } finally {
+      setIsExportingSummaryCsv(false)
     }
   }
 
@@ -2388,16 +2610,32 @@ export default function MetaSetorPage() {
             <CardTitle>{`Resumo Meta mensal do Setor: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)} - Setor: ${currentSetor?.nome ?? ''}`}</CardTitle>
             <CardDescription>Resumo mensal das metas do setor por filial</CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportSummaryPdf}
-            disabled={loading || isExportingSummaryPdf || visibleSummaryRows.length === 0}
-            className="gap-2"
-          >
-            <FileDown className="h-4 w-4" />
-            {isExportingSummaryPdf ? 'Exportando...' : 'Exportar PDF'}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || isExportingSummary || visibleSummaryRows.length === 0}
+                className="gap-2"
+              >
+                <FileDown className="h-4 w-4" />
+                {isExportingSummary ? 'Exportando...' : 'Exportar'}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onSelect={() => void handleExportSummaryPdf()}>
+                <FileDown className="h-4 w-4" />
+                Exportar PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleExportSummaryXls()}>
+                Exportar XLS
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleExportSummaryCsv}>
+                Exportar CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -2687,16 +2925,32 @@ export default function MetaSetorPage() {
               <CardTitle>{`Resumo de Metas do Setor por Dia: ${format(new Date(ano, mes - 1, 1), 'MMMM/yyyy', { locale: ptBR })} - Setor: ${currentSetor?.nome ?? ''}`}</CardTitle>
               <CardDescription>Acompanhamento detalhado de Metas do Setor por dia e filial</CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportDailyPdf}
-              disabled={loading || isExportingDailyPdf || currentSetorData.length === 0}
-              className="gap-2"
-            >
-              <FileDown className="h-4 w-4" />
-              {isExportingDailyPdf ? 'Exportando...' : 'Exportar PDF'}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || isExportingDaily || currentSetorData.length === 0}
+                  className="gap-2"
+                >
+                  <FileDown className="h-4 w-4" />
+                  {isExportingDaily ? 'Exportando...' : 'Exportar'}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onSelect={() => void handleExportDailyPdf()}>
+                  <FileDown className="h-4 w-4" />
+                  Exportar PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleExportDailyXls()}>
+                  Exportar XLS
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={handleExportDailyCsv}>
+                  Exportar CSV
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
