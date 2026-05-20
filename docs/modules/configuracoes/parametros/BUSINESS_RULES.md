@@ -44,6 +44,8 @@ Mesmo com `enable_faturamento_metas = true`, se a RPC nova falhar, o sistema dev
 
 Quando `enable_api_filial_vendas = true`, as APIs do `Dashboard 360` devem selecionar as RPCs paralelas baseadas em `vendas_filiais_snapshot`.
 
+As respostas das APIs do Dashboard devem identificar a origem com `sales_source = api_filial_vendas`, permitindo que o frontend renderize cards, gráfico e tabela como `Venda PDV` e não some Faturamento aos valores da fonte `/filial/vendas`.
+
 Quando `enable_api_filial_vendas = false`, o comportamento deve permanecer nas RPCs legadas baseadas em `vendas_diarias_por_filial`.
 
 ## RN-PARAM-009: Fórmula de ticket na fonte `/filial/vendas`
@@ -53,6 +55,15 @@ Quando o `Dashboard 360` estiver usando a fonte derivada da API `/filial/vendas`
 ```text
 ticket_medio = vendas / quantidade_clientes
 ```
+
+Na mesma fonte, os indicadores e a listagem do Dashboard 360 devem usar:
+
+- Receita Bruta: `vendas_filiais_snapshot.valor`
+- Custo: `vendas_filiais_snapshot.custo_total_ajustado`
+- Lucro Bruto: `vendas_filiais_snapshot.lucro_ajustado`
+- Margem Bruta: `vendas_filiais_snapshot.margem_ajustada_percentual`
+- Cupons: `vendas_filiais_snapshot.quantidade_clientes`
+- SKU: `vendas_filiais_snapshot.quantidade_unidades_vendidas`
 
 ## RN-PARAM-010: Reload após alteração
 

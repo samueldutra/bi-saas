@@ -100,6 +100,12 @@ export async function GET(req: Request) {
       ? 'get_lucro_by_month_chart_api_filial_vendas'
       : 'get_lucro_by_month_chart'
 
+    console.log('[API/CHARTS/SALES-BY-MONTH] RPC source:', {
+      useApiFilialVendas,
+      salesRpcName,
+      lucroRpcName,
+    })
+
     // Call RPC with filiais parameter for branch filtering - Sales
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: salesData, error: salesError } = await (directSupabase as any).rpc(salesRpcName, {
@@ -199,7 +205,7 @@ export async function GET(req: Request) {
 
     console.log('[API/CHARTS/SALES-BY-MONTH] Merged data sample:', mergedData[0])
 
-    return NextResponse.json(mergedData);
+    return NextResponse.json(mergedData, { headers: { 'Cache-Control': 'no-store, max-age=0' } });
 
   } catch (e) {
     const error = e as Error;

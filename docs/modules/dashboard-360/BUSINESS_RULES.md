@@ -197,6 +197,23 @@ Quando `enable_api_filial_vendas = true`, o ticket médio PDV deve usar:
 ticket_medio = vendas / quantidade_clientes
 ```
 
+### RN-SALES-005: campos ajustados da fonte `/filial/vendas`
+
+Quando `enable_api_filial_vendas = true`, indicadores PDV, comparativos e gráfico devem usar os campos ajustados de `vendas_filiais_snapshot`:
+
+- Receita Bruta: `valor`
+- Custo: `custo_total_ajustado`
+- Lucro Bruto: `lucro_ajustado`
+- Margem Bruta: `margem_ajustada_percentual`
+
+A margem agregada deve preservar a coluna de margem da fonte usando ponderação por `valor`; se não houver margem válida, o fallback é `SUM(lucro_ajustado) / SUM(valor) * 100`.
+
+### RN-SALES-006: frontend efetivo na fonte `/filial/vendas`
+
+Quando as APIs do Dashboard retornam `sales_source = api_filial_vendas`, o frontend deve renderizar cards, gráfico e tabela com `salesType` efetivo igual a `pdv`, mesmo que o estado anterior da tela fosse `complete`.
+
+Essa regra impede que a tela some dados de Faturamento por cima dos campos definidos pela fonte `vendas_filiais_snapshot`.
+
 ---
 
 ## Regras da Tabela por Filial
@@ -209,9 +226,9 @@ Referência:
 
 - [`src/app/(dashboard)/dashboard/page.tsx`](../../../src/app/(dashboard)/dashboard/page.tsx#L1204)
 
-### RN-TABLE-002: colunas de receita, custo, lucro e margem respeitam `salesType`
+### RN-TABLE-002: colunas de receita, custo, lucro e margem respeitam o tipo de venda efetivo
 
-Cada linha recalcula esses campos com base em `salesType`, usando dados de PDV, faturamento ou ambos.
+Cada linha recalcula esses campos com base no tipo de venda efetivo, usando dados de PDV, faturamento ou ambos. Com `sales_source = api_filial_vendas`, o tipo efetivo é sempre `pdv`.
 
 Referência:
 
@@ -229,9 +246,11 @@ Referências:
 - [`src/app/(dashboard)/dashboard/page.tsx`](../../../src/app/(dashboard)/dashboard/page.tsx#L1814)
 - [`src/app/(dashboard)/dashboard/page.tsx`](../../../src/app/(dashboard)/dashboard/page.tsx#L2126)
 
-### RN-TABLE-004: `SKU` total não é soma das linhas
+### RN-TABLE-004: `SKU` total depende da fonte PDV ativa
 
-O total de `SKU` na linha de totalização usa valores distintos vindos de APIs auxiliares, e não a soma simples por filial.
+Com a fonte legada, o total de `SKU` na linha de totalização usa valores distintos vindos de APIs auxiliares.
+
+Com `enable_api_filial_vendas = true`, `SKU` deve vir de `vendas_filiais_snapshot.quantidade_unidades_vendidas`, incluindo a totalização retornada pela própria rota `/api/dashboard/vendas-por-filial`.
 
 Referências:
 

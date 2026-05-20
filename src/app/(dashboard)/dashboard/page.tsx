@@ -33,6 +33,7 @@ import {
 
 // Tipo de venda para o filtro
 type SalesType = 'complete' | 'pdv' | 'faturamento'
+type DashboardSalesSource = 'legacy' | 'api_filial_vendas'
 
 // Estrutura de dados da API
 interface DashboardData {
@@ -60,6 +61,7 @@ interface DashboardData {
     ano_atual: number
     ano_anterior: number
   }>
+  sales_source?: DashboardSalesSource
 }
 
 // Estrutura de dados YTD (Receita, Lucro e Margem)
@@ -73,6 +75,7 @@ interface YTDMetrics {
   ytd_margem: number
   ytd_margem_ano_anterior: number
   ytd_variacao_margem: number
+  sales_source?: DashboardSalesSource
 }
 
 // Estrutura de dados MTD (Month-to-Date - Receita, Lucro e Margem)
@@ -92,6 +95,7 @@ interface MTDMetrics {
   mtd_variacao_ano_anterior_vendas_percent: number
   mtd_variacao_ano_anterior_lucro_percent: number
   mtd_variacao_ano_anterior_margem: number
+  sales_source?: DashboardSalesSource
 }
 
 interface VendaPorFilial {
@@ -138,6 +142,7 @@ interface VendasPorFilialResponse {
   vendas: VendaPorFilial[]
   total_sku_distinct: number
   pa_total_sku_distinct: number
+  sales_source?: DashboardSalesSource
 }
 
 // Interface para dados de faturamento
@@ -166,7 +171,15 @@ interface EntradasPerdasData {
 type SortColumn = 'filial_id' | 'valor_total' | 'ticket_medio' | 'custo_total' | 'total_lucro' | 'margem_lucro' | 'total_entradas' | 'total_cupons' | 'total_sku'
 type SortDirection = 'asc' | 'desc'
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = async (url: string) => {
+  const res = await fetch(url, { cache: 'no-store' })
+
+  if (!res.ok) {
+    throw new Error(`Erro ao carregar ${url}`)
+  }
+
+  return res.json()
+}
 
 const getDefaultCurrentMonthEndDate = (): Date => {
   const today = new Date()
@@ -448,6 +461,18 @@ export default function DashboardPage() {
   // Extrair totais de SKU
   const totalSkuDistinct = vendasPorFilialData?.total_sku_distinct || 0
   const paTotalSkuDistinct = vendasPorFilialData?.pa_total_sku_distinct || 0
+  const isApiFilialVendasSource =
+    data?.sales_source === 'api_filial_vendas' ||
+    vendasPorFilialData?.sales_source === 'api_filial_vendas' ||
+    mtdData?.sales_source === 'api_filial_vendas' ||
+    ytdData?.sales_source === 'api_filial_vendas'
+  const effectiveSalesType: SalesType = isApiFilialVendasSource ? 'pdv' : salesType
+
+  useEffect(() => {
+    if (isApiFilialVendasSource && salesType !== 'pdv') {
+      setSalesType('pdv')
+    }
+  }, [isApiFilialVendasSource, salesType])
 
   // Força revalidação quando URL mudar (filtros mudaram)
   useEffect(() => {
@@ -778,8 +803,10 @@ export default function DashboardPage() {
     // Dados PDV
     const pdvReceita = data?.total_vendas || 0
     const pdvLucro = data?.total_lucro || 0
+    const pdvMargem = data?.margem_lucro || 0
     const pdvPaReceita = data?.pa_vendas || 0
     const pdvPaLucro = data?.pa_lucro || 0
+    const pdvPaMargem = data?.pa_margem_lucro || 0
 
     // Dados Faturamento
     const fatReceita = faturamentoData?.receita_faturamento || 0
@@ -792,19 +819,25 @@ export default function DashboardPage() {
     let lucroTotal: number
     let paReceita: number
     let paLucro: number
+    let margemTotal: number
+    let paMargem: number
 
-    switch (salesType) {
+    switch (effectiveSalesType) {
       case 'pdv':
         receitaTotal = pdvReceita
         lucroTotal = pdvLucro
         paReceita = pdvPaReceita
         paLucro = pdvPaLucro
+        margemTotal = pdvMargem
+        paMargem = pdvPaMargem
         break
       case 'faturamento':
         receitaTotal = fatReceita
         lucroTotal = fatLucro
         paReceita = fatPaReceita
         paLucro = fatPaLucro
+        margemTotal = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0
+        paMargem = paReceita > 0 ? (paLucro / paReceita) * 100 : 0
         break
       case 'complete':
       default:
@@ -812,11 +845,10 @@ export default function DashboardPage() {
         lucroTotal = pdvLucro + fatLucro
         paReceita = pdvPaReceita + fatPaReceita
         paLucro = pdvPaLucro + fatPaLucro
+        margemTotal = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0
+        paMargem = paReceita > 0 ? (paLucro / paReceita) * 100 : 0
         break
     }
-
-    const margemTotal = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0
-    const paMargem = paReceita > 0 ? (paLucro / paReceita) * 100 : 0
 
     return {
       receitaTotal,
@@ -826,13 +858,14 @@ export default function DashboardPage() {
       paLucro,
       paMargem,
     }
-  }, [data, faturamentoData, faturamentoPaData, salesType])
+  }, [data, faturamentoData, faturamentoPaData, effectiveSalesType])
 
   // Calcular totais consolidados MTD baseado no tipo de venda selecionado
   const consolidatedMTD = useMemo(() => {
     // Dados PDV - Mês anterior (ex: OUT/2025)
     const pdvMtdPrevMonthReceita = mtdData?.mtd_mes_anterior_vendas || 0
     const pdvMtdPrevMonthLucro = mtdData?.mtd_mes_anterior_lucro || 0
+    const pdvMtdPrevMonthMargem = mtdData?.mtd_mes_anterior_margem || 0
 
     // Dados Faturamento - Mês anterior
     const fatMtdPrevMonthReceita = faturamentoMtdPreviousMonthData?.receita_faturamento || 0
@@ -841,6 +874,7 @@ export default function DashboardPage() {
     // Dados PDV - Ano anterior (ex: NOV/2024)
     const pdvMtdPrevYearReceita = mtdData?.mtd_ano_anterior_vendas || 0
     const pdvMtdPrevYearLucro = mtdData?.mtd_ano_anterior_lucro || 0
+    const pdvMtdPrevYearMargem = mtdData?.mtd_ano_anterior_margem || 0
 
     // Dados Faturamento - Ano anterior
     const fatMtdPrevYearReceita = faturamentoMtdPreviousYearData?.receita_faturamento || 0
@@ -851,19 +885,25 @@ export default function DashboardPage() {
     let mtdPrevMonthLucro: number
     let mtdPrevYearReceita: number
     let mtdPrevYearLucro: number
+    let mtdPrevMonthMargem: number
+    let mtdPrevYearMargem: number
 
-    switch (salesType) {
+    switch (effectiveSalesType) {
       case 'pdv':
         mtdPrevMonthReceita = pdvMtdPrevMonthReceita
         mtdPrevMonthLucro = pdvMtdPrevMonthLucro
         mtdPrevYearReceita = pdvMtdPrevYearReceita
         mtdPrevYearLucro = pdvMtdPrevYearLucro
+        mtdPrevMonthMargem = pdvMtdPrevMonthMargem
+        mtdPrevYearMargem = pdvMtdPrevYearMargem
         break
       case 'faturamento':
         mtdPrevMonthReceita = fatMtdPrevMonthReceita
         mtdPrevMonthLucro = fatMtdPrevMonthLucro
         mtdPrevYearReceita = fatMtdPrevYearReceita
         mtdPrevYearLucro = fatMtdPrevYearLucro
+        mtdPrevMonthMargem = mtdPrevMonthReceita > 0 ? (mtdPrevMonthLucro / mtdPrevMonthReceita) * 100 : 0
+        mtdPrevYearMargem = mtdPrevYearReceita > 0 ? (mtdPrevYearLucro / mtdPrevYearReceita) * 100 : 0
         break
       case 'complete':
       default:
@@ -871,11 +911,10 @@ export default function DashboardPage() {
         mtdPrevMonthLucro = pdvMtdPrevMonthLucro + fatMtdPrevMonthLucro
         mtdPrevYearReceita = pdvMtdPrevYearReceita + fatMtdPrevYearReceita
         mtdPrevYearLucro = pdvMtdPrevYearLucro + fatMtdPrevYearLucro
+        mtdPrevMonthMargem = mtdPrevMonthReceita > 0 ? (mtdPrevMonthLucro / mtdPrevMonthReceita) * 100 : 0
+        mtdPrevYearMargem = mtdPrevYearReceita > 0 ? (mtdPrevYearLucro / mtdPrevYearReceita) * 100 : 0
         break
     }
-
-    const mtdPrevMonthMargem = mtdPrevMonthReceita > 0 ? (mtdPrevMonthLucro / mtdPrevMonthReceita) * 100 : 0
-    const mtdPrevYearMargem = mtdPrevYearReceita > 0 ? (mtdPrevYearLucro / mtdPrevYearReceita) * 100 : 0
 
     // Calcular variações
     const variacaoPrevMonthReceita = mtdPrevMonthReceita > 0
@@ -910,7 +949,7 @@ export default function DashboardPage() {
       variacaoPrevYearLucro,
       variacaoPrevYearMargem,
     }
-  }, [mtdData, faturamentoMtdPreviousMonthData, faturamentoMtdPreviousYearData, consolidatedTotals, salesType])
+  }, [mtdData, faturamentoMtdPreviousMonthData, faturamentoMtdPreviousYearData, consolidatedTotals, effectiveSalesType])
 
   // Função para lidar com clique no cabeçalho da coluna
   const handleSort = (column: SortColumn) => {
@@ -1334,7 +1373,11 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-2 w-full sm:w-auto">
               <Label>Tipo de Venda</Label>
               <div className="h-10">
-                <Select value={salesType} onValueChange={(value: SalesType) => setSalesType(value)}>
+                <Select
+                  value={effectiveSalesType}
+                  onValueChange={(value: SalesType) => setSalesType(value)}
+                  disabled={isApiFilialVendasSource}
+                >
                   <SelectTrigger className="w-full sm:w-[180px] h-10">
                     <SelectValue placeholder="Selecione..." />
                   </SelectTrigger>
@@ -1654,7 +1697,7 @@ export default function DashboardPage() {
           ) : chartData ? (
             <ChartVendas
               data={chartData}
-              salesType={salesType}
+              salesType={effectiveSalesType}
               filterType={filterType}
               periodStart={dataInicio}
             />
@@ -1833,8 +1876,10 @@ export default function DashboardPage() {
                     let paReceitaFilial: number
                     let paLucroFilial: number
                     let paCustoFilial: number
+                    let margemFilial: number
+                    let paMargemFilial: number
 
-                    switch (salesType) {
+                    switch (effectiveSalesType) {
                       case 'pdv':
                         receitaFilial = venda.valor_total
                         lucroFilial = venda.total_lucro
@@ -1842,6 +1887,8 @@ export default function DashboardPage() {
                         paReceitaFilial = venda.pa_valor_total
                         paLucroFilial = venda.pa_total_lucro
                         paCustoFilial = venda.pa_custo_total
+                        margemFilial = venda.margem_lucro
+                        paMargemFilial = venda.pa_margem_lucro
                         break
                       case 'faturamento':
                         receitaFilial = receitaFaturamento
@@ -1850,6 +1897,8 @@ export default function DashboardPage() {
                         paReceitaFilial = paReceitaFaturamento
                         paLucroFilial = paLucroFaturamento
                         paCustoFilial = paCmvFaturamento
+                        margemFilial = receitaFilial > 0 ? (lucroFilial / receitaFilial) * 100 : 0
+                        paMargemFilial = paReceitaFilial > 0 ? (paLucroFilial / paReceitaFilial) * 100 : 0
                         break
                       case 'complete':
                       default:
@@ -1859,12 +1908,10 @@ export default function DashboardPage() {
                         paReceitaFilial = venda.pa_valor_total + paReceitaFaturamento
                         paLucroFilial = venda.pa_total_lucro + paLucroFaturamento
                         paCustoFilial = venda.pa_custo_total + paCmvFaturamento
+                        margemFilial = receitaFilial > 0 ? (lucroFilial / receitaFilial) * 100 : 0
+                        paMargemFilial = paReceitaFilial > 0 ? (paLucroFilial / paReceitaFilial) * 100 : 0
                         break
                     }
-
-                    // Margem baseada nos valores filtrados
-                    const margemFilial = receitaFilial > 0 ? (lucroFilial / receitaFilial) * 100 : 0
-                    const paMargemFilial = paReceitaFilial > 0 ? (paLucroFilial / paReceitaFilial) * 100 : 0
 
                     const deltaReceitaFilial = paReceitaFilial > 0
                       ? ((receitaFilial - paReceitaFilial) / paReceitaFilial) * 100
@@ -2078,6 +2125,18 @@ export default function DashboardPage() {
                     // SKU total usa valores distintos da API, não soma
                     const total_sku_table = totalSkuDistinct
                     const pa_total_sku_table = paTotalSkuDistinct
+                    const margemPdvTotal = totaisPdv.valor_total > 0
+                      ? sortedVendasPorFilial.reduce(
+                          (total, venda) => total + (venda.margem_lucro || 0) * venda.valor_total,
+                          0
+                        ) / totaisPdv.valor_total
+                      : 0
+                    const paMargemPdvTotal = totaisPdv.pa_valor_total > 0
+                      ? sortedVendasPorFilial.reduce(
+                          (total, venda) => total + (venda.pa_margem_lucro || 0) * venda.pa_valor_total,
+                          0
+                        ) / totaisPdv.pa_valor_total
+                      : 0
 
                     // Totais Faturamento
                     const totalFaturamentoReceita = faturamentoData?.receita_faturamento || 0
@@ -2094,8 +2153,10 @@ export default function DashboardPage() {
                     let paReceitaTotal: number
                     let paLucroTotal: number
                     let paCustoTotal: number
+                    let margem_lucro: number
+                    let pa_margem_lucro: number
 
-                    switch (salesType) {
+                    switch (effectiveSalesType) {
                       case 'pdv':
                         receitaTotal = totaisPdv.valor_total
                         lucroTotal = totaisPdv.total_lucro
@@ -2103,6 +2164,8 @@ export default function DashboardPage() {
                         paReceitaTotal = totaisPdv.pa_valor_total
                         paLucroTotal = totaisPdv.pa_total_lucro
                         paCustoTotal = totaisPdv.pa_custo_total
+                        margem_lucro = margemPdvTotal
+                        pa_margem_lucro = paMargemPdvTotal
                         break
                       case 'faturamento':
                         receitaTotal = totalFaturamentoReceita
@@ -2111,6 +2174,8 @@ export default function DashboardPage() {
                         paReceitaTotal = totalFaturamentoPaReceita
                         paLucroTotal = totalFaturamentoPaLucro
                         paCustoTotal = totalFaturamentoPaCmv
+                        margem_lucro = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0
+                        pa_margem_lucro = paReceitaTotal > 0 ? (paLucroTotal / paReceitaTotal) * 100 : 0
                         break
                       case 'complete':
                       default:
@@ -2120,15 +2185,14 @@ export default function DashboardPage() {
                         paReceitaTotal = totaisPdv.pa_valor_total + totalFaturamentoPaReceita
                         paLucroTotal = totaisPdv.pa_total_lucro + totalFaturamentoPaLucro
                         paCustoTotal = totaisPdv.pa_custo_total + totalFaturamentoPaCmv
+                        margem_lucro = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0
+                        pa_margem_lucro = paReceitaTotal > 0 ? (paLucroTotal / paReceitaTotal) * 100 : 0
                         break
                     }
 
                     const ticket_medio = totaisPdv.total_cupons > 0 ? totaisPdv.valor_total / totaisPdv.total_cupons : 0
                     const pa_ticket_medio = totaisPdv.pa_total_cupons > 0 ? paReceitaTotal / totaisPdv.pa_total_cupons : 0
                     const delta_ticket_percent = pa_ticket_medio > 0 ? ((ticket_medio - pa_ticket_medio) / pa_ticket_medio) * 100 : 0
-
-                    const margem_lucro = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0
-                    const pa_margem_lucro = paReceitaTotal > 0 ? (paLucroTotal / paReceitaTotal) * 100 : 0
 
                     const delta_receita_percent = paReceitaTotal > 0 ? ((receitaTotal - paReceitaTotal) / paReceitaTotal) * 100 : 0
                     const delta_custo_percent = paCustoTotal > 0 ? ((custoTotal - paCustoTotal) / paCustoTotal) * 100 : 0

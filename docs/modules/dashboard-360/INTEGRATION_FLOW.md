@@ -115,6 +115,18 @@ No server-side, as rotas do módulo consultam `isApiFilialVendasEnabled(schema)`
 - RPCs legadas baseadas em `vendas_diarias_por_filial`
 - RPCs paralelas baseadas em `vendas_filiais_snapshot`
 
+As rotas retornam `sales_source` para o frontend. Quando o valor é `api_filial_vendas`, a página usa tipo de venda efetivo `pdv` para evitar consolidação com Faturamento.
+
+Quando a fonte paralela está ativa, os campos PDV exibidos nos indicadores e na listagem são mapeados do snapshot:
+
+- receita: `valor`
+- custo: `custo_total_ajustado`
+- lucro bruto: `lucro_ajustado`
+- margem bruta: `margem_ajustada_percentual`
+- ticket médio: `valor / quantidade_clientes`
+- cupons: `quantidade_clientes`
+- SKU: `quantidade_unidades_vendidas`
+
 ---
 
 ## Fluxo de Busca de Dados
@@ -142,6 +154,8 @@ DashboardPage
   -> RPC get_dashboard_ytd_metrics
 ```
 
+Com `enable_api_filial_vendas` ativo, a API troca para `get_dashboard_ytd_metrics_api_filial_vendas` e retorna `sales_source = api_filial_vendas`.
+
 Referência:
 
 - [`src/app/(dashboard)/dashboard/page.tsx`](../../../src/app/(dashboard)/dashboard/page.tsx#L384)
@@ -156,6 +170,8 @@ DashboardPage
   -> RPC get_dashboard_mtd_metrics
 ```
 
+Com `enable_api_filial_vendas` ativo, a API troca para `get_dashboard_mtd_metrics_api_filial_vendas` e retorna `sales_source = api_filial_vendas`.
+
 Referência:
 
 - [`src/app/(dashboard)/dashboard/page.tsx`](../../../src/app/(dashboard)/dashboard/page.tsx#L405)
@@ -166,8 +182,8 @@ Referência:
 DashboardPage
   -> /api/dashboard/vendas-por-filial
   -> RPC get_vendas_por_filial
-  -> RPC get_total_sku_distinct
-  -> RPC get_total_sku_distinct_pa
+  -> se fonte legada: RPC get_total_sku_distinct + RPC get_total_sku_distinct_pa
+  -> se fonte /filial/vendas: totalização de total_sku/pa_total_sku retornados pela RPC alternativa
 ```
 
 Referências:

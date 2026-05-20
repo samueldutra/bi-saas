@@ -105,6 +105,7 @@ Fonte:
 Uso:
 
 - comparação anual acumulada nos cards
+- participa da detecção de `sales_source = api_filial_vendas` para manter o acumulado anual na fonte snapshot quando o parâmetro estiver ativo
 
 Campos principais:
 
@@ -127,6 +128,7 @@ Fonte:
 Uso:
 
 - comparativos do mês anterior e do mesmo mês do ano anterior
+- participa da detecção de `sales_source = api_filial_vendas` para manter os indicadores MTD na fonte snapshot quando o parâmetro estiver ativo
 
 Campos principais:
 
@@ -153,15 +155,29 @@ Fonte:
 Campos de PDV:
 
 - `filial_id`
-- `valor_total`
-- `custo_total`
-- `total_lucro`
-- `quantidade_total`
-- `total_transacoes`
-- `ticket_medio`
-- `margem_lucro`
+- `valor_total`: receita bruta
+- `custo_total`: custo
+- `total_lucro`: lucro bruto
+- `quantidade_total`: quantidade vendida
+- `total_transacoes`: cupons/transações
+- `ticket_medio`: receita bruta / cupons
+- `margem_lucro`: margem bruta
 - equivalentes `pa_*`
 - deltas de receita, custo, lucro e margem
+
+Quando `enable_api_filial_vendas = true`, esses campos vêm de `vendas_filiais_snapshot`:
+
+- `valor_total`: `valor`
+- `custo_total`: `custo_total_ajustado`
+- `total_lucro`: `lucro_ajustado`
+- `margem_lucro`: `margem_ajustada_percentual`, ponderada por `valor` em agregações
+- `total_cupons`: `quantidade_clientes`
+- `total_sku`: `quantidade_unidades_vendidas`
+
+As respostas das APIs do Dashboard também podem trazer `sales_source`:
+
+- `legacy`: fonte PDV legada
+- `api_filial_vendas`: fonte `vendas_filiais_snapshot`
 
 Campos operacionais:
 

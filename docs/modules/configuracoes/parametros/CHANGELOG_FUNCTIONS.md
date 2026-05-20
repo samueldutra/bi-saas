@@ -4,6 +4,22 @@
 
 ### Versão documental
 
+- `1.4.0`
+
+### Alterações
+
+- atualizado o comportamento documentado de `enable_api_filial_vendas`
+- a fonte ativa do `Dashboard 360` passa a usar `valor`, `custo_total_ajustado`, `lucro_ajustado`, `margem_ajustada_percentual`, `quantidade_clientes` e `quantidade_unidades_vendidas` de `vendas_filiais_snapshot`
+- as APIs do `Dashboard 360` passam a retornar `sales_source`, e o frontend usa tipo efetivo `pdv` quando a fonte é `/filial/vendas`
+
+### Impacto
+
+- médio
+
+## 2026-05-19
+
+### Versão documental
+
 - `1.3.0`
 
 ### Alterações

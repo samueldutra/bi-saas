@@ -77,6 +77,16 @@ export async function GET(request: NextRequest) {
       ? 'get_vendas_por_filial_api_filial_vendas'
       : 'get_vendas_por_filial'
 
+    console.log('[API/DASHBOARD/VENDAS-POR-FILIAL] RPC Params:', {
+      rpcName,
+      useApiFilialVendas,
+      schema,
+      dataInicio,
+      dataFim,
+      finalFiliais,
+      filterType,
+    })
+
     // Chamar função RPC
     const { data, error } = await directSupabase.rpc(rpcName, {
       p_schema: schema,
@@ -91,40 +101,63 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Error fetching sales data' }, { status: 500 })
     }
 
-    // Buscar total de SKUs distintos (produtos vendidos no período - não somar por filial!)
-    const { data: totalSkuData, error: skuError } = await directSupabase.rpc('get_total_sku_distinct', {
-      p_schema: schema,
-      p_data_inicio: dataInicio,
-      p_data_fim: dataFim,
-      p_filiais: finalFiliais
-    } as never)
+    let totalSkuDistinct = 0
+    let paTotalSkuDistinct = 0
 
-    console.log('[DEBUG] get_total_sku_distinct response:', {
-      data: totalSkuData,
-      error: skuError,
-      extracted: totalSkuData?.[0]?.total_sku
-    })
+    if (useApiFilialVendas) {
+      const vendas = Array.isArray(data) ? data : []
 
-    // Buscar total de SKUs distintos do período anterior
-    const { data: totalSkuPaData, error: skuPaError } = await directSupabase.rpc('get_total_sku_distinct_pa', {
-      p_schema: schema,
-      p_data_inicio: dataInicio,
-      p_data_fim: dataFim,
-      p_filiais: finalFiliais,
-      p_filter_type: filterType
-    } as never)
+      totalSkuDistinct = vendas.reduce(
+        (total, venda: { total_sku?: number | string | null }) => total + Number(venda.total_sku || 0),
+        0
+      )
+      paTotalSkuDistinct = vendas.reduce(
+        (total, venda: { pa_total_sku?: number | string | null }) => total + Number(venda.pa_total_sku || 0),
+        0
+      )
+    } else {
+      // Buscar total de SKUs distintos (produtos vendidos no período - não somar por filial!)
+      const { data: totalSkuData, error: skuError } = await directSupabase.rpc('get_total_sku_distinct', {
+        p_schema: schema,
+        p_data_inicio: dataInicio,
+        p_data_fim: dataFim,
+        p_filiais: finalFiliais
+      } as never)
 
-    console.log('[DEBUG] get_total_sku_distinct_pa response:', {
-      data: totalSkuPaData,
-      error: skuPaError,
-      extracted: totalSkuPaData?.[0]?.pa_total_sku
-    })
+      console.log('[DEBUG] get_total_sku_distinct response:', {
+        data: totalSkuData,
+        error: skuError,
+        extracted: totalSkuData?.[0]?.total_sku
+      })
 
-    return NextResponse.json({
-      vendas: data || [],
-      total_sku_distinct: totalSkuData?.[0]?.total_sku || 0,
-      pa_total_sku_distinct: totalSkuPaData?.[0]?.pa_total_sku || 0
-    })
+      // Buscar total de SKUs distintos do período anterior
+      const { data: totalSkuPaData, error: skuPaError } = await directSupabase.rpc('get_total_sku_distinct_pa', {
+        p_schema: schema,
+        p_data_inicio: dataInicio,
+        p_data_fim: dataFim,
+        p_filiais: finalFiliais,
+        p_filter_type: filterType
+      } as never)
+
+      console.log('[DEBUG] get_total_sku_distinct_pa response:', {
+        data: totalSkuPaData,
+        error: skuPaError,
+        extracted: totalSkuPaData?.[0]?.pa_total_sku
+      })
+
+      totalSkuDistinct = totalSkuData?.[0]?.total_sku || 0
+      paTotalSkuDistinct = totalSkuPaData?.[0]?.pa_total_sku || 0
+    }
+
+    return NextResponse.json(
+      {
+        vendas: data || [],
+        total_sku_distinct: totalSkuDistinct,
+        pa_total_sku_distinct: paTotalSkuDistinct,
+        sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy',
+      },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    )
 
   } catch (error) {
     console.error('[API/DASHBOARD/VENDAS-POR-FILIAL] Erro:', error)

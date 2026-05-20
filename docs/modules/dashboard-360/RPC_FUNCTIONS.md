@@ -25,6 +25,17 @@ As APIs aplicam controle de acesso antes de executar qualquer RPC.
 
 Quando `enable_api_filial_vendas = true`, as APIs do módulo trocam as RPCs legadas por versões paralelas com sufixo `_api_filial_vendas`, baseadas em `vendas_filiais_snapshot`.
 
+As respostas das rotas HTTP do Dashboard adicionam `sales_source` como metadado de origem. Esse campo não vem das RPCs; ele é definido na camada Next.js para orientar a renderização do frontend.
+
+Mapeamento vigente da fonte `/filial/vendas`:
+
+- `valor` -> Receita Bruta
+- `custo_total_ajustado` -> Custo
+- `lucro_ajustado` -> Lucro Bruto
+- `margem_ajustada_percentual` -> Margem Bruta
+- `quantidade_clientes` -> Cupons e denominador do Ticket Médio
+- `quantidade_unidades_vendidas` -> SKU/quantidade vendida na listagem
+
 ---
 
 ## Resumo Principal
@@ -65,6 +76,8 @@ Base PDV:
 Regra adicional:
 
 - `ticket_medio = vendas / quantidade_clientes`
+- `total_lucro = SUM(lucro_ajustado)`
+- `margem_lucro` usa `margem_ajustada_percentual` ponderada por `valor`
 
 ---
 
@@ -98,7 +111,9 @@ Responsabilidade:
 
 ### RPC alternativa: `get_dashboard_ytd_metrics_api_filial_vendas`
 
-Usa `vendas_filiais_snapshot` como base PDV do acumulado anual.
+Usa `vendas_filiais_snapshot` como base PDV do acumulado anual, com `valor`, `lucro_ajustado` e `margem_ajustada_percentual`.
+
+Quando a resposta da API traz `sales_source = api_filial_vendas`, os cards tratam esses valores como fonte PDV principal para o acumulado e para o comparativo com o ano anterior.
 
 ### API: `/api/dashboard/mtd-metrics`
 
@@ -126,7 +141,9 @@ Responsabilidade:
 
 ### RPC alternativa: `get_dashboard_mtd_metrics_api_filial_vendas`
 
-Usa `vendas_filiais_snapshot` como base PDV dos comparativos MTD.
+Usa `vendas_filiais_snapshot` como base PDV dos comparativos MTD, com `valor`, `lucro_ajustado` e `margem_ajustada_percentual`.
+
+Quando a resposta da API traz `sales_source = api_filial_vendas`, os cards usam esses valores para o mês atual, mês anterior e mesmo mês do ano anterior sem recompor os indicadores pela fonte legada.
 
 ---
 
@@ -168,12 +185,15 @@ Base PDV:
 Mapeamento principal:
 
 - `valor` -> receita PDV
-- `custo_real` -> custo PDV
-- `valor - custo_real` -> lucro PDV
-- `quantidade_unidades_vendidas` -> quantidade total
+- `custo_total_ajustado` -> custo PDV
+- `lucro_ajustado` -> lucro bruto PDV
+- `margem_ajustada_percentual` -> margem bruta PDV
+- `quantidade_unidades_vendidas` -> quantidade total e SKU da listagem
 - `quantidade_clientes` -> cupons/transações PDV
 
 ### RPC auxiliar: `get_total_sku_distinct`
+
+Usada apenas quando a fonte legada está ativa.
 
 Parâmetros:
 
@@ -192,6 +212,8 @@ Responsabilidade:
 
 ### RPC auxiliar: `get_total_sku_distinct_pa`
 
+Usada apenas quando a fonte legada está ativa.
+
 Parâmetros:
 
 ```ts
@@ -207,6 +229,8 @@ Parâmetros:
 Responsabilidade:
 
 - total de SKU distinto do período comparativo da tabela
+
+Com `enable_api_filial_vendas = true`, a rota totaliza `total_sku` e `pa_total_sku` retornados pela RPC alternativa, pois a regra passa a ser `quantidade_unidades_vendidas`.
 
 ---
 
@@ -275,7 +299,7 @@ Alimenta o lucro PDV do gráfico.
 
 #### `get_lucro_by_month_chart_api_filial_vendas`
 
-Versão paralela baseada em `vendas_filiais_snapshot`.
+Versão paralela baseada em `vendas_filiais_snapshot.lucro_ajustado`.
 
 #### `get_faturamento_by_month_chart`
 

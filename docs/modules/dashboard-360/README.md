@@ -1,7 +1,7 @@
 # Dashboard 360 - Documentação Técnica
 
-**Versão**: 1.1.0
-**Última Atualização**: 2026-04-01
+**Versão**: 1.2.1
+**Última Atualização**: 2026-05-20
 **Status**: ✅ Produção
 
 > Esta pasta é a documentação oficial do módulo `Dashboard 360`.
@@ -31,11 +31,21 @@ O módulo **Dashboard 360** consolida indicadores comerciais e operacionais por 
 
 ### Seleção de origem PDV por tenant
 
-Quando o parâmetro `enable_api_filial_vendas` está ativo para o tenant, o módulo usa versões paralelas das RPCs baseadas em `vendas_filiais_snapshot`, que espelha a API `/filial/vendas`.
+Quando o parâmetro `enable_api_filial_vendas` está ativo para o tenant, o módulo usa versões paralelas das RPCs baseadas em `vendas_filiais_snapshot`, que espelha a API `/filial/vendas`. Nessa fonte:
+
+- Receita Bruta vem de `vendas_filiais_snapshot.valor`
+- Custo vem de `vendas_filiais_snapshot.custo_total_ajustado`
+- Lucro Bruto vem de `vendas_filiais_snapshot.lucro_ajustado`
+- Margem Bruta vem de `vendas_filiais_snapshot.margem_ajustada_percentual`
+- Ticket Médio usa `valor / quantidade_clientes`
+- Cupons vêm de `quantidade_clientes`
+- SKU da listagem vem de `quantidade_unidades_vendidas`
 
 Quando o parâmetro está desativado, o módulo segue usando a origem legada baseada em `vendas_diarias_por_filial`.
 
-O frontend da rota [`/dashboard`](../../../src/app/(dashboard)/dashboard/page.tsx#L179) atua como orquestrador do módulo. Ele mantém os filtros, dispara múltiplas consultas paralelas via `useSWR`, consolida PDV e faturamento localmente conforme o `salesType` e renderiza cards, gráfico e tabela.
+Quando a resposta das APIs indica `sales_source = api_filial_vendas`, o frontend trata o Dashboard como `pdv` para cards, gráfico e tabela. Isso evita que o modo `complete` some Faturamento aos valores já definidos pela fonte `/filial/vendas`.
+
+O frontend da rota [`/dashboard`](../../../src/app/(dashboard)/dashboard/page.tsx#L179) atua como orquestrador do módulo. Ele mantém os filtros, dispara múltiplas consultas paralelas via `useSWR`, consolida PDV e faturamento localmente conforme o tipo de venda efetivo e renderiza cards, gráfico e tabela.
 
 ### Tipos de venda suportados
 
@@ -95,7 +105,7 @@ flowchart TD
     E1 --> F[RPC get_dashboard_data]
     E2 --> G[RPC get_dashboard_ytd_metrics]
     E3 --> H[RPC get_dashboard_mtd_metrics]
-    E4 --> I[RPC get_vendas_por_filial + RPCs de SKU]
+    E4 --> I[RPC get_vendas_por_filial + totalização de SKU]
     E5 --> J[Queries diretas nas tabelas entradas e perdas]
     E6 --> K[RPCs get_faturamento_data / get_faturamento_por_filial]
     E7 --> L[RPCs de vendas, despesas, lucro e faturamento por mês]
@@ -118,8 +128,9 @@ flowchart TD
 3. Cada API valida usuário, acesso ao schema e filiais autorizadas.
 4. As APIs escolhem a família de RPCs com base em `enable_api_filial_vendas`.
 5. As APIs consultam RPCs Supabase ou tabelas diretas.
-6. O frontend reconcilia PDV e faturamento de acordo com `salesType`.
-7. Os componentes visuais exibem comparativos por período.
+6. Quando qualquer resposta principal, MTD, YTD ou de vendas por filial informa `sales_source = api_filial_vendas`, a tela consolida os cards como PDV e usa a família de RPCs baseada em `{schema}.vendas_filiais_snapshot`.
+7. O frontend reconcilia PDV e faturamento de acordo com o tipo de venda efetivo.
+8. Os componentes visuais exibem comparativos por período.
 
 ---
 

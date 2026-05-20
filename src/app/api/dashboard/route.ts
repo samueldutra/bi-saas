@@ -87,8 +87,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Error fetching dashboard data' }, { status: 500 });
     }
 
+    console.log('[API/DASHBOARD] RPC Params:', {
+      rpcName,
+      useApiFilialVendas,
+      ...rpcParams,
+    })
+
     // A função RPC já retorna todos os dados necessários
-    return NextResponse.json(data);
+    return NextResponse.json(
+      {
+        ...(data as Record<string, unknown>),
+        sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy',
+      },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
 
   } catch (e) {
     const error = e as Error;

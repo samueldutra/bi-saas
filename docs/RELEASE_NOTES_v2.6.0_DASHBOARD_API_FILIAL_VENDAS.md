@@ -85,8 +85,9 @@ Essa regra foi aplicada nas RPCs novas do `Dashboard 360`.
 | Campo da nova base | Papel no Dashboard 360 |
 |---|---|
 | `valor` | Receita PDV |
-| `custo_real` | Custo PDV |
-| `valor - custo_real` | Lucro PDV |
+| `custo_total_ajustado` | Custo PDV |
+| `lucro_ajustado` | Lucro PDV |
+| `margem_ajustada_percentual` | Margem PDV |
 | `quantidade_unidades_vendidas` | Quantidade total |
 | `quantidade_clientes` | Clientes/cupons para ticket médio e colunas operacionais equivalentes |
 

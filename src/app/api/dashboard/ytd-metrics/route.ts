@@ -76,7 +76,7 @@ export async function GET(req: Request) {
       : 'get_dashboard_ytd_metrics'
 
     // DEBUG: Log dos parâmetros enviados
-    console.log('[API/DASHBOARD/YTD] RPC Params:', JSON.stringify({ rpcName, ...rpcParams }, null, 2));
+    console.log('[API/DASHBOARD/YTD] RPC Params:', JSON.stringify({ rpcName, useApiFilialVendas, ...rpcParams }, null, 2));
 
     // Usar client direto
     const { createDirectClient } = await import('@/lib/supabase/admin')
@@ -90,7 +90,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Error fetching YTD metrics' }, { status: 500 });
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json(
+      {
+        ...(data as Record<string, unknown>),
+        sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy',
+      },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
 
   } catch (e) {
     const error = e as Error;
