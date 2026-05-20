@@ -200,7 +200,10 @@ export default function MetaMensalPage() {
   const [isExportingSummaryXls, setIsExportingSummaryXls] = useState(false)
   const [isExportingSummaryCsv, setIsExportingSummaryCsv] = useState(false)
   const [isExportingDailyPdf, setIsExportingDailyPdf] = useState(false)
+  const [isExportingDailyXls, setIsExportingDailyXls] = useState(false)
+  const [isExportingDailyCsv, setIsExportingDailyCsv] = useState(false)
   const isExportingSummary = isExportingSummaryPdf || isExportingSummaryXls || isExportingSummaryCsv
+  const isExportingDaily = isExportingDailyPdf || isExportingDailyXls || isExportingDailyCsv
 
   // Estado para botão atualizar valores
   const [isUpdatingValues, setIsUpdatingValues] = useState(false)
@@ -1398,6 +1401,178 @@ export default function MetaMensalPage() {
     }
   }
 
+  const buildDailyExportData = () => {
+    const headers = filiaisSelecionadas.length !== 1
+      ? [
+            'Data',
+            'Dia da Semana',
+            'Valor Referência',
+            '% Meta',
+            'Valor Meta',
+            'Valor Realizado',
+            '% Atingido',
+            'Lucro Bruto',
+            'Meta Margem',
+            'Margem Bruta',
+            'Meta Compras',
+            'Realizado Compras',
+            '% Comp./Venda',
+          ]
+      : [
+            'Data',
+            'Dia da Semana',
+            'Data Ref.',
+            'Valor Referência',
+            '% Meta',
+            'Valor Meta',
+            'Valor Realizado',
+            '% Atingido',
+            'Lucro Bruto',
+            'Meta Margem',
+            'Margem Bruta',
+            'Meta Compras',
+            'Realizado Compras',
+            '% Comp./Venda',
+          ]
+
+    const rows: string[][] = []
+    const statusMatrix: PdfStatusDirection[][] = []
+
+    if (filiaisSelecionadas.length !== 1) {
+      groupedEntries.forEach(([dateKey, group]) => {
+        const comprasDoDia = group.metas.reduce(
+          (acc, meta) => {
+            const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
+            return {
+              valorMetaCompras: acc.valorMetaCompras + (compra?.valor_meta_compras ?? 0),
+              valorRealizadoCompras: acc.valorRealizadoCompras + (compra?.valor_realizado_compras ?? 0),
+              hasMetaCompras: acc.hasMetaCompras || compra?.valor_meta_compras != null,
+              hasRealizadoCompras: acc.hasRealizadoCompras || compra?.valor_realizado_compras != null,
+            }
+          },
+          {
+            valorMetaCompras: 0,
+            valorRealizadoCompras: 0,
+            hasMetaCompras: false,
+            hasRealizadoCompras: false,
+          }
+        )
+        const percentualAtingidoDia = group.total_meta > 0
+          ? (group.total_realizado / group.total_meta) * 100
+          : 0
+        const margemRealizadaDia = getMargemRealizada(group.total_realizado, group.total_lucro)
+        const isDateFuture = isTodayOrFuture(dateKey)
+        const hasNoSales = group.total_realizado === 0
+        const showDifference = !(isDateFuture && hasNoSales)
+        const margemDirection = group.media_meta_margem_percentual > 0
+          ? getStatusDirection(margemRealizadaDia >= group.media_meta_margem_percentual, showDifference)
+          : null
+        const atingidoDirection = getStatusDirection(percentualAtingidoDia >= 100, showDifference)
+        const compraSobreVenda = getCompraSobreVendaPercent(
+          comprasDoDia.hasRealizadoCompras ? comprasDoDia.valorRealizadoCompras : null,
+          group.total_realizado
+        )
+
+        rows.push([
+          format(parseISO(group.data), 'dd/MM/yyyy'),
+          group.metas[0]?.dia_semana || '-',
+          formatCurrency(group.total_valor_referencia),
+          formatPlainPercentage(group.media_meta_percentual),
+          formatCurrency(group.total_meta),
+          formatCurrency(group.total_realizado),
+          showDifference ? formatPlainPercentage(percentualAtingidoDia) : '-',
+          showDifference ? formatCurrency(group.total_lucro) : '-',
+          group.media_meta_margem_percentual > 0
+            ? formatPlainPercentage(group.media_meta_margem_percentual)
+            : '-',
+          showDifference ? formatPlainPercentage(group.margem_bruta) : '-',
+          comprasDoDia.hasMetaCompras ? formatCurrency(comprasDoDia.valorMetaCompras) : '-',
+          comprasDoDia.hasRealizadoCompras ? formatCurrency(comprasDoDia.valorRealizadoCompras) : '-',
+          compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-',
+        ])
+
+        statusMatrix.push([
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          atingidoDirection,
+          null,
+          margemDirection,
+          null,
+          null,
+          null,
+          null,
+        ])
+      })
+    } else {
+      filteredMetas.forEach((meta) => {
+        const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
+        const percentualAtingidoMeta = meta.valor_meta > 0
+          ? (meta.valor_realizado / meta.valor_meta) * 100
+          : 0
+        const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
+        const showDiff = shouldShowDifference(meta)
+        const atingidoDirection = getStatusDirection(percentualAtingidoMeta >= 100, showDiff)
+        const margemDirection = meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
+          ? getStatusDirection(margem >= meta.meta_margem_percentual, showDiff)
+          : null
+        const compraSobreVenda = getCompraSobreVendaPercent(
+          compra?.valor_realizado_compras,
+          meta.valor_realizado
+        )
+
+        rows.push([
+          format(parseISO(meta.data), 'dd/MM/yyyy'),
+          meta.dia_semana,
+          meta.data_referencia ? format(parseISO(meta.data_referencia), 'dd/MM/yyyy') : '-',
+          formatCurrency(meta.valor_referencia),
+          formatPlainPercentage(meta.meta_percentual),
+          formatCurrency(meta.valor_meta),
+          formatCurrency(meta.valor_realizado),
+          showDiff ? formatPlainPercentage(percentualAtingidoMeta) : '-',
+          showDiff ? formatCurrency(meta.lucro_realizado || 0) : '-',
+          meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
+            ? formatPlainPercentage(meta.meta_margem_percentual)
+            : '-',
+          showDiff ? formatPlainPercentage(margem) : '-',
+          compra?.valor_meta_compras != null ? formatCurrency(compra.valor_meta_compras) : '-',
+          compra?.valor_realizado_compras != null ? formatCurrency(compra.valor_realizado_compras) : '-',
+          compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-',
+        ])
+
+        statusMatrix.push([
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          atingidoDirection,
+          null,
+          margemDirection,
+          null,
+          null,
+          null,
+          null,
+        ])
+      })
+    }
+
+    return {
+      headers,
+      rows,
+      statusMatrix,
+    }
+  }
+
+  const getDailyExportFilename = (extension: 'pdf' | 'xlsx' | 'csv') => {
+    return `metas-diarias-${mes.toString().padStart(2, '0')}-${ano}.${extension}`
+  }
+
   const handleExportDailyPdf = async () => {
     if (filteredMetas.length === 0) return
 
@@ -1413,177 +1588,12 @@ export default function MetaMensalPage() {
         format: 'a4',
       })
 
-      const head = filiaisSelecionadas.length !== 1
-        ? [[
-            'Data',
-            'Dia da Semana',
-            'Valor Referência',
-            '% Meta',
-            'Valor Meta',
-            'Valor Realizado',
-            '% Atingido',
-            'Lucro Bruto',
-            'Meta Margem',
-            'Margem Bruta',
-            'Meta Compras',
-            'Realizado Compras',
-            '% Comp./Venda',
-          ]]
-        : [[
-            'Data',
-            'Dia da Semana',
-            'Data Ref.',
-            'Valor Referência',
-            '% Meta',
-            'Valor Meta',
-            'Valor Realizado',
-            '% Atingido',
-            'Lucro Bruto',
-            'Meta Margem',
-            'Margem Bruta',
-            'Meta Compras',
-            'Realizado Compras',
-            '% Comp./Venda',
-          ]]
-
-      const body: string[][] = []
-      const statusMatrix: PdfStatusDirection[][] = []
-
-      if (filiaisSelecionadas.length !== 1) {
-        groupedEntries.forEach(([dateKey, group]) => {
-          const comprasDoDia = group.metas.reduce(
-            (acc, meta) => {
-              const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
-              return {
-                valorMetaCompras: acc.valorMetaCompras + (compra?.valor_meta_compras ?? 0),
-                valorRealizadoCompras: acc.valorRealizadoCompras + (compra?.valor_realizado_compras ?? 0),
-                hasMetaCompras: acc.hasMetaCompras || compra?.valor_meta_compras != null,
-                hasRealizadoCompras: acc.hasRealizadoCompras || compra?.valor_realizado_compras != null,
-              }
-            },
-            {
-              valorMetaCompras: 0,
-              valorRealizadoCompras: 0,
-              hasMetaCompras: false,
-              hasRealizadoCompras: false,
-            }
-          )
-          const percentualAtingidoDia = group.total_meta > 0
-            ? (group.total_realizado / group.total_meta) * 100
-            : 0
-          const margemRealizadaDia = getMargemRealizada(group.total_realizado, group.total_lucro)
-          const isDateFuture = isTodayOrFuture(dateKey)
-          const hasNoSales = group.total_realizado === 0
-          const showDifference = !(isDateFuture && hasNoSales)
-          const margemDirection = group.media_meta_margem_percentual > 0
-            ? getStatusDirection(margemRealizadaDia >= group.media_meta_margem_percentual, showDifference)
-            : null
-          const atingidoDirection = getStatusDirection(percentualAtingidoDia >= 100, showDifference)
-          const compraSobreVenda = getCompraSobreVendaPercent(
-            comprasDoDia.hasRealizadoCompras ? comprasDoDia.valorRealizadoCompras : null,
-            group.total_realizado
-          )
-
-          body.push([
-            format(parseISO(group.data), 'dd/MM/yyyy'),
-            group.metas[0]?.dia_semana || '-',
-            formatCurrency(group.total_valor_referencia),
-            formatPlainPercentage(group.media_meta_percentual),
-            formatCurrency(group.total_meta),
-            formatCurrency(group.total_realizado),
-            showDifference
-              ? formatPdfStatusValue(formatPlainPercentage(percentualAtingidoDia), atingidoDirection)
-              : '-',
-            showDifference
-              ? formatCurrency(group.total_lucro)
-              : '-',
-            group.media_meta_margem_percentual > 0
-              ? formatPdfStatusValue(formatPlainPercentage(group.media_meta_margem_percentual), margemDirection)
-              : '-',
-            showDifference
-              ? formatPlainPercentage(group.margem_bruta)
-              : '-',
-            comprasDoDia.hasMetaCompras ? formatCurrency(comprasDoDia.valorMetaCompras) : '-',
-            comprasDoDia.hasRealizadoCompras ? formatCurrency(comprasDoDia.valorRealizadoCompras) : '-',
-            compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-',
-          ])
-
-          statusMatrix.push([
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            atingidoDirection,
-            null,
-            margemDirection,
-            null,
-            null,
-            null,
-            null,
-          ])
-        })
-      } else {
-        filteredMetas.forEach((meta) => {
-          const compra = getPurchasesByDateAndFilial(meta.data, meta.filial_id)
-          const percentualAtingidoMeta = meta.valor_meta > 0
-            ? (meta.valor_realizado / meta.valor_meta) * 100
-            : 0
-          const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
-          const showDiff = shouldShowDifference(meta)
-          const atingidoDirection = getStatusDirection(percentualAtingidoMeta >= 100, showDiff)
-          const margemDirection = meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
-            ? getStatusDirection(margem >= meta.meta_margem_percentual, showDiff)
-            : null
-          const compraSobreVenda = getCompraSobreVendaPercent(
-            compra?.valor_realizado_compras,
-            meta.valor_realizado
-          )
-
-          body.push([
-            format(parseISO(meta.data), 'dd/MM/yyyy'),
-            meta.dia_semana,
-            meta.data_referencia ? format(parseISO(meta.data_referencia), 'dd/MM/yyyy') : '-',
-            formatCurrency(meta.valor_referencia),
-            formatPlainPercentage(meta.meta_percentual),
-            formatCurrency(meta.valor_meta),
-            formatCurrency(meta.valor_realizado),
-            showDiff
-              ? formatPdfStatusValue(formatPlainPercentage(percentualAtingidoMeta), atingidoDirection)
-              : '-',
-            showDiff
-              ? formatCurrency(meta.lucro_realizado || 0)
-              : '-',
-            meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
-              ? formatPdfStatusValue(formatPlainPercentage(meta.meta_margem_percentual), margemDirection)
-              : '-',
-            showDiff
-              ? formatPlainPercentage(margem)
-              : '-',
-            compra?.valor_meta_compras != null ? formatCurrency(compra.valor_meta_compras) : '-',
-            compra?.valor_realizado_compras != null ? formatCurrency(compra.valor_realizado_compras) : '-',
-            compraSobreVenda != null ? formatPlainPercentage(compraSobreVenda) : '-',
-          ])
-
-          statusMatrix.push([
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            atingidoDirection,
-            null,
-            margemDirection,
-            null,
-            null,
-            null,
-            null,
-          ])
-        })
-      }
+      const { headers, rows, statusMatrix } = buildDailyExportData()
+      const body = rows.map((row, rowIndex) =>
+        row.map((cell, columnIndex) =>
+          formatPdfStatusValue(cell, statusMatrix[rowIndex]?.[columnIndex] ?? null)
+        )
+      )
 
       doc.setFontSize(16)
       doc.text(`Resumo de Metas por Dia: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`, 14, 16)
@@ -1592,7 +1602,7 @@ export default function MetaMensalPage() {
 
       autoTable(doc as never, {
         startY: 28,
-        head,
+        head: [headers],
         body,
         styles: {
           fontSize: 9,
@@ -1607,7 +1617,7 @@ export default function MetaMensalPage() {
         },
       })
 
-      doc.save(`metas-diarias-${mes.toString().padStart(2, '0')}-${ano}.pdf`)
+      doc.save(getDailyExportFilename('pdf'))
     } catch (error) {
       console.error('Error exporting daily PDF:', error)
       toast.error('Erro ao exportar PDF', {
@@ -1615,6 +1625,78 @@ export default function MetaMensalPage() {
       })
     } finally {
       setIsExportingDailyPdf(false)
+    }
+  }
+
+  const handleExportDailyXls = async () => {
+    if (filteredMetas.length === 0) return
+
+    try {
+      setIsExportingDailyXls(true)
+
+      const ExcelJS = await import('exceljs')
+      const { headers, rows } = buildDailyExportData()
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('Metas por Dia')
+
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      worksheet.addRow(headers)
+      worksheet.addRows(rows)
+
+      headers.forEach((header, index) => {
+        const column = worksheet.getColumn(index + 1)
+        column.width = Math.max(14, Math.min(24, header.length + 4))
+        column.alignment = { vertical: 'middle', wrapText: true }
+      })
+
+      const headerRow = worksheet.getRow(1)
+      headerRow.font = { bold: true, color: { argb: 'FF0F172A' } }
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' },
+      }
+      headerRow.alignment = { vertical: 'middle', wrapText: true }
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      downloadBlob(
+        new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+        getDailyExportFilename('xlsx')
+      )
+    } catch (error) {
+      console.error('Error exporting daily XLS:', error)
+      toast.error('Erro ao exportar XLS', {
+        description: 'Não foi possível gerar a planilha da tabela de metas diárias.'
+      })
+    } finally {
+      setIsExportingDailyXls(false)
+    }
+  }
+
+  const handleExportDailyCsv = () => {
+    if (filteredMetas.length === 0) return
+
+    try {
+      setIsExportingDailyCsv(true)
+
+      const { headers, rows } = buildDailyExportData()
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeCsvValue).join(';'))
+        .join('\r\n')
+
+      downloadBlob(
+        new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8' }),
+        getDailyExportFilename('csv')
+      )
+    } catch (error) {
+      console.error('Error exporting daily CSV:', error)
+      toast.error('Erro ao exportar CSV', {
+        description: 'Não foi possível gerar o CSV da tabela de metas diárias.'
+      })
+    } finally {
+      setIsExportingDailyCsv(false)
     }
   }
 
@@ -2335,16 +2417,32 @@ export default function MetaMensalPage() {
             <CardTitle>{`Resumo de Metas por Dia: ${selectedMonthYearLabel.charAt(0).toUpperCase()}${selectedMonthYearLabel.slice(1)}`}</CardTitle>
             <CardDescription>Acompanhamento detalhado por dia</CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportDailyPdf}
-            disabled={loading || isExportingDailyPdf || filteredMetas.length === 0}
-            className="gap-2"
-          >
-            <FileDown className="h-4 w-4" />
-            {isExportingDailyPdf ? 'Exportando...' : 'Exportar PDF'}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || isExportingDaily || filteredMetas.length === 0}
+                className="gap-2"
+              >
+                <FileDown className="h-4 w-4" />
+                {isExportingDaily ? 'Exportando...' : 'Exportar'}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onSelect={() => void handleExportDailyPdf()}>
+                <FileDown className="h-4 w-4" />
+                Exportar PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleExportDailyXls()}>
+                Exportar XLS
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleExportDailyCsv}>
+                Exportar CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </CardHeader>
         <CardContent>
           {loading ? (
