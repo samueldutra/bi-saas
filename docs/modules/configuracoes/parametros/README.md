@@ -56,7 +56,8 @@ O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext
 - Efeito:
   - quando `true`, o `Dashboard 360` usa RPCs novas baseadas em `vendas_filiais_snapshot`
   - quando `false`, o `Dashboard 360` continua usando as RPCs legadas baseadas em `vendas_diarias_por_filial`
-  - na fonte nova, Receita Bruta vem de `valor`, Custo vem de `custo_total_ajustado`, Lucro Bruto vem de `lucro_ajustado`, Margem Bruta vem de `margem_ajustada_percentual`, Ticket Médio é `valor / quantidade_clientes`, Cupons vêm de `quantidade_clientes` e SKU vem de `quantidade_unidades_vendidas`
+  - na fonte nova, Receita Bruta vem de `valor`, Custo vem de `custo_total_ajustado`, Lucro Bruto vem de `lucro_ajustado`, Margem Bruta vem de `margem_ajustada_percentual`, Ticket Médio é `valor / quantidade_clientes` e Cupons vêm de `quantidade_clientes`
+  - SKU não muda com este parâmetro: sempre usa a regra legada `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`
 
 ### 4. `margem_perda`
 

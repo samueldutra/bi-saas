@@ -172,7 +172,7 @@ Quando `enable_api_filial_vendas = true`, esses campos vêm de `vendas_filiais_s
 - `total_lucro`: `lucro_ajustado`
 - `margem_lucro`: `margem_ajustada_percentual`, ponderada por `valor` em agregações
 - `total_cupons`: `quantidade_clientes`
-- `total_sku`: `quantidade_unidades_vendidas`
+- `total_sku`: regra legada `COUNT(DISTINCT id_produto)` sobre `vendas`
 
 As respostas das APIs do Dashboard também podem trazer `sales_source`:
 

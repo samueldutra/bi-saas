@@ -15,7 +15,7 @@
 -- - Margem Bruta: vendas_filiais_snapshot.margem_ajustada_percentual
 -- - Ticket medio: valor / quantidade_clientes
 -- - Cupons: quantidade_clientes
--- - SKUs: quantidade_unidades_vendidas
+-- - SKUs: regra legada COUNT(DISTINCT id_produto) em vendas
 --
 -- ============================================================================
 -- INICIO BLOCO 01/08 - Card principal do Dashboard 360
@@ -944,7 +944,6 @@ BEGIN
         SUM(v.quantidade_unidades_vendidas) AS quantidade_total,
         SUM(v.quantidade_clientes)::numeric AS total_transacoes,
         SUM(v.quantidade_clientes)::bigint AS total_cupons,
-        SUM(v.quantidade_unidades_vendidas) AS total_sku,
         COALESCE(
           SUM(COALESCE(v.margem_ajustada_percentual, 0) * COALESCE(v.valor, 0))
             / NULLIF(SUM(CASE WHEN v.margem_ajustada_percentual IS NOT NULL THEN COALESCE(v.valor, 0) ELSE 0 END), 0),
@@ -969,6 +968,15 @@ BEGIN
         AND ($5::bigint[] IS NULL OR e.filial_id = ANY($5))
       GROUP BY e.filial_id
     ),
+    sku_periodo_atual AS (
+      SELECT
+        v.filial_id,
+        COUNT(DISTINCT v.id_produto)::bigint AS total_sku
+      FROM %I.vendas v
+      WHERE v.data_venda BETWEEN $1 AND $2
+        AND ($5::bigint[] IS NULL OR v.filial_id = ANY($5))
+      GROUP BY v.filial_id
+    ),
     periodo_anterior AS (
       SELECT
         v.filial_id,
@@ -977,7 +985,6 @@ BEGIN
         SUM(v.lucro_ajustado) AS pa_total_lucro,
         SUM(v.quantidade_clientes)::numeric AS pa_total_transacoes,
         SUM(v.quantidade_clientes)::bigint AS pa_total_cupons,
-        SUM(v.quantidade_unidades_vendidas) AS pa_total_sku,
         COALESCE(
           SUM(COALESCE(v.margem_ajustada_percentual, 0) * COALESCE(v.valor, 0))
             / NULLIF(SUM(CASE WHEN v.margem_ajustada_percentual IS NOT NULL THEN COALESCE(v.valor, 0) ELSE 0 END), 0),
@@ -1002,6 +1009,15 @@ BEGIN
         AND ($5::bigint[] IS NULL OR e.filial_id = ANY($5))
       GROUP BY e.filial_id
     ),
+    sku_periodo_anterior AS (
+      SELECT
+        v.filial_id,
+        COUNT(DISTINCT v.id_produto)::bigint AS pa_total_sku
+      FROM %I.vendas v
+      WHERE v.data_venda BETWEEN $3 AND $4
+        AND ($5::bigint[] IS NULL OR v.filial_id = ANY($5))
+      GROUP BY v.filial_id
+    ),
     todas_filiais AS (
       SELECT DISTINCT filial_id FROM periodo_atual
       UNION
@@ -1010,6 +1026,10 @@ BEGIN
       SELECT DISTINCT filial_id FROM entradas_periodo_atual
       UNION
       SELECT DISTINCT filial_id FROM entradas_periodo_anterior
+      UNION
+      SELECT DISTINCT filial_id FROM sku_periodo_atual
+      UNION
+      SELECT DISTINCT filial_id FROM sku_periodo_anterior
     )
     SELECT
       tf.filial_id AS filial_id,
@@ -1062,11 +1082,11 @@ BEGIN
         WHEN COALESCE(pa.pa_total_cupons, 0) > 0 THEN LEAST(((COALESCE(pc.total_cupons, 0) - COALESCE(pa.pa_total_cupons, 0))::numeric / pa.pa_total_cupons * 100), 99999999.99)::numeric(10,2)
         ELSE 0
       END AS delta_cupons_percent,
-      COALESCE(pc.total_sku, 0)::numeric(15,3) AS total_sku,
-      COALESCE(pa.pa_total_sku, 0)::numeric(15,3) AS pa_total_sku,
-      (COALESCE(pc.total_sku, 0) - COALESCE(pa.pa_total_sku, 0))::numeric(15,3) AS delta_sku,
+      COALESCE(spa.total_sku, 0)::numeric(15,3) AS total_sku,
+      COALESCE(span.pa_total_sku, 0)::numeric(15,3) AS pa_total_sku,
+      (COALESCE(spa.total_sku, 0) - COALESCE(span.pa_total_sku, 0))::numeric(15,3) AS delta_sku,
       CASE
-        WHEN COALESCE(pa.pa_total_sku, 0) > 0 THEN LEAST(((COALESCE(pc.total_sku, 0) - COALESCE(pa.pa_total_sku, 0))::numeric / pa.pa_total_sku * 100), 99999999.99)::numeric(10,2)
+        WHEN COALESCE(span.pa_total_sku, 0) > 0 THEN LEAST(((COALESCE(spa.total_sku, 0) - COALESCE(span.pa_total_sku, 0))::numeric / span.pa_total_sku * 100), 99999999.99)::numeric(10,2)
         ELSE 0
       END AS delta_sku_percent
     FROM todas_filiais tf
@@ -1074,12 +1094,14 @@ BEGIN
     LEFT JOIN periodo_anterior pa ON tf.filial_id = pa.filial_id
     LEFT JOIN entradas_periodo_atual epa ON tf.filial_id = epa.filial_id
     LEFT JOIN entradas_periodo_anterior epan ON tf.filial_id = epan.filial_id
+    LEFT JOIN sku_periodo_atual spa ON tf.filial_id = spa.filial_id
+    LEFT JOIN sku_periodo_anterior span ON tf.filial_id = span.filial_id
     WHERE COALESCE(pc.valor_total, 0) > 0
        OR COALESCE(epa.total_entradas, 0) > 0
        OR COALESCE(pc.total_cupons, 0) > 0
-       OR COALESCE(pc.total_sku, 0) > 0
+       OR COALESCE(spa.total_sku, 0) > 0
     ORDER BY COALESCE(pc.valor_total, 0) DESC NULLS LAST',
-    p_schema, p_schema, p_schema, p_schema
+    p_schema, p_schema, p_schema, p_schema, p_schema, p_schema
   )
   USING p_data_inicio, p_data_fim, v_pa_data_inicio, v_pa_data_fim, v_filiais_array;
 END;
@@ -1109,7 +1131,7 @@ COMMENT ON FUNCTION public.get_lucro_by_month_chart_api_filial_vendas(text, text
 'Dashboard 360 gráfico de lucro - Fonte /filial/vendas usando vendas_filiais_snapshot.lucro_ajustado.';
 
 COMMENT ON FUNCTION public.get_vendas_por_filial_api_filial_vendas(text, date, date, text, text) IS
-'Dashboard 360 vendas por filial - Fonte /filial/vendas usando valor, custo_total_ajustado, lucro_ajustado, margem_ajustada_percentual, quantidade_clientes e quantidade_unidades_vendidas.';
+'Dashboard 360 vendas por filial - Fonte /filial/vendas usando snapshot para valores e regra legada de SKU por COUNT(DISTINCT id_produto) em vendas.';
 
 -- ============================================================================
 -- FIM BLOCO 07/08
@@ -1144,7 +1166,7 @@ from public.get_dashboard_data_api_filial_vendas(
 -- ticket_medio ~= 49.34
 -- margem_lucro ~= 27.59
 -- total_cupons = 461
--- total_sku = 2752.463
+-- total_sku = regra legada COUNT(DISTINCT id_produto) em vendas
 
 select
   filial_id,

@@ -250,7 +250,7 @@ Referências:
 
 Com a fonte legada, o total de `SKU` na linha de totalização usa valores distintos vindos de APIs auxiliares.
 
-Com `enable_api_filial_vendas = true`, `SKU` deve vir de `vendas_filiais_snapshot.quantidade_unidades_vendidas`, incluindo a totalização retornada pela própria rota `/api/dashboard/vendas-por-filial`.
+Mesmo com `enable_api_filial_vendas = true`, `SKU` deve manter a regra legada: `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`, incluindo a totalização retornada pela rota `/api/dashboard/vendas-por-filial`.
 
 Referências:
 

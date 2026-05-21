@@ -9,7 +9,8 @@
 ### Alterações
 
 - atualizado o comportamento documentado de `enable_api_filial_vendas`
-- a fonte ativa do `Dashboard 360` passa a usar `valor`, `custo_total_ajustado`, `lucro_ajustado`, `margem_ajustada_percentual`, `quantidade_clientes` e `quantidade_unidades_vendidas` de `vendas_filiais_snapshot`
+- a fonte ativa do `Dashboard 360` passa a usar `valor`, `custo_total_ajustado`, `lucro_ajustado`, `margem_ajustada_percentual` e `quantidade_clientes` de `vendas_filiais_snapshot`
+- `SKU` permanece na regra legada, com `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`
 - as APIs do `Dashboard 360` passam a retornar `sales_source`, e o frontend usa tipo efetivo `pdv` quando a fonte é `/filial/vendas`
 
 ### Impacto

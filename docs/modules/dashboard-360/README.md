@@ -39,7 +39,7 @@ Quando o parâmetro `enable_api_filial_vendas` está ativo para o tenant, o mód
 - Margem Bruta vem de `vendas_filiais_snapshot.margem_ajustada_percentual`
 - Ticket Médio usa `valor / quantidade_clientes`
 - Cupons vêm de `quantidade_clientes`
-- SKU da listagem vem de `quantidade_unidades_vendidas`
+- SKU da listagem permanece na regra legada: `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`
 
 Quando o parâmetro está desativado, o módulo segue usando a origem legada baseada em `vendas_diarias_por_filial`.
 

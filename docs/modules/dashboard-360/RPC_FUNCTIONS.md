@@ -34,7 +34,7 @@ Mapeamento vigente da fonte `/filial/vendas`:
 - `lucro_ajustado` -> Lucro Bruto
 - `margem_ajustada_percentual` -> Margem Bruta
 - `quantidade_clientes` -> Cupons e denominador do Ticket Médio
-- `quantidade_unidades_vendidas` -> SKU/quantidade vendida na listagem
+- `vendas.id_produto` -> SKU da listagem pela regra legada `COUNT(DISTINCT id_produto)`
 
 ---
 
@@ -188,7 +188,8 @@ Mapeamento principal:
 - `custo_total_ajustado` -> custo PDV
 - `lucro_ajustado` -> lucro bruto PDV
 - `margem_ajustada_percentual` -> margem bruta PDV
-- `quantidade_unidades_vendidas` -> quantidade total e SKU da listagem
+- `quantidade_unidades_vendidas` -> quantidade total
+- `vendas.id_produto` -> SKU da listagem pela regra legada `COUNT(DISTINCT id_produto)`
 - `quantidade_clientes` -> cupons/transações PDV
 
 ### RPC auxiliar: `get_total_sku_distinct`
@@ -230,7 +231,7 @@ Responsabilidade:
 
 - total de SKU distinto do período comparativo da tabela
 
-Com `enable_api_filial_vendas = true`, a rota totaliza `total_sku` e `pa_total_sku` retornados pela RPC alternativa, pois a regra passa a ser `quantidade_unidades_vendidas`.
+Mesmo com `enable_api_filial_vendas = true`, a rota usa `get_total_sku_distinct` e `get_total_sku_distinct_pa`, pois SKU mantém a regra legada em `vendas`.
 
 ---
 

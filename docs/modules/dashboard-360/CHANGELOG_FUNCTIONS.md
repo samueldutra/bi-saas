@@ -17,7 +17,7 @@
 - `Lucro Bruto` passa a usar `vendas_filiais_snapshot.lucro_ajustado`
 - `Margem Bruta` passa a usar `vendas_filiais_snapshot.margem_ajustada_percentual`
 - `Cupons` passam a usar `vendas_filiais_snapshot.quantidade_clientes`
-- `SKU` da fonte `/filial/vendas` passa a usar `vendas_filiais_snapshot.quantidade_unidades_vendidas`
+- `SKU` permanece com a regra legada, usando `COUNT(DISTINCT id_produto)` sobre `vendas`, mesmo quando a fonte `/filial/vendas` está ativa
 - APIs do Dashboard passam a retornar `sales_source`
 - frontend passa a renderizar a fonte `/filial/vendas` com tipo efetivo `pdv`
 

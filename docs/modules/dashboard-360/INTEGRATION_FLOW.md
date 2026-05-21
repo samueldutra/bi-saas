@@ -125,7 +125,7 @@ Quando a fonte paralela está ativa, os campos PDV exibidos nos indicadores e na
 - margem bruta: `margem_ajustada_percentual`
 - ticket médio: `valor / quantidade_clientes`
 - cupons: `quantidade_clientes`
-- SKU: `quantidade_unidades_vendidas`
+- SKU: regra legada `COUNT(DISTINCT id_produto)` sobre `vendas`
 
 ---
 
@@ -182,7 +182,7 @@ Referência:
 DashboardPage
   -> /api/dashboard/vendas-por-filial
   -> RPC get_vendas_por_filial
-  -> se fonte legada: RPC get_total_sku_distinct + RPC get_total_sku_distinct_pa
+  -> em qualquer fonte: RPC get_total_sku_distinct + RPC get_total_sku_distinct_pa
   -> se fonte /filial/vendas: totalização de total_sku/pa_total_sku retornados pela RPC alternativa
 ```
 

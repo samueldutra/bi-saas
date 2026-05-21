@@ -63,7 +63,7 @@ Na mesma fonte, os indicadores e a listagem do Dashboard 360 devem usar:
 - Lucro Bruto: `vendas_filiais_snapshot.lucro_ajustado`
 - Margem Bruta: `vendas_filiais_snapshot.margem_ajustada_percentual`
 - Cupons: `vendas_filiais_snapshot.quantidade_clientes`
-- SKU: `vendas_filiais_snapshot.quantidade_unidades_vendidas`
+- SKU: regra legada `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`, mesmo com o parâmetro ativo
 
 ## RN-PARAM-010: Reload após alteração
 
