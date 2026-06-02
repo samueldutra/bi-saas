@@ -60,8 +60,8 @@ Na mesma fonte, os indicadores e a listagem do Dashboard 360 devem usar:
 
 - Receita Bruta: `vendas_filiais_snapshot.valor`
 - Custo: `vendas_filiais_snapshot.custo_total_ajustado`
-- Lucro Bruto: `vendas_filiais_snapshot.lucro_ajustado`
-- Margem Bruta: `vendas_filiais_snapshot.margem_ajustada_percentual`
+- Lucro Líquido: `vendas_filiais_snapshot.lucro_ajustado`
+- Margem Realizada: `vendas_filiais_snapshot.margem_ajustada_percentual`
 - Cupons: `vendas_filiais_snapshot.quantidade_clientes`
 - SKU: regra legada `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`, mesmo com o parâmetro ativo
 
@@ -83,6 +83,19 @@ Na fonte nova:
 Quando `enable_api_filial_vendas = false`, `Metas Mensais` permanece nas RPCs legadas.
 
 O parâmetro numérico `margem_perda` não altera navegação nem visibilidade de tela; por isso, sua gravação exibe confirmação sem recarregar a página.
+
+## RN-PARAM-014: Origem de realizados em Metas por Setor
+
+Quando `enable_api_filial_vendas = true`, as APIs de `Metas por Setor` devem selecionar RPCs paralelas baseadas em `{schema}.vendas_setores_snapshot`.
+
+Na fonte nova:
+
+- `valor_realizado` vem de `vendas_setores_snapshot.valor`
+- `custo_realizado` vem de `vendas_setores_snapshot.custo_total_ajustado`
+- `lucro_realizado` representa Lucro Líquido e vem de `vendas_setores_snapshot.lucro_ajustado`
+- `margem_realizada` vem de `vendas_setores_snapshot.margem_ajustada_percentual`
+
+Quando `enable_api_filial_vendas = false`, `Metas por Setor` permanece nas RPCs legadas.
 
 ## RN-PARAM-011: Fonte oficial de documentação
 

@@ -49,6 +49,7 @@ Constraint relevante:
   - `tenant-parameters-server`
   - APIs do `Dashboard 360`
   - APIs de `Metas Mensais`
+  - APIs de `Metas por Setor`
 
 ### `margem_perda`
 

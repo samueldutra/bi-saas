@@ -4,6 +4,22 @@
 
 ### Versão documental
 
+- `1.6.0`
+
+### Alterações
+
+- documentado que `enable_api_filial_vendas` também passa a controlar a fonte de realizados do módulo `Metas por Setor`
+- registrado que, em `Metas por Setor`, a fonte nova usa `vendas_setores_snapshot` derivada de `vendas_filiais_snapshot`
+- mantido o comportamento legado para tenants com o parâmetro inativo
+
+### Impacto
+
+- médio
+
+## 2026-06-01
+
+### Versão documental
+
 - `1.5.0`
 
 ### Alterações

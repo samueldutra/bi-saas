@@ -66,7 +66,8 @@ interface MetaSetor {
     valor_meta: number
     valor_realizado: number
     custo_realizado: number        // NOVO - Custo total realizado
-    lucro_realizado: number        // NOVO - Lucro bruto realizado
+    lucro_realizado: number        // Lucro liquido realizado no modelo da snapshot
+    margem_realizada?: number | null
     diferenca: number
     diferenca_percentual: number
     percentual_atingido?: number   // Retornado pela RPC
@@ -417,10 +418,16 @@ export default function MetaSetorPage() {
     purchasesAbortControllerRef.current?.abort()
     purchasesAbortControllerRef.current = null
     try {
+      const filialIds = filiaisSelecionadas
+        .map(f => f.value)
+        .join(',')
+      const filialIdsNumber = filiaisSelecionadas
+        .map(f => parseInt(f.value, 10))
+        .filter((id) => Number.isFinite(id))
 
       // Atualizar valores realizados APENAS se não estiver já atualizando
       // e se for um novo período (evita loop infinito)
-      const updateKey = `${tenantSchema}-${mes}-${ano}`
+      const updateKey = `${tenantSchema}-${selectedSetor}-${mes}-${ano}-${filialIds}`
       const shouldUpdate = !isUpdatingRef.current && lastUpdateKey.current !== updateKey
 
       if (shouldUpdate) {
@@ -434,7 +441,9 @@ export default function MetaSetorPage() {
             body: JSON.stringify({
               schema: tenantSchema,
               mes: mes,
-              ano: ano
+              ano: ano,
+              setor_id: parseInt(selectedSetor, 10),
+              filial_ids: filialIdsNumber
             }),
           })
 
@@ -457,10 +466,6 @@ export default function MetaSetorPage() {
       })
 
       // Buscar apenas as filiais selecionadas
-      const filialIds = filiaisSelecionadas
-        .map(f => f.value)
-        .join(',')
-
       params.append('filial_id', filialIds)
 
       const [response, summaryResponse] = await Promise.all([
@@ -615,7 +620,13 @@ export default function MetaSetorPage() {
     setIsUpdatingValues(true)
     try {
       // Limpar cache para forçar nova atualização
-      const updateKey = `${currentTenant.supabase_schema}-${mes}-${ano}`
+      const filialIds = filiaisSelecionadas
+        .map(f => f.value)
+        .join(',')
+      const filialIdsNumber = filiaisSelecionadas
+        .map(f => parseInt(f.value, 10))
+        .filter((id) => Number.isFinite(id))
+      const updateKey = `${currentTenant.supabase_schema}-${selectedSetor}-${mes}-${ano}-${filialIds}`
       lastUpdateKey.current = '' // Limpa o cache
 
       console.log('[METAS_SETOR] 🔄 Forçando atualização manual de valores...')
@@ -626,7 +637,9 @@ export default function MetaSetorPage() {
         body: JSON.stringify({
           schema: currentTenant.supabase_schema,
           mes: mes,
-          ano: ano
+          ano: ano,
+          setor_id: selectedSetor ? parseInt(selectedSetor, 10) : null,
+          filial_ids: filialIdsNumber
         }),
       })
 
@@ -1100,9 +1113,9 @@ export default function MetaSetorPage() {
       'Valor Meta',
       'Valor Realizado',
       '% Atingido',
-      'Lucro Bruto',
+      'Lucro Líquido',
       'Meta Margem',
-      'Margem Bruta',
+      'Margem Realizada',
       'Meta Compras',
       'Realizado Compras',
       '% Compra/Venda',
@@ -1151,9 +1164,7 @@ export default function MetaSetorPage() {
         ? (totals.valor_realizado / totals.valor_meta) * 100
         : 0
       const showDiff = shouldShowDifference(meta.data, totals.valor_realizado)
-      const margem = totals.valor_realizado > 0
-        ? (totals.lucro_realizado / totals.valor_realizado) * 100
-        : 0
+      const margem = getMargemRealizada(totals.valor_realizado, totals.lucro_realizado)
       const atingidoDirection = getStatusDirection(percentualAtingido >= 100, showDiff)
       const compraSobreVendaPercent = getCompraSobreVendaPercent(
         totals.has_realizado_compras ? totals.valor_realizado_compras : null,
@@ -1199,9 +1210,11 @@ export default function MetaSetorPage() {
           ? (filial.valor_realizado / filial.valor_meta) * 100
           : 0
         const showFilialDiff = shouldShowDifference(meta.data, filial.valor_realizado)
-        const margemFilial = filial.valor_realizado > 0
-          ? ((filial.lucro_realizado || 0) / filial.valor_realizado) * 100
-          : 0
+        const margemFilial = getMargemRealizada(
+          filial.valor_realizado,
+          filial.lucro_realizado || 0,
+          filial.margem_realizada
+        )
         const atingidoFilialDirection = getStatusDirection(percentualAtingidoFilial >= 100, showFilialDiff)
         const compraSobreVendaFilial = getCompraSobreVendaPercent(
           compras?.valor_realizado_compras,
@@ -1414,7 +1427,12 @@ export default function MetaSetorPage() {
     return `${value.toFixed(2)}%`
   }
 
-  const getMargemRealizada = (valorRealizado: number, lucroRealizado: number) => {
+  const getMargemRealizada = (
+    valorRealizado: number,
+    lucroRealizado: number,
+    margemRealizada?: number | null
+  ) => {
+    if (margemRealizada != null && Number.isFinite(margemRealizada)) return margemRealizada
     if (valorRealizado <= 0) return 0
     return (lucroRealizado / valorRealizado) * 100
   }
@@ -1469,7 +1487,7 @@ export default function MetaSetorPage() {
     valorMeta: visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta, 0),
     valorRealizado: visibleSummaryRows.reduce((sum, row) => sum + row.valor_realizado, 0),
     valorMetaAcumuladaD1: visibleSummaryRows.reduce((sum, row) => sum + row.valor_meta_acumulada_d1, 0),
-    lucroBruto: visibleSummaryRows.reduce((sum, row) => sum + row.lucro_bruto, 0),
+    lucroLiquido: visibleSummaryRows.reduce((sum, row) => sum + row.lucro_bruto, 0),
     valorMetaCompras: summaryMetaComprasValues.reduce((sum, value) => sum + value, 0),
     valorRealizadoCompras: summaryRealizadoComprasValues.reduce((sum, value) => sum + value, 0),
     hasMetaCompras: summaryMetaComprasValues.length > 0,
@@ -1481,8 +1499,8 @@ export default function MetaSetorPage() {
   const summaryPercentualAtingidoAcumuladoD1 = summaryTotals.valorMetaAcumuladaD1 > 0
     ? (summaryTotals.valorRealizado / summaryTotals.valorMetaAcumuladaD1) * 100
     : 0
-  const summaryMargemBruta = summaryTotals.valorRealizado > 0
-    ? (summaryTotals.lucroBruto / summaryTotals.valorRealizado) * 100
+  const summaryMargemRealizada = summaryTotals.valorRealizado > 0
+    ? (summaryTotals.lucroLiquido / summaryTotals.valorRealizado) * 100
     : 0
   const summaryMediaMetaMargem = visibleSummaryRows.filter((row) => row.meta_margem_percentual != null).length > 0
     ? visibleSummaryRows.reduce((sum, row) => sum + (row.meta_margem_percentual || 0), 0)
@@ -1565,9 +1583,9 @@ export default function MetaSetorPage() {
       'Valor Realizado Mês',
       '% Atingido Mês',
       ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
-      'Lucro Bruto',
+      'Lucro Líquido',
       'Meta Margem',
-      'Margem Bruta',
+      'Margem Realizada',
       'Meta Compras',
       'Realizado Compras',
       '% Compra/Venda',
@@ -1640,9 +1658,9 @@ export default function MetaSetorPage() {
             `${summaryPercentualAtingidoAcumuladoD1.toFixed(2)}%`,
           ]
         : []),
-      formatCurrency(summaryTotals.lucroBruto),
+      formatCurrency(summaryTotals.lucroLiquido),
       renderMetaMargemStatus(summaryMediaMetaMargem),
-      `${summaryMargemBruta.toFixed(2)}%`,
+      `${summaryMargemRealizada.toFixed(2)}%`,
       summaryTotals.hasMetaCompras ? formatCurrency(summaryTotals.valorMetaCompras) : '-',
       summaryTotals.hasRealizadoCompras ? formatCurrency(summaryTotals.valorRealizadoCompras) : '-',
       summaryCompraSobreVendaPercent != null ? `${summaryCompraSobreVendaPercent.toFixed(2)}%` : '-',
@@ -2575,14 +2593,14 @@ export default function MetaSetorPage() {
           <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
             <CardHeader className="space-y-0.5 p-4 pb-3">
               <div className="flex items-start justify-between gap-3">
-                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Lucro Bruto</CardDescription>
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Lucro Líquido</CardDescription>
                 <CardInfoTooltip
-                  title="Lucro consolidado do período"
-                  description="Soma do lucro bruto realizado do setor"
+                  title="Lucro líquido consolidado"
+                  description="Soma do lucro líquido realizado do setor"
                 />
               </div>
               <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
-                {formatCurrency(summaryTotals.lucroBruto)}
+                {formatCurrency(summaryTotals.lucroLiquido)}
               </CardTitle>
             </CardHeader>
           </Card>
@@ -2590,14 +2608,14 @@ export default function MetaSetorPage() {
           <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
             <CardHeader className="space-y-0.5 p-4 pb-3">
               <div className="flex items-start justify-between gap-3">
-                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Margem Bruta</CardDescription>
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Margem Realizada</CardDescription>
                 <CardInfoTooltip
-                  title="Margem consolidada"
-                  description="Lucro bruto sobre o realizado do setor"
+                  title="Margem realizada consolidada"
+                  description="Lucro líquido sobre o realizado do setor"
                 />
               </div>
               <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
-                {formatPlainPercentage(summaryMargemBruta)}
+                {formatPlainPercentage(summaryMargemRealizada)}
               </CardTitle>
             </CardHeader>
           </Card>
@@ -2687,7 +2705,7 @@ export default function MetaSetorPage() {
                     <TableHead className="whitespace-normal leading-tight">
                       Lucro
                       <br />
-                      Bruto
+                      Líquido
                     </TableHead>
                     <TableHead className="whitespace-normal leading-tight">
                       Meta
@@ -2822,7 +2840,7 @@ export default function MetaSetorPage() {
                         </TableCell>
                       </>
                     ) : null}
-                    <TableCell>{formatCurrency(summaryTotals.lucroBruto)}</TableCell>
+                    <TableCell>{formatCurrency(summaryTotals.lucroLiquido)}</TableCell>
                     <TableCell>
                       {renderMetaMargemStatus(
                         visibleSummaryRows.filter((row) => row.meta_margem_percentual != null).length > 0
@@ -2834,16 +2852,16 @@ export default function MetaSetorPage() {
                     <TableCell>
                       {visibleSummaryRows.filter((row) => row.meta_margem_percentual != null).length > 0 ? (
                         <span className="inline-flex items-center gap-2">
-                          {summaryMargemBruta >= (visibleSummaryRows.reduce((sum, row) => sum + (row.meta_margem_percentual || 0), 0)
+                          {summaryMargemRealizada >= (visibleSummaryRows.reduce((sum, row) => sum + (row.meta_margem_percentual || 0), 0)
                             / visibleSummaryRows.filter((row) => row.meta_margem_percentual != null).length) ? (
                             <CircleArrowUp className="h-4 w-4 text-green-600" />
                           ) : (
                             <CircleArrowDown className="h-4 w-4 text-red-600" />
                           )}
-                          {`${summaryMargemBruta.toFixed(2)}%`}
+                          {`${summaryMargemRealizada.toFixed(2)}%`}
                         </span>
                       ) : (
-                        `${summaryMargemBruta.toFixed(2)}%`
+                        `${summaryMargemRealizada.toFixed(2)}%`
                       )}
                     </TableCell>
                     <TableCell>{renderLoadingCurrency(summaryTotals.hasMetaCompras ? summaryTotals.valorMetaCompras : null, true)}</TableCell>
@@ -2992,7 +3010,7 @@ export default function MetaSetorPage() {
                   <TableHead className="whitespace-normal leading-tight">
                     Lucro
                     <br />
-                    Bruto
+                    Líquido
                   </TableHead>
                   <TableHead className="whitespace-normal leading-tight">
                     Meta
@@ -3284,7 +3302,11 @@ export default function MetaSetorPage() {
                               <TableCell className="text-sm">
                                 {showFilialDiff ? (
                                   (() => {
-                                    const margem = getMargemRealizada(filial.valor_realizado, filial.lucro_realizado || 0)
+                                    const margem = getMargemRealizada(
+                                      filial.valor_realizado,
+                                      filial.lucro_realizado || 0,
+                                      filial.margem_realizada
+                                    )
                                     return filial.meta_margem_percentual != null && filial.meta_margem_percentual > 0 ? (
                                       <span className="inline-flex items-center gap-2">
                                         {margem >= filial.meta_margem_percentual ? (

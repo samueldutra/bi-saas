@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
+import { isApiFilialVendasEnabled } from '@/lib/tenant-parameters-server'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -87,15 +88,23 @@ export async function GET(request: NextRequest) {
 
     const { createDirectClient } = await import('@/lib/supabase/admin')
     const directSupabase = createDirectClient()
+    const useApiFilialVendas = await isApiFilialVendasEnabled(schema)
+    const rpcName = useApiFilialVendas
+      ? 'get_metas_setor_summary_by_filial_api_filial_vendas'
+      : 'get_metas_setor_summary_by_filial'
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (directSupabase as any).rpc('get_metas_setor_summary_by_filial', params)
+    const { data, error } = await (directSupabase as any).rpc(rpcName, params)
 
     if (error) {
-      console.error('[API/METAS/SETOR/SUMMARY] RPC Error:', error)
+      console.error('[API/METAS/SETOR/SUMMARY] RPC Error:', { rpcName, error })
 
       if (error.message && error.message.includes('does not exist')) {
-        return NextResponse.json({ resumo: [] })
+        return NextResponse.json({
+          resumo: [],
+          sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy',
+          profit_source: useApiFilialVendas ? 'vendas_setores_snapshot' : 'metas_setor'
+        })
       }
 
       return NextResponse.json(
@@ -104,7 +113,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    return NextResponse.json(data || { resumo: [] })
+    return NextResponse.json(data || {
+      resumo: [],
+      sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy',
+      profit_source: useApiFilialVendas ? 'vendas_setores_snapshot' : 'metas_setor'
+    })
   } catch (error) {
     console.error('[API/METAS/SETOR/SUMMARY] Unexpected error:', error)
     return NextResponse.json(

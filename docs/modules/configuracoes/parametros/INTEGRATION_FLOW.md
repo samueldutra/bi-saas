@@ -61,12 +61,12 @@ API de metas recebe schema
 ## 6. Fluxo de consumo server-side de `enable_api_filial_vendas`
 
 ```text
-API do Dashboard 360 ou Metas Mensais recebe schema
+API do Dashboard 360, Metas Mensais ou Metas por Setor recebe schema
   -> isApiFilialVendasEnabled(schema)
   -> tenants: resolve tenant.id por supabase_schema
   -> tenant_parameters: busca enable_api_filial_vendas
   -> API escolhe RPC nova ou legada do modulo consumidor
-  -> quando ativa: usa base vendas_filiais_snapshot
+  -> quando ativa: usa vendas_filiais_snapshot ou snapshot derivada do modulo consumidor
 ```
 
 ## 7. Fluxo de consumo server-side de `margem_perda`
@@ -94,5 +94,5 @@ Consumidor de cálculo de margem recebe schema
 - não existe cache centralizado de parâmetros por tenant
 - a proteção de `Descontos de Vendas` está no cliente, não no middleware
 - a tela de parâmetros não reutiliza diretamente `use-tenant-parameters`
-- `enable_api_filial_vendas` é consumido server-side pelas APIs do `Dashboard 360` e de `Metas Mensais`
+- `enable_api_filial_vendas` é consumido server-side pelas APIs do `Dashboard 360`, de `Metas Mensais` e de `Metas por Setor`
 - `margem_perda` ainda não está aplicado em uma rotina específica de cálculo de margem de lucro

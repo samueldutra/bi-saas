@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
+import { isApiFilialVendasEnabled } from '@/lib/tenant-parameters-server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -111,6 +112,39 @@ export async function GET(request: NextRequest) {
     // USAR CLIENT DIRETO SEM CACHE (igual ao módulo metas mensais)
     const { createDirectClient } = await import('@/lib/supabase/admin')
     const directSupabase = createDirectClient()
+    const useApiFilialVendas = await isApiFilialVendasEnabled(schema)
+
+    if (useApiFilialVendas) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const apiFilialVendasResult = await (directSupabase as any).rpc(
+        'get_metas_setor_report_api_filial_vendas',
+        rpcParams
+      )
+
+      if (apiFilialVendasResult.error) {
+        console.error('[API/METAS/SETOR/REPORT] API filial/vendas RPC error:', apiFilialVendasResult.error)
+
+        if (apiFilialVendasResult.error.message?.includes('does not exist')) {
+          return NextResponse.json([])
+        }
+
+        return NextResponse.json(
+          { error: 'Erro ao buscar metas por setor pela snapshot de vendas' },
+          { status: 500 }
+        )
+      }
+
+      const resultData = Array.isArray(apiFilialVendasResult.data)
+        ? apiFilialVendasResult.data
+        : (apiFilialVendasResult.data || [])
+      const dataLength = Array.isArray(resultData) ? resultData.length : 0
+      const totalFilials = Array.isArray(resultData)
+        ? resultData.reduce((sum: number, d: { filiais?: unknown[] }) => sum + (d.filiais?.length || 0), 0)
+        : 0
+
+      console.log('[API/METAS/SETOR/REPORT] API filial/vendas success, dates:', dataLength, 'total filials:', totalFilials)
+      return NextResponse.json(resultData)
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const optimizedResult = await (directSupabase as any).rpc('get_metas_setor_report_optimized', rpcParams)

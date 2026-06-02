@@ -88,6 +88,27 @@ Hub administrativo do sistema, com submódulos para perfil, usuários, setores, 
 
 ---
 
+### 4. Metas por Setor
+**Status**: ✅ Completo
+**Versão**: 1.1.0
+**Última atualização**: 2026-06-01
+
+Acompanhamento de metas mensais por setor, filial e dia, com suporte ao modelo de realizados da API `/filial/vendas` por snapshot setorizada.
+
+**Documentação**:
+- [Visão Geral](./metas-setor/README.md)
+- [Regras de Negócio](./metas-setor/BUSINESS_RULES.md)
+- [Estruturas de Dados](./metas-setor/DATA_STRUCTURES.md)
+- [Funções RPC](./metas-setor/RPC_FUNCTIONS.md)
+- [Changelog](./metas-setor/CHANGELOG.md)
+
+**Características principais**:
+- setores definidos por hierarquia de departamentos
+- fonte legada preservada para tenants sem `enable_api_filial_vendas`
+- Lucro Líquido e Margem Realizada vindos de `vendas_setores_snapshot` no modelo novo
+
+---
+
 ## Como Usar Esta Documentação
 
 ### Para Desenvolvedores
@@ -105,6 +126,7 @@ Hub administrativo do sistema, com submódulos para perfil, usuários, setores, 
 **Regra permanente**:
 - qualquer alteração no módulo `Dashboard 360` deve atualizar a documentação oficial em [`docs/modules/dashboard-360/`](./dashboard-360/README.md)
 - qualquer alteração no submódulo `Configurações > Parâmetros` deve atualizar a documentação oficial em [`docs/modules/configuracoes/parametros/`](./configuracoes/parametros/README.md)
+- qualquer alteração no módulo `Metas por Setor` deve atualizar a documentação oficial em [`docs/modules/metas-setor/`](./metas-setor/README.md)
 
 3. **Ao trabalhar com banco de dados**:
    - Consulte [Funções RPC](./dre-gerencial/RPC_FUNCTIONS.md)

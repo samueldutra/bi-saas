@@ -12,6 +12,7 @@ O submódulo `Configurações > Parâmetros` centraliza parâmetros por tenant n
 - seleção das RPCs de metas com ou sem faturamento
 - seleção da origem PDV do `Dashboard 360` entre a base legada e o snapshot da API `/filial/vendas`
 - seleção da fonte de realizados do `Metas Mensais` entre o legado e `vendas_filiais_snapshot`
+- seleção da fonte de realizados do `Metas por Setor` entre o legado e `vendas_setores_snapshot`
 - margem de perda default para cálculos de margem de lucro
 
 O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext`.
@@ -30,6 +31,7 @@ O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext
 - `src/app/(dashboard)/descontos-venda/page.tsx`
 - `src/lib/tenant-parameters-server.ts`
 - APIs de metas em `src/app/api/metas/**`
+- APIs de Metas por Setor em `src/app/api/metas/setor/**`
 - APIs do `Dashboard 360` em `src/app/api/dashboard/**` e `src/app/api/charts/sales-by-month/route.ts`
 
 ## Parâmetros Disponíveis
@@ -57,8 +59,9 @@ O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext
 - Efeito:
   - quando `true`, o `Dashboard 360` usa RPCs novas baseadas em `vendas_filiais_snapshot`
   - quando `true`, o `Metas Mensais` usa RPCs novas para realizados, lucro líquido e margem realizada baseadas em `vendas_filiais_snapshot`
+  - quando `true`, o `Metas por Setor` usa RPCs novas para realizados, lucro líquido e margem realizada baseadas em `vendas_setores_snapshot`
   - quando `false`, o `Dashboard 360` continua usando as RPCs legadas baseadas em `vendas_diarias_por_filial`
-  - na fonte nova, Receita Bruta vem de `valor`, Custo vem de `custo_total_ajustado`, Lucro Bruto vem de `lucro_ajustado`, Margem Bruta vem de `margem_ajustada_percentual`, Ticket Médio é `valor / quantidade_clientes` e Cupons vêm de `quantidade_clientes`
+  - na fonte nova, Receita Bruta vem de `valor`, Custo vem de `custo_total_ajustado`, Lucro Líquido vem de `lucro_ajustado`, Margem Realizada vem de `margem_ajustada_percentual`, Ticket Médio é `valor / quantidade_clientes` e Cupons vêm de `quantidade_clientes`
   - SKU não muda com este parâmetro: sempre usa a regra legada `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`
 
 ### 4. `margem_perda`
@@ -100,6 +103,8 @@ O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext
 - `src/app/api/metas/generate/route.ts`
 - `src/app/api/metas/update/route.ts`
 - `src/app/api/metas/setor/generate/route.ts`
+- `src/app/api/metas/setor/report/route.ts`
+- `src/app/api/metas/setor/summary/route.ts`
 - `src/app/api/metas/setor/update-valores/route.ts`
 - helper `getMargemPerdaDefault(schema)` para consumidores server-side de margem de lucro
 
