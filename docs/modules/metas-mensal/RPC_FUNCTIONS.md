@@ -23,6 +23,8 @@ O módulo de Metas Mensais utiliza **4 funções RPC** para encapsular lógica d
 |--------|------|-----------|
 | `generate_metas_mensais` | INSERT | Gera metas para todos os dias de um mês |
 | `get_metas_mensais_report` | SELECT | Busca metas com valores realizados |
+| `get_metas_mensais_report_api_filial_vendas` | SELECT | Busca metas com realizados em `vendas_filiais_snapshot` |
+| `get_metas_mensais_summary_by_filial_api_filial_vendas` | SELECT | Resume metas por filial com lucro/margem ajustados |
 | `update_meta_mensal` | UPDATE | Atualiza meta individual (edição inline) |
 | `atualizar_valores_realizados_metas` | UPDATE | Atualiza valores realizados em lote |
 
@@ -31,6 +33,21 @@ O módulo de Metas Mensais utiliza **4 funções RPC** para encapsular lógica d
 - Retornam `JSONB` para facilitar integração com JavaScript
 - Executam dentro de transações automáticas do PostgreSQL
 - Tratam NULL e edge cases
+
+### Fonte alternativa `api_filial_vendas`
+
+As funções com sufixo `_api_filial_vendas` são paralelas às legadas e só devem ser chamadas pelas APIs quando `enable_api_filial_vendas = true` para o schema corrente.
+
+Elas mantêm o contrato JSON usado pela tela, mas substituem os realizados por:
+
+| Campo no retorno | Origem |
+|------------------|--------|
+| `valor_realizado` | `{schema}.vendas_filiais_snapshot.valor` |
+| `custo_realizado` | `{schema}.vendas_filiais_snapshot.custo_total_ajustado` |
+| `lucro_realizado` | `{schema}.vendas_filiais_snapshot.lucro_ajustado` |
+| `margem_realizada` / `margem_bruta` | `{schema}.vendas_filiais_snapshot.margem_ajustada_percentual` |
+
+`get_metas_mensais_report_api_filial_vendas` e `get_metas_mensais_summary_by_filial_api_filial_vendas` retornam também `sales_source = api_filial_vendas` e `profit_source = vendas_filiais_snapshot`.
 
 ---
 

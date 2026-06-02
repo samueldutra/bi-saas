@@ -38,10 +38,12 @@ interface Meta {
   valor_realizado: number
   custo_realizado: number
   lucro_realizado: number
-  margem_realizada?: number
+  margem_realizada?: number | null
   diferenca: number
   diferenca_percentual: number
 }
+
+type MetasSalesSource = 'legacy' | 'api_filial_vendas'
 
 interface MetasReport {
   metas: Meta[]
@@ -51,6 +53,8 @@ interface MetasReport {
   total_lucro: number
   percentual_atingido: number
   margem_bruta: number
+  sales_source?: MetasSalesSource
+  profit_source?: string
 }
 
 interface MetaSummaryRow {
@@ -683,7 +687,15 @@ export default function MetaMensalPage() {
     return true
   }
 
-  const getMargemRealizada = (valorRealizado: number, lucroRealizado: number) => {
+  const getMargemRealizada = (
+    valorRealizado: number,
+    lucroRealizado: number,
+    margemRealizada?: number | null
+  ) => {
+    if (margemRealizada != null && Number.isFinite(margemRealizada)) {
+      return margemRealizada
+    }
+
     if (valorRealizado <= 0) return 0
     return (lucroRealizado / valorRealizado) * 100
   }
@@ -1087,9 +1099,9 @@ export default function MetaMensalPage() {
       'Valor Realizado Mês',
       '% Atingido Mês',
       ...(isCurrentSelectedMonth ? ['Valor Meta Acumulada', '% Atingido Acumulado'] : []),
-      'Lucro Bruto',
+      'Lucro Líquido',
       'Meta Margem',
-      'Margem Bruta',
+      'Margem Realizada',
       'Meta Compras',
       'Realizado Compras',
       '% Comp./Venda',
@@ -1411,9 +1423,9 @@ export default function MetaMensalPage() {
             'Valor Meta',
             'Valor Realizado',
             '% Atingido',
-            'Lucro Bruto',
+            'Lucro Líquido',
             'Meta Margem',
-            'Margem Bruta',
+            'Margem Realizada',
             'Meta Compras',
             'Realizado Compras',
             '% Comp./Venda',
@@ -1427,9 +1439,9 @@ export default function MetaMensalPage() {
             'Valor Meta',
             'Valor Realizado',
             '% Atingido',
-            'Lucro Bruto',
+            'Lucro Líquido',
             'Meta Margem',
-            'Margem Bruta',
+            'Margem Realizada',
             'Meta Compras',
             'Realizado Compras',
             '% Comp./Venda',
@@ -1513,7 +1525,7 @@ export default function MetaMensalPage() {
         const percentualAtingidoMeta = meta.valor_meta > 0
           ? (meta.valor_realizado / meta.valor_meta) * 100
           : 0
-        const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
+        const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0, meta.margem_realizada)
         const showDiff = shouldShowDifference(meta)
         const atingidoDirection = getStatusDirection(percentualAtingidoMeta >= 100, showDiff)
         const margemDirection = meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0
@@ -2127,10 +2139,10 @@ export default function MetaMensalPage() {
           <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
             <CardHeader className="space-y-0.5 p-4 pb-3">
               <div className="flex items-start justify-between gap-3">
-                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Lucro Bruto</CardDescription>
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Lucro Líquido</CardDescription>
                 <CardInfoTooltip
                   title="Lucro consolidado do período"
-                  description="Soma do lucro bruto realizado"
+                  description="Soma do lucro líquido realizado"
                 />
               </div>
               <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
@@ -2142,10 +2154,10 @@ export default function MetaMensalPage() {
           <Card className="@container/card min-w-0 bg-white shadow-xs dark:bg-card">
             <CardHeader className="space-y-0.5 p-4 pb-3">
               <div className="flex items-start justify-between gap-3">
-                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Margem Bruta</CardDescription>
+                <CardDescription className="text-[clamp(12px,1.1vw,14px)] font-semibold leading-none tracking-tight text-foreground">Margem Realizada</CardDescription>
                 <CardInfoTooltip
                   title="Margem consolidada"
-                  description="Lucro bruto sobre o realizado"
+                  description="Lucro líquido sobre o realizado"
                 />
               </div>
               <CardTitle className="min-w-0 break-words text-[clamp(20px,1.5vw,26px)] font-semibold leading-tight tabular-nums">
@@ -2771,7 +2783,7 @@ export default function MetaMensalPage() {
                               <TableCell className="text-sm">
                                 {showMetaDifference ? (
                                   (() => {
-                                    const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
+                                    const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0, meta.margem_realizada)
                                     return meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0 ? (
                                       <span className="inline-flex items-center gap-2">
                                         {margem >= meta.meta_margem_percentual ? (
@@ -2984,7 +2996,7 @@ export default function MetaMensalPage() {
                           <TableCell>
                             {showDiff ? (
                               (() => {
-                                const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0)
+                                const margem = getMargemRealizada(meta.valor_realizado, meta.lucro_realizado || 0, meta.margem_realizada)
                                 return meta.meta_margem_percentual != null && meta.meta_margem_percentual > 0 ? (
                                   <span className="inline-flex items-center gap-2">
                                     {margem >= meta.meta_margem_percentual ? (

@@ -37,6 +37,9 @@ interface Meta {
   // Valores calculados
   valor_meta: number           // Meta calculada: valor_referencia × (meta_percentual / 100)
   valor_realizado: number      // Valor de vendas efetivamente realizado
+  custo_realizado: number      // Custo realizado
+  lucro_realizado: number      // Lucro realizado; no modo snapshot representa lucro líquido ajustado
+  margem_realizada?: number    // Margem realizada; no modo snapshot vem de margem_ajustada_percentual
 
   // Indicadores de performance
   diferenca: number            // Diferença absoluta: valor_realizado - valor_meta
@@ -66,9 +69,14 @@ interface MetasReport {
   // Totalizadores gerais
   total_realizado: number      // Soma de todos os valores_realizados
   total_meta: number           // Soma de todos os valores_meta
+  total_custo: number          // Soma dos custos realizados
+  total_lucro: number          // Soma dos lucros realizados
 
   // Indicador de performance geral
   percentual_atingido: number  // (total_realizado / total_meta) × 100
+  margem_bruta: number         // Margem consolidada do período
+  sales_source?: 'legacy' | 'api_filial_vendas'
+  profit_source?: string
 }
 ```
 
@@ -78,6 +86,8 @@ interface MetasReport {
 - `percentual_atingido` = (total_realizado / total_meta) × 100
 
 **Uso**: Retornado pela RPC `get_metas_mensais_report`
+
+Quando `sales_source = 'api_filial_vendas'`, os campos de realizado vêm de `{schema}.vendas_filiais_snapshot` e o frontend exibe `lucro_realizado` como Lucro Líquido e `margem_realizada` como Margem Realizada.
 
 ---
 

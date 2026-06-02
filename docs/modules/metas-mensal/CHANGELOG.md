@@ -6,6 +6,27 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e
 
 ---
 
+## [1.7.0] - 2026-06-01
+
+### ✨ Adicionado
+- RPCs paralelas para Metas Mensais quando `enable_api_filial_vendas = true`:
+  - `get_metas_mensais_report_api_filial_vendas`
+  - `get_metas_mensais_summary_by_filial_api_filial_vendas`
+- Leitura de realizados pela tabela `{schema}.vendas_filiais_snapshot`.
+
+### 🔧 Alterado
+- As APIs `GET /api/metas/report` e `GET /api/metas/summary` passam a escolher a RPC por parâmetro.
+- Em modo `api_filial_vendas`, `POST /api/metas/update` não regrava realizados; os valores são calculados na leitura.
+- Rótulos da tela mensal foram ajustados de `Lucro Bruto` para `Lucro Líquido` e de `Margem Bruta` para `Margem Realizada`.
+
+### 📊 Fonte de Dados
+- Receita realizada: `vendas_filiais_snapshot.valor`
+- Custo realizado: `vendas_filiais_snapshot.custo_total_ajustado`
+- Lucro Líquido: `vendas_filiais_snapshot.lucro_ajustado`
+- Margem Realizada: `vendas_filiais_snapshot.margem_ajustada_percentual`
+
+---
+
 ## [1.6.0] - 2026-04-13
 
 ### ✨ Adicionado

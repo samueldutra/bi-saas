@@ -1,6 +1,6 @@
 # Metas Mensal
 
-> Status: ✅ Implementado | Versão: 1.6.0
+> Status: ✅ Implementado | Versão: 1.7.0
 
 ## Visão Geral
 
@@ -16,6 +16,7 @@ O módulo de **Metas Mensais** permite o gerenciamento e acompanhamento de metas
 - 📅 Agrupamento inteligente por data
 - 🎯 Indicadores de atingimento (mês completo e D-1)
 - 🛒 Colunas de compras com carregamento tardio
+- 🧮 Fonte alternativa de realizados via `vendas_filiais_snapshot`
 - 🔐 Respeita restrições de filiais por usuário
 
 ## Funcionalidades
@@ -25,6 +26,7 @@ O módulo de **Metas Mensais** permite o gerenciamento e acompanhamento de metas
 - ✅ Edição inline de meta percentual e valor
 - ✅ Atualização automática de vendas realizadas
 - ✅ Meta Compras, Realizado Compras e % Comp./Venda
+- ✅ Lucro Líquido e Margem Realizada via snapshot quando `enable_api_filial_vendas = true`
 - ✅ Cards de resumo (Total Vendas, Progresso Mês, Progresso D-1)
 - ✅ Agrupamento expansível por data (modo múltiplas filiais)
 - ✅ Lista detalhada por dia (modo filial única)
@@ -61,6 +63,8 @@ O módulo de **Metas Mensais** permite o gerenciamento e acompanhamento de metas
 - **RPC Functions**:
   - `generate_metas_mensais` - Gera metas para todos os dias do mês
   - `get_metas_mensais_report` - Retorna relatório com valores realizados
+  - `get_metas_mensais_report_api_filial_vendas` - Versão paralela baseada em `vendas_filiais_snapshot`
+  - `get_metas_mensais_summary_by_filial_api_filial_vendas` - Resumo por filial com lucro/margem ajustados
   - `update_meta_mensal` - Atualiza meta individual
   - `atualizar_valores_realizados_metas` - Atualiza valores em lote
   - `get_metas_mensais_compras_report` - Retorna compras por dia/filial
@@ -71,12 +75,26 @@ O módulo de **Metas Mensais** permite o gerenciamento e acompanhamento de metas
 - **Tabelas**:
   - `{schema}.metas_mensais` - Armazena metas diárias
   - `{schema}.vendas_diarias_por_filial` - Vendas realizadas (para comparação)
+  - `{schema}.vendas_filiais_snapshot` - Fonte de realizados ajustados quando `enable_api_filial_vendas = true`
 
 - **Campos Principais (metas_mensais)**:
   - `id`, `filial_id`, `data`, `dia_semana`
   - `meta_percentual`, `data_referencia`, `valor_referencia`
   - `valor_meta`, `valor_realizado`
+  - `custo_realizado`, `lucro_realizado`
+  - `margem_realizada` no retorno da RPC de relatório
   - `diferenca`, `diferenca_percentual`
+
+### Fonte `enable_api_filial_vendas`
+
+Quando o parâmetro `enable_api_filial_vendas` está ativo para o tenant, as APIs de relatório mensal escolhem RPCs paralelas com sufixo `_api_filial_vendas`. Nessa fonte:
+
+- `valor_realizado` vem de `vendas_filiais_snapshot.valor`
+- `custo_realizado` vem de `vendas_filiais_snapshot.custo_total_ajustado`
+- `lucro_realizado` representa Lucro Líquido e vem de `vendas_filiais_snapshot.lucro_ajustado`
+- `margem_realizada` vem de `vendas_filiais_snapshot.margem_ajustada_percentual`
+
+As RPCs legadas permanecem sem alteração para tenants sem o parâmetro ativo.
 
 ## Acesso Rápido
 
@@ -120,7 +138,8 @@ Usuário → Seleciona filtros (Filiais, Mês, Ano)
        → [Filtrar]
        → Atualiza valores realizados (background)
        → GET /api/metas/report
-       → RPC get_metas_mensais_report()
+       → API escolhe RPC por enable_api_filial_vendas
+       → RPC get_metas_mensais_report() ou get_metas_mensais_report_api_filial_vendas()
        → GET /api/metas/compras (assíncrono, após relatório)
        → Retorna MetasReport
        → Frontend renderiza:

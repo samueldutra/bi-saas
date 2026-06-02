@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { validateSchemaAccess } from '@/lib/security/validate-schema'
+import { isApiFilialVendasEnabled } from '@/lib/tenant-parameters-server'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -76,21 +77,37 @@ export async function GET(request: NextRequest) {
 
     const { createDirectClient } = await import('@/lib/supabase/admin')
     const directSupabase = createDirectClient()
+    const useApiFilialVendas = await isApiFilialVendasEnabled(schema)
+    const rpcName = useApiFilialVendas
+      ? 'get_metas_mensais_summary_by_filial_api_filial_vendas'
+      : 'get_metas_mensais_summary_by_filial'
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (directSupabase as any).rpc('get_metas_mensais_summary_by_filial', params)
+    const { data, error } = await (directSupabase as any).rpc(rpcName, params)
 
     if (error) {
-      console.error('[API/METAS/SUMMARY] RPC Error:', error)
+      console.error('[API/METAS/SUMMARY] RPC Error:', { rpcName, error })
 
       if (error.message && error.message.includes('does not exist')) {
-        return NextResponse.json({ resumo: [] })
+        return NextResponse.json({
+          resumo: [],
+          sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy'
+        })
       }
 
       return NextResponse.json({ error: 'Erro ao buscar resumo de metas' }, { status: 500 })
     }
 
-    return NextResponse.json(data || { resumo: [] })
+    return NextResponse.json(data
+      ? {
+          ...(data as Record<string, unknown>),
+          sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy'
+        }
+      : {
+          resumo: [],
+          sales_source: useApiFilialVendas ? 'api_filial_vendas' : 'legacy'
+        }
+    )
   } catch (error) {
     console.error('[API/METAS/SUMMARY] Unexpected error:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })

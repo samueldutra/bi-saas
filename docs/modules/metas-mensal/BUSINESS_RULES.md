@@ -220,6 +220,23 @@ Ignora: 15/01 (dia atual)
 
 ---
 
+### RN-CALC-007: Fonte snapshot para lucro líquido e margem realizada
+
+Quando `enable_api_filial_vendas = true` para o tenant, as APIs de relatório mensal devem usar RPCs paralelas baseadas em `{schema}.vendas_filiais_snapshot`.
+
+Mapeamento de campos:
+
+- Receita realizada: `vendas_filiais_snapshot.valor`
+- Custo realizado: `vendas_filiais_snapshot.custo_total_ajustado`
+- Lucro Líquido: `vendas_filiais_snapshot.lucro_ajustado`
+- Margem Realizada: `vendas_filiais_snapshot.margem_ajustada_percentual`
+
+Quando `enable_api_filial_vendas = false`, o módulo deve manter as RPCs legadas sem alteração.
+
+O submódulo `Metas por Setor` não usa essa fonte neste momento, porque `vendas_filiais_snapshot` é agregada por filial/dia e não possui granularidade por setor.
+
+---
+
 ## Regras de Validação
 
 ### RN-VAL-001: Campos Obrigatórios na Geração

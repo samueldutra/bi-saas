@@ -368,7 +368,12 @@ Busca e exibição de metas existentes com valores realizados atualizados, aplic
   │ [8] Chama RPC Function
   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ supabase.rpc('get_metas_mensais_report', {                       │
+│ const useApiFilialVendas = await isApiFilialVendasEnabled(schema)│
+│ const rpcName = useApiFilialVendas                               │
+│   ? 'get_metas_mensais_report_api_filial_vendas'                 │
+│   : 'get_metas_mensais_report'                                   │
+│                                                                   │
+│ supabase.rpc(rpcName, {                                           │
 │   p_schema: 'okilao',                                            │
 │   p_mes: 1,                                                      │
 │   p_ano: 2024,                                                   │
@@ -381,6 +386,7 @@ Busca e exibição de metas existentes com valores realizados atualizados, aplic
   ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │ SUPABASE RPC: get_metas_mensais_report                           │
+│ ou get_metas_mensais_report_api_filial_vendas                    │
 │                                                                   │
 │ [9.1] Monta query base                                           │
 │   SELECT                                                         │
@@ -414,6 +420,10 @@ Busca e exibição de metas existentes com valores realizados atualizados, aplic
 │     COALESCE(SUM(valor_meta), 0) AS total_meta                   │
 │   FROM {schema}.metas_mensais                                    │
 │   WHERE [mesmos filtros]                                         │
+│                                                                   │
+│   No modo api_filial_vendas, valor_realizado, custo_realizado,   │
+│   lucro_realizado e margem_realizada são lidos de                 │
+│   {schema}.vendas_filiais_snapshot.                              │
 │                                                                   │
 │ [9.4] Calcula percentual atingido                                │
 │   IF v_total_meta > 0 THEN                                       │

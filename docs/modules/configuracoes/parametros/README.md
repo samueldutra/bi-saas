@@ -11,6 +11,7 @@ O submódulo `Configurações > Parâmetros` centraliza parâmetros por tenant n
 - visibilidade e acesso do módulo `Descontos de Vendas`
 - seleção das RPCs de metas com ou sem faturamento
 - seleção da origem PDV do `Dashboard 360` entre a base legada e o snapshot da API `/filial/vendas`
+- seleção da fonte de realizados do `Metas Mensais` entre o legado e `vendas_filiais_snapshot`
 - margem de perda default para cálculos de margem de lucro
 
 O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext`.
@@ -55,6 +56,7 @@ O fluxo é multi-tenant e sempre usa o `tenant` corrente vindo de `TenantContext
 - Padrão efetivo: `false`
 - Efeito:
   - quando `true`, o `Dashboard 360` usa RPCs novas baseadas em `vendas_filiais_snapshot`
+  - quando `true`, o `Metas Mensais` usa RPCs novas para realizados, lucro líquido e margem realizada baseadas em `vendas_filiais_snapshot`
   - quando `false`, o `Dashboard 360` continua usando as RPCs legadas baseadas em `vendas_diarias_por_filial`
   - na fonte nova, Receita Bruta vem de `valor`, Custo vem de `custo_total_ajustado`, Lucro Bruto vem de `lucro_ajustado`, Margem Bruta vem de `margem_ajustada_percentual`, Ticket Médio é `valor / quantidade_clientes` e Cupons vêm de `quantidade_clientes`
   - SKU não muda com este parâmetro: sempre usa a regra legada `COUNT(DISTINCT id_produto)` sobre a tabela `vendas`
@@ -117,4 +119,4 @@ Sempre que houver mudança em qualquer item abaixo, atualize esta pasta:
 - mudança de tabela, RLS ou constraints de `tenant_parameters`
 - alteração em consumidores client-side ou server-side
 - mudança de rota, permissão ou fallback relacionado ao submódulo
-- ativação de qualquer regra futura ligada a `enable_api_filial_vendas`
+- ativação ou alteração de qualquer consumidor ligado a `enable_api_filial_vendas`

@@ -1,5 +1,21 @@
 # Changelog: Configurações > Parâmetros
 
+## 2026-06-01
+
+### Versão documental
+
+- `1.5.0`
+
+### Alterações
+
+- documentado que `enable_api_filial_vendas` também passa a controlar a fonte de realizados do módulo `Metas Mensais`
+- registrado que, em `Metas Mensais`, a fonte nova usa `valor`, `custo_total_ajustado`, `lucro_ajustado` e `margem_ajustada_percentual` de `vendas_filiais_snapshot`
+- mantido o comportamento legado para tenants com o parâmetro inativo
+
+### Impacto
+
+- médio
+
 ## 2026-05-19
 
 ### Versão documental

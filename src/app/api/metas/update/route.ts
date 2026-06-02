@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { safeErrorResponse } from '@/lib/api/error-handler'
 import { getUserAuthorizedBranchCodes } from '@/lib/authorized-branches'
 import { isValidSchema, validateSchemaAccess } from '@/lib/security/validate-schema'
-import { isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
+import { isApiFilialVendasEnabled, isFaturamentoMetasEnabled } from '@/lib/tenant-parameters-server'
 import { z } from 'zod'
 
 const updateMetaIndividualSchema = z.object({
@@ -204,6 +204,16 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         )
       }
+    }
+
+    const useApiFilialVendas = await isApiFilialVendasEnabled(validatedSchema)
+    if (useApiFilialVendas) {
+      return NextResponse.json({
+        success: true,
+        mode: 'api_filial_vendas',
+        message: 'Valores realizados calculados pela snapshot vendas_filiais_snapshot na leitura',
+        registros_atualizados: 0
+      })
     }
 
     const useFaturamentoMetas = await isFaturamentoMetasEnabled(validatedSchema)

@@ -69,6 +69,19 @@ Na mesma fonte, os indicadores e a listagem do Dashboard 360 devem usar:
 
 Após alteração bem-sucedida em parâmetros booleanos na tela de parâmetros, a interface atual recarrega a página para reaplicar navegação e estados dependentes do tenant.
 
+## RN-PARAM-013: Origem de realizados em Metas Mensais
+
+Quando `enable_api_filial_vendas = true`, as APIs de `Metas Mensais` devem selecionar RPCs paralelas baseadas em `vendas_filiais_snapshot`.
+
+Na fonte nova:
+
+- `valor_realizado` vem de `vendas_filiais_snapshot.valor`
+- `custo_realizado` vem de `vendas_filiais_snapshot.custo_total_ajustado`
+- `lucro_realizado` representa Lucro Líquido e vem de `vendas_filiais_snapshot.lucro_ajustado`
+- `margem_realizada` vem de `vendas_filiais_snapshot.margem_ajustada_percentual`
+
+Quando `enable_api_filial_vendas = false`, `Metas Mensais` permanece nas RPCs legadas.
+
 O parâmetro numérico `margem_perda` não altera navegação nem visibilidade de tela; por isso, sua gravação exibe confirmação sem recarregar a página.
 
 ## RN-PARAM-011: Fonte oficial de documentação
