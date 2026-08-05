@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
   createRealtimeRouteMonitor,
+  fetchAllRealtimeRows,
   getAuthorizedRealtimeFiliais,
   getRealtimeCurrentDate,
   getRealtimeDirectClient,
@@ -61,19 +62,28 @@ export async function GET(req: Request) {
     const currentDate = getRealtimeCurrentDate()
 
     // Query vendas por hora
-    let vendasQuery = directSupabase
-      .schema(requestedSchema as 'public')
-      .from('vendas_hoje')
-      .select('horario, valor_total')
-      .eq('data_extracao', currentDate)
-      .eq('cancelada', false)
-      .not('horario', 'is', null)
+    const { data: vendasData, error: vendasError } =
+      await fetchAllRealtimeRows<{ horario: string; valor_total: string | number | null }>(
+        async (from, to) => {
+          let vendasQuery = directSupabase
+            .schema(requestedSchema as 'public')
+            .from('vendas_hoje')
+            .select('horario, valor_total')
+            .eq('data_extracao', currentDate)
+            .eq('cancelada', false)
+            .not('horario', 'is', null)
+            .order('filial_id')
+            .order('cupom')
+            .order('caixa')
+            .range(from, to)
 
-    if (finalFiliais && finalFiliais.length > 0) {
-      vendasQuery = vendasQuery.in('filial_id', finalFiliais)
-    }
+          if (finalFiliais && finalFiliais.length > 0) {
+            vendasQuery = vendasQuery.in('filial_id', finalFiliais)
+          }
 
-    const { data: vendasData, error: vendasError } = await vendasQuery
+          return vendasQuery
+        }
+      )
 
     if (vendasError) {
       console.error('[API/DASHBOARD-TEMPO-REAL/VENDAS-POR-HORA] Query Error:', vendasError.message)
@@ -112,16 +122,14 @@ export async function GET(req: Request) {
       return `${rangeStartHour.toString().padStart(2, '0')} às ${(rangeStartHour + 1).toString().padStart(2, '0')}`
     }
 
-    if (vendasData) {
-      vendasData.forEach((venda) => {
-        if (!venda.horario) return
+    vendasData.forEach((venda) => {
+      if (!venda.horario) return
 
-        const rangeKey = getRangeKeyFromHorario(venda.horario)
-        if (!rangeKey) return
+      const rangeKey = getRangeKeyFromHorario(venda.horario)
+      if (!rangeKey) return
 
-        rangeData[rangeKey] += parseRealtimeNumber(venda.valor_total)
-      })
-    }
+      rangeData[rangeKey] += parseRealtimeNumber(venda.valor_total)
+    })
     monitor.mark('group_by_range', { rows: vendasData?.length ?? 0, ranges: Object.keys(rangeData).length })
 
     const dataArray = Object.entries(rangeData).map(([faixa, total_vendas]) => ({

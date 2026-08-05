@@ -1027,10 +1027,13 @@ export default function MetaMensalPage() {
         // Formatar mensagem de erro mais detalhada
         let errorMsg = 'Erro ao atualizar meta'
         if (error.details) {
-          const detailsMsg = Object.entries(error.details)
-            .map(([key, msgs]) => `${key}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
-            .join('\n')
-          errorMsg = `Erro de validação:\n${detailsMsg}`
+          const fieldErrors = error.details.fieldErrors || {}
+          const formErrors = error.details.formErrors || []
+          const detailsMsg = [
+            ...Object.entries(fieldErrors).map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`),
+            ...formErrors
+          ].join('\n')
+          errorMsg = detailsMsg ? `Erro de validação:\n${detailsMsg}` : (error.error || errorMsg)
         } else if (error.error) {
           errorMsg = error.error
         }

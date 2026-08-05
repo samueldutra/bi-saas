@@ -1,7 +1,7 @@
 # Dashboard 360 - Documentação Técnica
 
-**Versão**: 1.2.1
-**Última Atualização**: 2026-05-20
+**Versão**: 1.2.2
+**Última Atualização**: 2026-06-11
 **Status**: ✅ Produção
 
 > Esta pasta é a documentação oficial do módulo `Dashboard 360`.
@@ -131,6 +131,17 @@ flowchart TD
 6. Quando qualquer resposta principal, MTD, YTD ou de vendas por filial informa `sales_source = api_filial_vendas`, a tela consolida os cards como PDV e usa a família de RPCs baseada em `{schema}.vendas_filiais_snapshot`.
 7. O frontend reconcilia PDV e faturamento de acordo com o tipo de venda efetivo.
 8. Os componentes visuais exibem comparativos por período.
+
+### Dependência do PostgREST no Dashboard em Tempo Real
+
+Os endpoints de vendas por faixa de hora e venda acumulada por loja consultam
+diretamente `vendas_hoje`, `vendas_hoje_itens` e `metas_mensais` no schema do
+tenant. O schema precisa estar em `pgrst.db_schemas`; caso contrário, o
+PostgREST retorna `PGRST106` e a API responde HTTP 500.
+
+As leituras de `vendas_hoje` e `vendas_hoje_itens` são paginadas em lotes de
+1.000 registros para evitar totalizações parciais quando o volume diário
+ultrapassa o limite padrão do PostgREST.
 
 ---
 

@@ -17,7 +17,11 @@ const updateMetaIndividualSchema = z.object({
       return num
     }),
   valorMeta: z.number(),
-  metaPercentual: z.number().min(-100).max(1000, 'Meta percentual deve estar entre -100 e 1000'),
+  // Percentual é derivado de valorMeta / valor_referencia e não tem limite de negócio na
+  // função update_meta_mensal (schema_full.sql) — o teto anterior de 1000% rejeitava edições
+  // legítimas de "Valor Meta" em filiais/dias com valor_referencia baixo (ex.: crescimento
+  // ambicioso sobre uma base pequena facilmente ultrapassa 1000%).
+  metaPercentual: z.number().min(-100, 'Meta percentual não pode ser menor que -100%'),
 })
 
 const updateMetaLoteSchema = z.object({

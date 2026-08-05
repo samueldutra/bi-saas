@@ -4,6 +4,39 @@ import { createClient } from '@/lib/supabase/server'
 
 type ServerSupabaseClient = Awaited<ReturnType<typeof createClient>>
 
+const REALTIME_QUERY_PAGE_SIZE = 1000
+
+type RealtimeQueryError = {
+  message: string
+}
+
+export async function fetchAllRealtimeRows<T>(
+  fetchPage: (
+    from: number,
+    to: number
+  ) => Promise<{ data: T[] | null; error: RealtimeQueryError | null }>
+): Promise<{ data: T[]; error: RealtimeQueryError | null }> {
+  const rows: T[] = []
+
+  for (let from = 0; ; from += REALTIME_QUERY_PAGE_SIZE) {
+    const { data, error } = await fetchPage(
+      from,
+      from + REALTIME_QUERY_PAGE_SIZE - 1
+    )
+
+    if (error) {
+      return { data: rows, error }
+    }
+
+    const page = data ?? []
+    rows.push(...page)
+
+    if (page.length < REALTIME_QUERY_PAGE_SIZE) {
+      return { data: rows, error: null }
+    }
+  }
+}
+
 export const DASHBOARD_TEMPO_REAL_FILIAL_COLORS = [
   'hsl(142, 76%, 45%)',
   'hsl(200, 70%, 50%)',

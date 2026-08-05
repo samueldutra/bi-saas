@@ -6,6 +6,21 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e
 
 ---
 
+## [1.7.1] - 2026-08-05
+
+### 🐛 Corrigido
+- **Edição inline bloqueada em filiais/dias com `valor_referencia` baixo**: ao editar "Valor Meta" diretamente, o percentual implícito (`valorMeta / valor_referencia`) podia facilmente ultrapassar 1000% (ex.: filial com referência de R$ 1.673,07 e meta de R$ 60.000,00 → ~3.486%). Isso era rejeitado por dois limites artificiais sem respaldo em regra de negócio:
+  - Validação Zod em `POST /api/metas/update` (`metaPercentual.max(1000)`) — removida; mantido apenas o piso de -100%.
+  - Coluna `metas_mensais.meta_percentual` (`numeric(5, 2)`, máx. 999,99) — alargada para `numeric(9, 2)` via [migration 20260805120000](../../../supabase/migrations/20260805120000_widen_meta_percentual_metas_mensais.sql), aplicada em todos os schemas de tenants ativos e no template `create_metas_table_for_tenant` (novos tenants).
+  - Referência: [route.ts:19-24](../../../src/app/api/metas/update/route.ts#L19-L24)
+- **Mensagem de erro ilegível**: quando a validação Zod falhava, o frontend exibia `fieldErrors: [object Object]` em vez das mensagens reais, pois tratava o retorno de `.flatten()` (`{ formErrors, fieldErrors }`) como um dicionário plano de campo→mensagem. Corrigido para extrair `fieldErrors`/`formErrors` corretamente (mesmo padrão já usado em `descontos-venda/page.tsx`).
+  - Referência: [page.tsx:1027-1039](../../../src/app/(dashboard)/metas/mensal/page.tsx#L1027-L1039)
+
+### 🔧 Regras de Negócio Atualizadas
+- **RN-EDT** (edição inline de `meta_percentual`): não há mais teto superior de negócio; apenas piso de -100%. O único limite remanescente é físico (precisão da coluna no banco).
+
+---
+
 ## [1.7.0] - 2026-06-01
 
 ### ✨ Adicionado
@@ -500,7 +515,7 @@ AS $$ /* ... código da função ... */ $$;
 
 ## Versão do Changelog
 
-**Última Atualização**: 2025-01-11
+**Última Atualização**: 2026-08-05
 **Responsável pela Documentação**: Equipe Técnica
 **Formato**: v2.0 (baseado em Keep a Changelog)
 

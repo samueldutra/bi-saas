@@ -1,5 +1,14 @@
 # Dashboard 360 - Changelog da Documentação
 
+## 2026-06-11 - v1.2.2
+
+### Corrigido
+
+- adicionados `rossetti` e `veneza` à configuração `pgrst.db_schemas`
+- corrigido o erro `PGRST106` nos endpoints de vendas por hora e vendas por loja
+- adicionada paginação das tabelas `vendas_hoje` e `vendas_hoje_itens` para
+  evitar totalizações limitadas aos primeiros 1.000 registros
+
 ## 2026-05-20 - v1.2.1
 
 ### Alterado

@@ -856,9 +856,12 @@ function parseSafeDate(dateStr: string): Date | null {
 ### Validação de Números
 
 ```typescript
-// Percentual (0-1000)
+// Percentual da meta individual (POST /api/metas/update): apenas piso de -100%.
+// Não há teto de negócio — o percentual é derivado de valorMeta / valor_referencia,
+// que pode superar 1000% em filiais/dias com referência baixa. Teto físico real é a
+// coluna metas_mensais.meta_percentual (numeric(9, 2), desde 2026-08-05).
 function isValidPercentual(value: number): boolean {
-  return value >= 0 && value <= 1000
+  return value >= -100
 }
 
 // Valor monetário (positivo)

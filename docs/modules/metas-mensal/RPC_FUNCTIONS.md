@@ -480,15 +480,7 @@ AS $$
 DECLARE
   v_rows_affected INTEGER;
 BEGIN
-  -- Validações
-  IF p_valor_meta < 0 THEN
-    RAISE EXCEPTION 'Valor da meta não pode ser negativo';
-  END IF;
-
-  IF p_meta_percentual < 0 OR p_meta_percentual > 1000 THEN
-    RAISE EXCEPTION 'Percentual inválido: %', p_meta_percentual;
-  END IF;
-
+  -- Validações (aplicadas na API Next.js, não na função SQL — ver nota abaixo)
   -- Atualizar meta
   EXECUTE format(
     'UPDATE %I.metas_mensais
@@ -546,9 +538,11 @@ $$;
 
 ### Validações
 
-1. `valor_meta` não pode ser negativo
-2. `meta_percentual` deve estar entre 0 e 1000
-3. Meta com `p_meta_id` deve existir
+A função SQL em si não valida `p_valor_meta`/`p_meta_percentual` (apenas verifica que a meta existe). Quem valida é a API `POST /api/metas/update` ([route.ts](../../../src/app/api/metas/update/route.ts)):
+
+1. `meta_percentual` deve ser ≥ -100% (não há teto superior de negócio — é um valor derivado de `valorMeta / valor_referencia`, que pode ser bem alto para filiais/dias com referência baixa)
+2. Meta com `p_meta_id` deve existir (verificado antes de chamar a RPC)
+3. **Limite físico**: a coluna `metas_mensais.meta_percentual` é `numeric(9, 2)` (desde 2026-08-05; era `numeric(5, 2)`, limitado a 999.99%) — ver [migration 20260805120000](../../../supabase/migrations/20260805120000_widen_meta_percentual_metas_mensais.sql). Valores acima disso ainda falham com `numeric field overflow` (SQLSTATE `22003`).
 
 ### Exemplo de Uso
 

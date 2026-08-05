@@ -5,6 +5,7 @@ import {
   calculatePercentage,
   calculateRealtimeItemRevenue,
   createRealtimeRouteMonitor,
+  fetchAllRealtimeRows,
   getAuthorizedRealtimeFiliais,
   getBranchNameMapForTenant,
   getDashboardTempoRealFilialColor,
@@ -67,18 +68,33 @@ export async function GET(req: Request) {
     const currentDate = getRealtimeCurrentDate()
 
     // Query vendas_hoje_itens to get oferta data
-    let itensQuery = directSupabase
-      .schema(requestedSchema as 'public')
-      .from('vendas_hoje_itens')
-      .select('filial_id, quantidade_vendida, preco_venda, valor_desconto, valor_acrescimo, oferta_id')
-      .eq('data_extracao', currentDate)
-      .eq('cancelado', false)
+    const { data: itensData, error: itensError } =
+      await fetchAllRealtimeRows<{
+        filial_id: number
+        quantidade_vendida: string | number | null
+        preco_venda: string | number | null
+        valor_desconto: string | number | null
+        valor_acrescimo: string | number | null
+        oferta_id: string | null
+      }>(async (from, to) => {
+        let itensQuery = directSupabase
+          .schema(requestedSchema as 'public')
+          .from('vendas_hoje_itens')
+          .select('filial_id, quantidade_vendida, preco_venda, valor_desconto, valor_acrescimo, oferta_id')
+          .eq('data_extracao', currentDate)
+          .eq('cancelado', false)
+          .order('filial_id')
+          .order('cupom')
+          .order('ordem')
+          .order('produto_id')
+          .range(from, to)
 
-    if (finalFiliais && finalFiliais.length > 0) {
-      itensQuery = itensQuery.in('filial_id', finalFiliais)
-    }
+        if (finalFiliais && finalFiliais.length > 0) {
+          itensQuery = itensQuery.in('filial_id', finalFiliais)
+        }
 
-    const { data: itensData, error: itensError } = await itensQuery
+        return itensQuery
+      })
 
     if (itensError) {
       console.error('[API/DASHBOARD-TEMPO-REAL/VENDAS-POR-LOJA] Query Error:', itensError.message)
@@ -111,24 +127,22 @@ export async function GET(req: Request) {
     // Aggregate by filial_id separating oferta vs normal
     const filialMap = new Map<number, { receita_oferta: number; receita_normal: number }>()
 
-    if (itensData) {
-      itensData.forEach((item) => {
-        const filialId = item.filial_id
-        const receita = calculateRealtimeItemRevenue(item)
-        const isOferta = isOfertaItem(item.oferta_id)
+    itensData.forEach((item) => {
+      const filialId = item.filial_id
+      const receita = calculateRealtimeItemRevenue(item)
+      const isOferta = isOfertaItem(item.oferta_id)
 
-        if (!filialMap.has(filialId)) {
-          filialMap.set(filialId, { receita_oferta: 0, receita_normal: 0 })
-        }
+      if (!filialMap.has(filialId)) {
+        filialMap.set(filialId, { receita_oferta: 0, receita_normal: 0 })
+      }
 
-        const filialData = filialMap.get(filialId)!
-        if (isOferta) {
-          filialData.receita_oferta += receita
-        } else {
-          filialData.receita_normal += receita
-        }
-      })
-    }
+      const filialData = filialMap.get(filialId)!
+      if (isOferta) {
+        filialData.receita_oferta += receita
+      } else {
+        filialData.receita_normal += receita
+      }
+    })
     monitor.mark('aggregate_filiais', { groups: filialMap.size })
 
     // Build result array sorted by total receita
